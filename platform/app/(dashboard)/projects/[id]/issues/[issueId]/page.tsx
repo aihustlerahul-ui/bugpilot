@@ -20,7 +20,7 @@ export default function IssueDetailPage({ params }: { params: { id: string; issu
         <h1 className="text-xl font-bold text-gray-900 flex-1 mr-4">{issue.description}</h1>
         <SyncButton issueId={issue.id} projectId={params.id} currentStatus={issue.sync_status} />
       </div>
-      {issue.external_ticket_url && (
+      {issue.external_ticket_url?.startsWith('https://') && (
         <a href={issue.external_ticket_url} target="_blank" rel="noopener noreferrer"
           className="inline-block mb-4 text-sm text-blue-600 hover:underline">
           View in Azure DevOps →

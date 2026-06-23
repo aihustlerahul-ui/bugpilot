@@ -15,7 +15,7 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
     queryKey: ['project', params.id],
     queryFn: () => api.get<Project>(`/projects/${params.id}`),
   })
-  const { data: issues = [], isLoading } = useQuery<Issue[]>({
+  const { data: issues = [], isLoading, isError } = useQuery<Issue[]>({
     queryKey: ['issues', params.id],
     queryFn: () => api.get<Issue[]>(`/issues/project/${params.id}`),
   })
@@ -24,6 +24,7 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-6">{project?.name ?? '…'}</h1>
       {isLoading && <p className="text-gray-500 text-sm">Loading...</p>}
+      {isError && <p className="text-red-600 text-sm">Failed to load issues. Please refresh.</p>}
       {!isLoading && issues.length === 0 && (
         <p className="text-gray-500 text-sm">No issues yet. Report one from the Chrome extension.</p>
       )}

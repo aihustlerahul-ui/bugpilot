@@ -9,8 +9,9 @@ export default function ProjectsPage() {
   const qc = useQueryClient()
   const [name, setName] = useState('')
   const [creating, setCreating] = useState(false)
+  const [mutationError, setMutationError] = useState('')
 
-  const { data: projects = [], isLoading } = useQuery<Project[]>({
+  const { data: projects = [], isLoading, isError } = useQuery<Project[]>({
     queryKey: ['projects'],
     queryFn: () => api.get<Project[]>('/projects'),
   })
@@ -18,6 +19,7 @@ export default function ProjectsPage() {
   const createProject = useMutation({
     mutationFn: (name: string) => api.post('/projects', { name, sync_mode: 'manual' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['projects'] }); setName(''); setCreating(false) },
+    onError: (err: Error) => setMutationError(err.message),
   })
 
   return (
@@ -39,9 +41,11 @@ export default function ProjectsPage() {
             className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">Create</button>
           <button onClick={() => setCreating(false)}
             className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+          {mutationError && <p className="text-red-600 text-sm mt-2">{mutationError}</p>}
         </div>
       )}
       {isLoading && <p className="text-gray-500 text-sm">Loading...</p>}
+      {isError && <p className="text-red-600 text-sm">Failed to load projects. Please refresh.</p>}
       {!isLoading && projects.length === 0 && <p className="text-gray-500 text-sm">No projects yet.</p>}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {projects.map(p => (

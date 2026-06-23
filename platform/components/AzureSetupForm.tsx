@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { api } from '@/lib/api/client'
 
 export function AzureSetupForm({ existing }: { existing?: { org_url?: string; project_name?: string } }) {
@@ -8,6 +8,11 @@ export function AzureSetupForm({ existing }: { existing?: { org_url?: string; pr
   const [pat, setPat] = useState('')
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (existing?.org_url) setOrgUrl(existing.org_url)
+    if (existing?.project_name) setProjectName(existing.project_name)
+  }, [existing?.org_url, existing?.project_name])
 
   async function handleSave() {
     setStatus('saving')
