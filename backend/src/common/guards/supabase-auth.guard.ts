@@ -19,7 +19,10 @@ export class SupabaseAuthGuard implements CanActivate {
     const token = authHeader.replace('Bearer ', '')
     try {
       const secret = this.config.get('SUPABASE_JWT_SECRET')!
-      const payload = jwt.verify(token, secret) as any
+      const payload = jwt.verify(token, secret, {
+        algorithms: ['HS256'],
+        audience: 'authenticated',
+      }) as { sub: string; email: string }
       request.user = { id: payload.sub, email: payload.email }
       return true
     } catch {
