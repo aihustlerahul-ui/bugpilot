@@ -1,0 +1,254 @@
+/**
+ * QA Reporter Popup Styles
+ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 320px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background: #f8f9fa;
+  color: #1a1a2e;
+  line-height: 1.5;
+}
+
+.popup-container {
+  padding: 0;
+}
+
+/* Header */
+.popup-header {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo {
+  width: 40px;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+}
+
+.popup-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+}
+
+/* Main Content */
+.popup-content {
+  padding: 20px;
+}
+
+/* Status Card */
+.status-card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #10b981;
+  transition: background 0.3s ease;
+}
+
+.status-dot.active {
+  background: #ef4444;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.1);
+  }
+}
+
+.status-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #6c757d;
+}
+
+.issue-count {
+  text-align: right;
+}
+
+.count-number {
+  display: block;
+  font-size: 28px;
+  font-weight: 700;
+  color: #1a1a2e;
+  line-height: 1;
+}
+
+.count-label {
+  font-size: 12px;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Buttons */
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-icon {
+  flex-shrink: 0;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(26, 26, 46, 0.3);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background: #ffffff;
+  color: #1a1a2e;
+  border: 2px solid #e9ecef;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #f8f9fa;
+  border-color: #1a1a2e;
+}
+
+.btn-outline {
+  background: transparent;
+  color: #6c757d;
+  border: 1px solid #e9ecef;
+  font-size: 13px;
+  padding: 10px 12px;
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: #ffffff;
+  border-color: #6c757d;
+  color: #1a1a2e;
+}
+
+/* Divider */
+.divider {
+  height: 1px;
+  background: #e9ecef;
+  margin: 20px 0;
+}
+
+/* Secondary Actions */
+.secondary-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.secondary-actions .btn {
+  font-size: 12px;
+  padding: 10px;
+}
+
+/* Footer */
+.popup-footer {
+  padding: 12px 20px;
+  background: #ffffff;
+  border-top: 1px solid #e9ecef;
+  text-align: center;
+}
+
+.footer-text {
+  font-size: 11px;
+  color: #6c757d;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: #1a1a2e;
+  color: #ffffff;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0;
+  transition: all 0.3s ease;
+  z-index: 1000;
+  white-space: nowrap;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.toast.success {
+  background: #10b981;
+}
+
+.toast.error {
+  background: #ef4444;
+}

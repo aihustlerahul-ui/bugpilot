@@ -1,0 +1,427 @@
+/**
+ * QA Reporter Extension Styles
+ *Injected into all pages for element highlighting and modal
+ */
+
+/* Element Highlight Overlay */
+.qa-reporter-highlight-overlay {
+  position: absolute !important;
+  pointer-events: none !important;
+  border: 2px solid #ff4444 !important;
+  background: rgba(255, 68, 68, 0.1) !important;
+  box-sizing: border-box !important;
+  z-index: 2147483646 !important;
+  transition: all 0.1s ease-out !important;
+}
+
+/* Active Indicator Banner */
+.qa-reporter-active-indicator {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  z-index: 2147483647 !important;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
+  color: #ffffff !important;
+  padding: 12px 20px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif !important;
+  font-size: 14px !important;
+  animation: qa-slide-down 0.3s ease-out !important;
+}
+
+@keyframes qa-slide-down {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.qa-indicator-content {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 12px !important;
+}
+
+.qa-indicator-dot {
+  width: 10px !important;
+  height: 10px !important;
+  background: #ff4444 !important;
+  border-radius: 50% !important;
+  animation: qa-pulse 1s infinite !important;
+}
+
+@keyframes qa-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.2);
+  }
+}
+
+.qa-indicator-close {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: none !important;
+  color: #ffffff !important;
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 50% !important;
+  cursor: pointer !important;
+  font-size: 18px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: background 0.2s ease !important;
+}
+
+.qa-indicator-close:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Modal Overlay */
+.qa-reporter-modal-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  background: rgba(0, 0, 0, 0.3) !important;
+  z-index: 2147483647 !important;
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  animation: qa-fade-in 0.2s ease-out !important;
+}
+
+@keyframes qa-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Modal Container */
+.qa-reporter-modal {
+  position: absolute !important;
+  width: 380px !important;
+  max-height: 90vh !important;
+  background: #ffffff !important;
+  border-radius: 12px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3) !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif !important;
+  overflow: hidden !important;
+  animation: qa-modal-appear 0.3s ease-out !important;
+}
+
+@keyframes qa-modal-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Modal Header */
+.qa-modal-header {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
+  color: #ffffff !important;
+  padding: 16px 20px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  cursor: move !important;
+  user-select: none !important;
+}
+
+.qa-modal-title {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  margin: 0 !important;
+}
+
+.qa-modal-close {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: none !important;
+  color: #ffffff !important;
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 50% !important;
+  cursor: pointer !important;
+  font-size: 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: background 0.2s ease !important;
+  line-height: 1 !important;
+}
+
+.qa-modal-close:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Element Info */
+.qa-modal-element-info {
+  background: #f8f9fa !important;
+  padding: 12px 20px !important;
+  border-bottom: 1px solid #e9ecef !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+.qa-element-tag {
+  background: #1a1a2e !important;
+  color: #ffffff !important;
+  padding: 4px 10px !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+}
+
+.qa-element-text {
+  color: #6c757d !important;
+  font-size: 13px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  flex: 1 !important;
+}
+
+/* Modal Body */
+.qa-modal-body {
+  padding: 20px !important;
+  overflow-y: auto !important;
+  max-height: 400px !important;
+}
+
+/* Form Styles */
+.qa-form-group {
+  margin-bottom: 16px !important;
+}
+
+.qa-form-group:last-child {
+  margin-bottom: 0 !important;
+}
+
+.qa-form-label {
+  display: block !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: #1a1a2e !important;
+  margin-bottom: 6px !important;
+}
+
+.qa-form-input,
+.qa-form-textarea,
+.qa-form-select {
+  width: 100% !important;
+  padding: 10px 14px !important;
+  border: 2px solid #e9ecef !important;
+  border-radius: 8px !important;
+  font-size: 14px !important;
+  font-family: inherit !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+  box-sizing: border-box !important;
+  background: #ffffff !important;
+  color: #1a1a2e !important;
+}
+
+.qa-form-input:focus,
+.qa-form-textarea:focus,
+.qa-form-select:focus {
+  outline: none !important;
+  border-color: #1a1a2e !important;
+  box-shadow: 0 0 0 3px rgba(26, 26, 46, 0.1) !important;
+}
+
+.qa-form-textarea {
+  resize: vertical !important;
+  min-height: 100px !important;
+}
+
+.qa-form-select {
+  cursor: pointer !important;
+  appearance: none !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%231a1a2e' d='M6 8L1 3h10z'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 12px center !important;
+  padding-right: 40px !important;
+}
+
+/* Input Error State */
+.qa-input-error {
+  border-color: #ff4444 !important;
+  animation: qa-shake 0.3s ease !important;
+}
+
+@keyframes qa-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+/* Element Details */
+.qa-element-details {
+  margin-top: 16px !important;
+}
+
+.qa-details-summary {
+  cursor: pointer !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: #1a1a2e !important;
+  padding: 8px 0 !important;
+  user-select: none !important;
+}
+
+.qa-details-summary:hover {
+  text-decoration: underline !important;
+}
+
+.qa-details-content {
+  padding: 12px !important;
+  background: #f8f9fa !important;
+  border-radius: 6px !important;
+  margin-top: 8px !important;
+}
+
+.qa-detail-item {
+  display: flex !important;
+  flex-direction: column !important;
+  margin-bottom: 8px !important;
+}
+
+.qa-detail-item:last-child {
+  margin-bottom: 0 !important;
+}
+
+.qa-detail-label {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: #6c757d !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  margin-bottom: 4px !important;
+}
+
+.qa-detail-item code {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace !important;
+  font-size: 12px !important;
+  background: #e9ecef !important;
+  padding: 4px 8px !important;
+  border-radius: 4px !important;
+  color: #1a1a2e !important;
+  word-break: break-all !important;
+}
+
+.qa-selector {
+  font-size: 11px !important;
+}
+
+/* Modal Footer */
+.qa-modal-footer {
+  display: flex !important;
+  gap: 12px !important;
+  padding: 16px 20px !important;
+  border-top: 1px solid #e9ecef !important;
+  background: #f8f9fa !important;
+}
+
+/* Buttons */
+.qa-btn {
+  font-family: inherit !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  padding: 10px 20px !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  border: none !important;
+  flex: 1 !important;
+}
+
+.qa-btn-primary {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
+  color: #ffffff !important;
+}
+
+.qa-btn-primary:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(26, 26, 46, 0.3) !important;
+}
+
+.qa-btn-secondary {
+  background: #ffffff !important;
+  color: #1a1a2e !important;
+  border: 2px solid #e9ecef !important;
+}
+
+.qa-btn-secondary:hover {
+  background: #f8f9fa !important;
+  border-color: #1a1a2e !important;
+}
+
+/* Notifications */
+.qa-reporter-notification {
+  position: fixed !important;
+  bottom: 20px !important;
+  right: 20px !important;
+  padding: 14px 24px !important;
+  border-radius: 8px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  z-index: 2147483647 !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2) !important;
+  animation: qa-notification-in 0.3s ease-out !important;
+}
+
+@keyframes qa-notification-in {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.qa-notification-success {
+  background: #10b981 !important;
+  color: #ffffff !important;
+}
+
+.qa-notification-error {
+  background: #ef4444 !important;
+  color: #ffffff !important;
+}
+
+.qa-notification-fade-out {
+  opacity: 0 !important;
+  transform: translateX(20px) !important;
+  transition: all 0.3s ease-out !important;
+}
+
+/* Details/Summary styling */
+details summary::-webkit-details-marker {
+  display: none !important;
+}
+
+details summary::before {
+  content: '' !important;
+}
