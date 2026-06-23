@@ -1,3 +1,12 @@
-// run `node index.js` in the terminal
+const http = require('http');
 
-console.log(`Hello Node.js v${process.versions.node}!`);
+const PORT = 3000;
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('QA Reporter dev server running\n');
+});
+
+server.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
+});
