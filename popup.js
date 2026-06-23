@@ -23,7 +23,11 @@ async function apiGet(path, token) {
   const res = await fetch(`${API_URL}/api${path}`, {
     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
   })
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  if (!res.ok) {
+    const err = new Error(`API error: ${res.status}`)
+    err.status = res.status
+    throw err
+  }
   return res.json()
 }
 
@@ -34,8 +38,10 @@ async function apiPost(path, body, token) {
     body: JSON.stringify(body),
   })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.message || `API error: ${res.status}`)
+    const data = await res.json().catch(() => ({}))
+    const err = new Error(data.message || `API error: ${res.status}`)
+    err.status = res.status
+    throw err
   }
   return res.json()
 }
@@ -44,12 +50,34 @@ async function loadProjects(token) {
   const select = document.getElementById('project-select')
   try {
     const projects = await apiGet('/projects', token)
-    select.innerHTML = projects.length
-      ? projects.map(p => `<option value="${p.id}">${p.name}</option>`).join('')
-      : '<option value="">No projects yet — create one in the dashboard</option>'
-    document.getElementById('btn-submit').disabled = projects.length === 0
-  } catch {
-    select.innerHTML = '<option value="">Failed to load projects</option>'
+    select.innerHTML = ''
+    if (projects.length === 0) {
+      const opt = document.createElement('option')
+      opt.value = ''
+      opt.textContent = 'No projects yet — create one in the dashboard'
+      select.appendChild(opt)
+      document.getElementById('btn-submit').disabled = true
+    } else {
+      projects.forEach(p => {
+        const opt = document.createElement('option')
+        opt.value = p.id
+        opt.textContent = p.name
+        select.appendChild(opt)
+      })
+      document.getElementById('btn-submit').disabled = false
+    }
+  } catch (err) {
+    if (err.status === 401) {
+      await chrome.storage.local.remove(['qa_token', 'qa_email'])
+      showScreen('screen-login')
+      document.getElementById('login-error').textContent = 'Session expired — please sign in again.'
+    } else {
+      const opt = document.createElement('option')
+      opt.value = ''
+      opt.textContent = 'Failed to load projects'
+      select.innerHTML = ''
+      select.appendChild(opt)
+    }
   }
 }
 
@@ -155,7 +183,7 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
     capturedScreenshot = null
     document.getElementById('screenshot-preview').style.display = 'none'
   } catch (err) {
-    if (err.message.includes('401') || err.message.includes('Not authenticated')) {
+    if (err.status === 401) {
       await chrome.storage.local.remove(['qa_token', 'qa_email'])
       showScreen('screen-login')
       document.getElementById('login-error').textContent = 'Session expired — please sign in again.'
