@@ -37,25 +37,28 @@ Build order is deliberately simple: auth → issue capture → dashboard → Azu
 ```
 Chrome Extension
     │
-    │  POST /issues (JWT auth)
+    │  POST /api/issues (JWT auth)
     ▼
-Supabase Edge Function or Next.js API Route
+NestJS Backend (API server)
     │
-    ├── stores issue → Postgres (issues table)
-    └── stores screenshot → Supabase Storage
-    
-Next.js Web App (Vercel)
-    │
-    ├── reads issues from Supabase (TanStack Query)
-    └── on "Sync to Azure" → calls Azure DevOps REST API with PAT
+    ├── validates Supabase JWT
+    ├── stores issue → Postgres via Supabase client
+    ├── stores screenshot → Supabase Storage
+    └── on sync → calls Azure DevOps REST API with decrypted PAT
 
-Supabase
-    ├── Auth (email/password, JWT)
-    ├── Postgres (workspaces, projects, issues)
+Next.js Web App
+    │
+    └── calls NestJS backend for all data + actions
+        (no direct Supabase calls from frontend, no API routes)
+
+Supabase (data layer only)
+    ├── Auth (email/password, JWT issuance)
+    ├── Postgres (all tables)
     └── Storage (screenshots)
 ```
 
 The platform is always the source of truth. Azure DevOps is a sync target, not the primary store.
+NestJS owns all business logic — Supabase is used purely as a managed database and auth provider.
 
 ---
 
@@ -187,23 +190,25 @@ The platform is always the source of truth. Azure DevOps is a sync target, not t
 | Layer | Technology |
 |---|---|
 | Web frontend | Next.js 14 (App Router), Tailwind CSS, TanStack Query |
-| Backend / API | Next.js API Routes + Supabase Edge Functions |
-| Auth | Supabase Auth (email/password) |
-| Database | Supabase Postgres |
+| Backend API | NestJS (TypeScript, REST) |
+| Auth | Supabase Auth (email/password, JWT) — validated in NestJS guard |
+| Database | Supabase Postgres (via `@supabase/supabase-js` in NestJS) |
 | File storage | Supabase Storage (screenshots) |
-| Extension | Chrome MV3 (existing), + Supabase JS client for auth |
-| Hosting | Vercel (web app), Supabase (everything else) |
+| Extension | Chrome MV3 (existing), + Supabase JS client for auth only |
+| Hosting | Vercel (web app), Railway/Render (NestJS), Supabase (db + storage) |
 
 ---
 
 ## Build Order
 
 1. **Supabase setup** — create project, run schema migrations, enable auth, create storage bucket
-2. **Next.js app scaffold** — auth pages (signup/login), projects list, issue list, issue detail, settings/integrations
-3. **POST /api/issues endpoint** — validate JWT, store screenshots, insert issue row
-4. **Extension auth** — login form in popup, JWT storage, project selector, POST to API
-5. **Azure DevOps integration** — PAT setup in settings, "Sync to Azure" button, sync logic, auto-sync edge function
-6. **Polish** — sync status badges, ADO ticket link, error states, loading states
+2. **NestJS backend scaffold** — project setup, Supabase JWT auth guard, modules structure
+3. **Issues module** — POST /issues endpoint (validate JWT, upload screenshot, insert row)
+4. **Projects + Workspaces module** — GET endpoints for frontend to consume
+5. **Next.js app scaffold** — auth pages, projects list, issue list, issue detail, settings/integrations (all calls go to NestJS)
+6. **Extension auth + submission** — login form in popup, JWT storage, project selector, POST to NestJS
+7. **Azure DevOps integration** — integrations module in NestJS (save PAT, test connection, sync issue)
+8. **Polish** — sync status badges, ADO ticket link, error states, loading states
 
 ---
 
