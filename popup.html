@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 340px; font-family: -apple-system, sans-serif; font-size: 14px; color: #111; }
+    .screen { display: none; flex-direction: column; padding: 16px; gap: 12px; }
+    .screen.active { display: flex; }
+    h2 { font-size: 16px; font-weight: 600; }
+    label { font-size: 12px; font-weight: 500; color: #555; margin-bottom: 2px; display: block; }
+    input, select, textarea { width: 100%; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 10px; font-size: 13px; outline: none; }
+    input:focus, select:focus, textarea:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
+    textarea { resize: vertical; min-height: 80px; }
+    button { width: 100%; padding: 9px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; }
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: #f3f4f6; color: #374151; }
+    .error { color: #dc2626; font-size: 12px; }
+    .success { color: #16a34a; font-size: 12px; }
+    .user-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #6b7280; }
+    .sign-out { background: none; border: none; color: #3b82f6; cursor: pointer; font-size: 12px; padding: 0; width: auto; }
+    .screenshot-preview { width: 100%; border-radius: 6px; border: 1px solid #e5e7eb; max-height: 120px; object-fit: cover; }
+  </style>
+</head>
+<body>
+
+<!-- Login screen -->
+<div id="screen-login" class="screen">
+  <h2>QA Reporter</h2>
+  <div>
+    <label>Email</label>
+    <input type="email" id="login-email" placeholder="you@example.com">
+  </div>
+  <div>
+    <label>Password</label>
+    <input type="password" id="login-password" placeholder="••••••••">
+  </div>
+  <p id="login-error" class="error"></p>
+  <button class="btn-primary" id="btn-login">Sign in</button>
+</div>
+
+<!-- Report screen -->
+<div id="screen-report" class="screen">
+  <div class="user-row">
+    <span id="user-email-label"></span>
+    <button class="sign-out" id="btn-signout">Sign out</button>
+  </div>
+  <div>
+    <label>Project</label>
+    <select id="project-select">
+      <option value="">Loading projects...</option>
+    </select>
+  </div>
+  <div>
+    <label>Description</label>
+    <textarea id="description" placeholder="What went wrong?"></textarea>
+  </div>
+  <img id="screenshot-preview" class="screenshot-preview" style="display:none">
+  <button class="btn-secondary" id="btn-capture">Capture Screenshot</button>
+  <p id="report-error" class="error"></p>
+  <p id="report-success" class="success"></p>
+  <button class="btn-primary" id="btn-submit" disabled>Submit Bug Report</button>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

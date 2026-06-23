@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "QA Reporter",
+  "version": "1.0.0",
+  "description": "Report bugs directly to your QA dashboard",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "https://faasplsazadmtixuwzsn.supabase.co/*",
+    "http://localhost:4000/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}
