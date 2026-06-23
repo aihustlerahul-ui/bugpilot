@@ -16,9 +16,12 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) { setError(error.message); setLoading(false) }
-    else { router.push('/projects'); router.refresh() }
+    else {
+      if (data.session) sessionStorage.setItem('qa_token', data.session.access_token)
+      router.push('/projects'); router.refresh()
+    }
   }
 
   return (

@@ -24,6 +24,7 @@ export default function SignupPage() {
       setLoading(false)
       return
     }
+    sessionStorage.setItem('qa_token', data.session.access_token)
     try {
       await api.post('/workspaces', { name: workspaceName })
       router.push('/projects')
