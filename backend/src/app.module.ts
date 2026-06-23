@@ -4,6 +4,7 @@ import { SupabaseModule } from './supabase/supabase.module'
 import { WorkspacesModule } from './workspaces/workspaces.module'
 import { ProjectsModule } from './projects/projects.module'
 import { IssuesModule } from './issues/issues.module'
+import { IntegrationsModule } from './integrations/integrations.module'
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { IssuesModule } from './issues/issues.module'
     WorkspacesModule,
     ProjectsModule,
     IssuesModule,
+    IntegrationsModule,
   ],
 })
 export class AppModule {}
