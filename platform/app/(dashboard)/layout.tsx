@@ -32,9 +32,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           className={`px-3 py-2 rounded-lg text-sm ${pathname.startsWith('/projects') ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-100'}`}>
           Projects
         </Link>
-        <Link href="/settings/integrations"
-          className={`px-3 py-2 rounded-lg text-sm ${pathname.startsWith('/settings') ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-100'}`}>
-          Integrations
+        <Link href="/connectors"
+          className={`px-3 py-2 rounded-lg text-sm ${pathname.startsWith('/connectors') ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-100'}`}>
+          Connectors
         </Link>
         <button onClick={handleSignOut}
           className="mt-auto px-3 py-2 rounded-lg text-sm text-left text-gray-500 hover:bg-gray-100">
