@@ -5,6 +5,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module'
 import { ProjectsModule } from './projects/projects.module'
 import { IssuesModule } from './issues/issues.module'
 import { IntegrationsModule } from './integrations/integrations.module'
+import { MembersModule } from './members/members.module'
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { IntegrationsModule } from './integrations/integrations.module'
     ProjectsModule,
     IssuesModule,
     IntegrationsModule,
+    MembersModule,
   ],
 })
 export class AppModule {}
