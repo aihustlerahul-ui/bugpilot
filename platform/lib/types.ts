@@ -20,6 +20,20 @@ export interface IssueMetadata {
   assignee?:           string | null
 }
 
+export interface TeamMember {
+  id: string
+  workspace_id: string
+  name: string
+  email: string
+  created_at: string
+}
+
+export type MemberConflictCode = 'EMAIL_CONFLICT' | 'NAME_CONFLICT'
+export interface MemberConflict {
+  code: MemberConflictCode
+  existing: TeamMember
+}
+
 export interface Issue {
   id: string; project_id: string; reporter_id: string
   title: string | null
