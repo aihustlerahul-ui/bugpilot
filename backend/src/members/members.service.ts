@@ -58,6 +58,8 @@ export class MembersService {
 
   async deleteMember(userId: string, memberId: string) {
     const workspace = await this.workspaces.findByOwner(userId)
+    const existing = await this.findById(workspace.id, memberId)
+    if (!existing) throw new NotFoundException('Member not found')
     const { error } = await this.supabase.db
       .from('workspace_members')
       .delete()
@@ -85,7 +87,7 @@ export class MembersService {
       .select('*')
       .eq('workspace_id', workspaceId)
       .eq('email', email)
-      .single()
+      .maybeSingle()
     return data ?? null
   }
 
@@ -95,7 +97,7 @@ export class MembersService {
       .select('*')
       .eq('workspace_id', workspaceId)
       .eq('name', name)
-      .single()
+      .maybeSingle()
     return data ?? null
   }
 
@@ -105,7 +107,7 @@ export class MembersService {
       .select('*')
       .eq('workspace_id', workspaceId)
       .eq('id', memberId)
-      .single()
+      .maybeSingle()
     return data ?? null
   }
 
