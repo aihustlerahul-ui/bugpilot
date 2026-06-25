@@ -23,6 +23,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     handleGetProjects(sendResponse);
     return true;
   }
+  if (type === 'GET_PROJECT_MEMBERS') {
+    handleGetProjectMembers(message, sendResponse);
+    return true;
+  }
   if (type === 'SYNC_SETTINGS') {
     handleSyncSettings(sendResponse);
     return true;
@@ -92,6 +96,23 @@ async function handleGetProjects(sendResponse) {
     sendResponse({ ok: true, projects });
   } catch (err) {
     sendResponse({ ok: false, error: err.message });
+  }
+}
+
+// ── GET_PROJECT_MEMBERS ───────────────────────────────────────────────────────
+async function handleGetProjectMembers(message, sendResponse) {
+  try {
+    const { qa_token: token } = await chrome.storage.local.get(['qa_token']);
+    if (!token) return sendResponse({ ok: false, error: 'Not authenticated' });
+    const res = await fetch(`${API_URL}/api/workspaces/members/project/${message.projectId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.status === 401) return sendResponse({ ok: false, error: '401' });
+    if (!res.ok) return sendResponse({ ok: false, error: `HTTP ${res.status}` });
+    const members = await res.json();
+    return sendResponse({ ok: true, members });
+  } catch (err) {
+    return sendResponse({ ok: false, error: err.message });
   }
 }
 

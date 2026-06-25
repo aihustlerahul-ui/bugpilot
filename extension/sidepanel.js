@@ -29,8 +29,9 @@ const btnClear           = document.getElementById('btn-clear');
 const toast              = document.getElementById('toast');
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let isRecording  = false;
-let captureCount = 0;
+let isRecording    = false;
+let captureCount   = 0;
+let sessionMembers = []; // project members for current project, in-memory only
 
 // ── Token refresh ─────────────────────────────────────────────────────────────
 async function refreshAccessToken() {
@@ -195,6 +196,12 @@ async function populateProjects(projects) {
   }
 
   projectSelect.disabled = false;
+
+  // Pre-fetch members for already-selected project
+  if (projectSelect.value) {
+    const resp = await chrome.runtime.sendMessage({ type: 'GET_PROJECT_MEMBERS', projectId: projectSelect.value });
+    sessionMembers = resp.ok ? (resp.members || []) : [];
+  }
 }
 
 // ── Active tab helper ─────────────────────────────────────────────────────────
@@ -308,7 +315,13 @@ btnSignout.addEventListener('click', async () => {
 projectSelect.addEventListener('change', async () => {
   const id   = projectSelect.value;
   const name = projectSelect.options[projectSelect.selectedIndex]?.textContent || '';
-  if (id) await chrome.storage.local.set({ qa_selected_project: { id, name } });
+  if (id) {
+    await chrome.storage.local.set({ qa_selected_project: { id, name } });
+    const resp = await chrome.runtime.sendMessage({ type: 'GET_PROJECT_MEMBERS', projectId: id });
+    sessionMembers = resp.ok ? (resp.members || []) : [];
+  } else {
+    sessionMembers = [];
+  }
 });
 
 // ── Recording toggle ──────────────────────────────────────────────────────────
@@ -331,12 +344,12 @@ async function startRecording() {
     applyRecordingState(true);
 
     try {
-      await chrome.tabs.sendMessage(tab.id, { type: 'START_REPORTING' });
+      await chrome.tabs.sendMessage(tab.id, { type: 'START_REPORTING', members: sessionMembers });
     } catch (_) {
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
       await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ['content-styles.css'] });
       await new Promise(r => setTimeout(r, 300));
-      await chrome.tabs.sendMessage(tab.id, { type: 'START_REPORTING' });
+      await chrome.tabs.sendMessage(tab.id, { type: 'START_REPORTING', members: sessionMembers });
     }
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
