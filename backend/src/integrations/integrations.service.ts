@@ -5,6 +5,7 @@ const DEFAULT_FIELD_MAPPING: Record<string, string> = {
   'System.Title': 'description',
   'Microsoft.VSTS.TCM.ReproSteps': 'repro_steps',
   'System.Description': 'system_info',
+  'System.AssignedTo': 'assignee',
 }
 
 // All Azure Bug fields the user can map to
@@ -12,8 +13,11 @@ export const AZURE_FIELDS = [
   { field: 'System.Title', label: 'Title', required: true },
   { field: 'Microsoft.VSTS.TCM.ReproSteps', label: 'Repro Steps' },
   { field: 'System.Description', label: 'Description / System Info' },
+  { field: 'System.AssignedTo',              label: 'Assigned To' },
   { field: 'Microsoft.VSTS.Common.Priority', label: 'Priority' },
   { field: 'Microsoft.VSTS.Common.Severity', label: 'Severity' },
+  { field: 'System.Tags',                    label: 'Tags' },
+  { field: 'System.IterationPath',           label: 'Sprint / Iteration' },
 ]
 
 // QA Reporter fields the user can pick as sources
@@ -26,6 +30,11 @@ export const QA_SOURCE_FIELDS = [
   { key: 'element_info', label: 'Element info' },
   { key: 'repro_steps', label: 'Repro Steps (auto-built)' },
   { key: 'system_info', label: 'System Info (auto-built)' },
+  { key: 'assignee',  label: 'Assignee (email)' },
+  { key: 'priority',  label: 'Priority' },
+  { key: 'severity',  label: 'Severity' },
+  { key: 'labels',    label: 'Labels (as tags)' },
+  { key: 'sprint',    label: 'Sprint / Iteration path' },
 ]
 import { SupabaseService } from '../supabase/supabase.service'
 import { WorkspacesService } from '../workspaces/workspaces.service'
@@ -124,11 +133,17 @@ export class IntegrationsService {
     const mapping: Record<string, string> = integration.config.field_mapping ?? DEFAULT_FIELD_MAPPING
     const body = this.buildPatchBody(issue, mapping)
 
-    // Upload screenshot as Azure attachment if present
+    // Upload screenshots as Azure attachments if present
     if (issue.screenshot_url) {
-      const attachmentUrl = await this.uploadScreenshotAttachment(baseUrl, project_name, pat, issue.screenshot_url).catch(() => null)
+      const attachmentUrl = await this.uploadScreenshotAttachment(baseUrl, project_name, pat, issue.screenshot_url, 'element-screenshot').catch(() => null)
       if (attachmentUrl) {
-        body.push({ op: 'add', path: '/relations/-', value: { rel: 'AttachedFile', url: attachmentUrl, attributes: { comment: 'Screenshot captured by QA Reporter' } } } as any)
+        body.push({ op: 'add', path: '/relations/-', value: { rel: 'AttachedFile', url: attachmentUrl, attributes: { comment: 'Element screenshot captured by QA Reporter' } } } as any)
+      }
+    }
+    if (issue.element_screenshot_url) {
+      const attachmentUrl = await this.uploadScreenshotAttachment(baseUrl, project_name, pat, issue.element_screenshot_url, 'full-page-screenshot').catch(() => null)
+      if (attachmentUrl) {
+        body.push({ op: 'add', path: '/relations/-', value: { rel: 'AttachedFile', url: attachmentUrl, attributes: { comment: 'Full page screenshot captured by QA Reporter' } } } as any)
       }
     }
 
@@ -206,28 +221,185 @@ export class IntegrationsService {
         return [e.tag, e.id ? `#${e.id}` : '', e.text].filter(Boolean).join(' ')
       }
       case 'repro_steps': {
-        const parts: string[] = []
-        if (issue.url) parts.push(`<p><strong>Page URL:</strong> <a href="${issue.url}">${issue.url}</a></p>`)
-        if (issue.route) parts.push(`<p><strong>Route:</strong> ${issue.route}</p>`)
-        if (issue.screenshot_url) parts.push(`<p><strong>Screenshot:</strong> <a href="${issue.screenshot_url}">View screenshot</a></p>`)
-        return parts.join('') || `<p>${issue.description}</p>`
+        return this.buildReproSteps(issue)
       }
       case 'system_info': {
-        const parts: string[] = []
-        const b = issue.browser_info ?? {}
-        const browser = [b.browser, b.version, b.os].filter(Boolean).join(' / ')
-        if (browser) parts.push(`<p><strong>Browser:</strong> ${browser}</p>`)
-        const e = issue.element_info ?? {}
-        const el = [e.tag, e.id ? `#${e.id}` : '', e.text].filter(Boolean).join(' ')
-        if (el) parts.push(`<p><strong>Element:</strong> ${el}</p>`)
-        parts.push('<p><strong>Reported via:</strong> QA Reporter</p>')
-        return parts.join('')
+        return this.buildSystemInfo(issue)
       }
+      case 'assignee':
+        return issue.metadata?.assignee ?? ''
+
+      case 'priority': {
+        const p = (issue.metadata?.priority ?? '').toLowerCase()
+        const map: Record<string, string> = { critical: '1', high: '2', medium: '3', low: '4' }
+        return map[p] ?? ''
+      }
+
+      case 'severity': {
+        const s = (issue.severity ?? '').toLowerCase()
+        const map: Record<string, string> = {
+          critical: '1 - Critical',
+          high:     '2 - High',
+          medium:   '3 - Medium',
+          low:      '4 - Low',
+        }
+        return map[s] ?? ''
+      }
+
+      case 'labels': {
+        const labels = issue.metadata?.labels
+        if (!Array.isArray(labels) || !labels.length) return ''
+        return labels.join('; ')
+      }
+
+      case 'sprint':
+        return issue.metadata?.sprint ?? ''
+
       default: return ''
     }
   }
 
-  private async uploadScreenshotAttachment(baseUrl: string, projectName: string, pat: string, screenshotUrl: string): Promise<string> {
+  private buildReproSteps(issue: any): string {
+    const m = issue.metadata ?? {}
+    const e = issue.element_info ?? {}
+    const sections: string[] = []
+
+    // Bug description
+    if (issue.description) {
+      sections.push(`<h3>Description</h3><p>${this.esc(issue.description)}</p>`)
+    }
+
+    // Where it happened
+    const location: string[] = []
+    if (issue.url) location.push(`<p><strong>Page URL:</strong> <a href="${issue.url}">${this.esc(issue.url)}</a></p>`)
+    if (issue.route) location.push(`<p><strong>Route:</strong> ${this.esc(issue.route)}</p>`)
+    const ctx = m.pageContext ?? {}
+    if (ctx.title) location.push(`<p><strong>Page Title:</strong> ${this.esc(ctx.title)}</p>`)
+    if (ctx.queryParams && Object.keys(ctx.queryParams).length) {
+      const qs = Object.entries(ctx.queryParams).map(([k, v]) => `${k}=${v}`).join('&amp;')
+      location.push(`<p><strong>Query Params:</strong> ?${this.esc(qs)}</p>`)
+    }
+    if (ctx.scrollPosition) location.push(`<p><strong>Scroll:</strong> (${ctx.scrollPosition.x}, ${ctx.scrollPosition.y})</p>`)
+    if (location.length) sections.push(`<h3>Location</h3>${location.join('')}`)
+
+    // Element
+    const elParts: string[] = []
+    const tagStr = [e.tag, e.id ? `#${e.id}` : '', e.cssSelector ?? e.selector].filter(Boolean)
+    if (tagStr.length) elParts.push(`<p><strong>Selector:</strong> <code>${this.esc(tagStr.join(' '))}</code></p>`)
+    if (e.text) elParts.push(`<p><strong>Text:</strong> ${this.esc(e.text)}</p>`)
+    if (e.xpath) elParts.push(`<p><strong>XPath:</strong> <code>${this.esc(e.xpath)}</code></p>`)
+    if (e.domBreadcrumb) elParts.push(`<p><strong>DOM Path:</strong> <code>${this.esc(e.domBreadcrumb)}</code></p>`)
+    if (e.dimensions) {
+      const d = e.dimensions
+      elParts.push(`<p><strong>Dimensions:</strong> ${d.width}×${d.height} at (${d.left}, ${d.top})</p>`)
+    }
+    if (elParts.length) sections.push(`<h3>Element</h3>${elParts.join('')}`)
+
+    // Screenshots
+    const shots: string[] = []
+    if (issue.screenshot_url) shots.push(`<p>📸 <a href="${issue.screenshot_url}">Element Screenshot</a></p>`)
+    if (issue.element_screenshot_url) shots.push(`<p>🖥️ <a href="${issue.element_screenshot_url}">Full Page Screenshot</a></p>`)
+    if (shots.length) sections.push(`<h3>Screenshots</h3>${shots.join('')}`)
+
+    // Expected / Actual (only if captured in form)
+    const form: string[] = []
+    if (m.expectedResult) form.push(`<p><strong>Expected:</strong> ${this.esc(m.expectedResult)}</p>`)
+    if (m.actualResult) form.push(`<p><strong>Actual:</strong> ${this.esc(m.actualResult)}</p>`)
+    if (m.priority) form.push(`<p><strong>Priority:</strong> ${this.esc(m.priority)}</p>`)
+    if (m.environment) form.push(`<p><strong>Environment:</strong> ${this.esc(m.environment)}</p>`)
+    if (m.labels?.length) form.push(`<p><strong>Labels:</strong> ${this.esc(m.labels.join(', '))}</p>`)
+    if (m.sprint) form.push(`<p><strong>Sprint:</strong> ${this.esc(m.sprint)}</p>`)
+    if (m.assignee) form.push(`<p><strong>Assignee:</strong> ${this.esc(m.assignee)}</p>`)
+    if (form.length) sections.push(`<h3>Bug Details</h3>${form.join('')}`)
+
+    // Console errors (only if captured)
+    const consoleErrors: any[] = m.consoleErrors ?? []
+    if (consoleErrors.length) {
+      const items = consoleErrors.slice(0, 10).map(c => `<li><code>[${c.level}]</code> ${this.esc(c.message)}</li>`).join('')
+      sections.push(`<h3>Console Errors</h3><ul>${items}</ul>`)
+    }
+
+    // Network errors (only if captured)
+    const networkErrors: any[] = m.networkErrors ?? []
+    if (networkErrors.length) {
+      const items = networkErrors.slice(0, 10).map(n => `<li><code>[${n.method}]</code> ${this.esc(n.url)} → ${n.status} (${n.duration}ms)</li>`).join('')
+      sections.push(`<h3>Network Errors</h3><ul>${items}</ul>`)
+    }
+
+    return sections.join('') || `<p>${this.esc(issue.description ?? '')}</p>`
+  }
+
+  private buildSystemInfo(issue: any): string {
+    const m = issue.metadata ?? {}
+    const b = issue.browser_info ?? {}
+    const e = issue.element_info ?? {}
+    const sections: string[] = []
+
+    // Browser / Environment
+    const env: string[] = []
+    const browser = [b.browser, b.version, b.os].filter(Boolean).join(' / ')
+    if (browser) env.push(`<p><strong>Browser:</strong> ${this.esc(browser)}</p>`)
+    if (b.userAgent) env.push(`<p><strong>User Agent:</strong> ${this.esc(b.userAgent)}</p>`)
+    if (b.language) env.push(`<p><strong>Language:</strong> ${this.esc(b.language)}</p>`)
+    if (b.viewport) env.push(`<p><strong>Viewport:</strong> ${b.viewport.width}×${b.viewport.height}</p>`)
+    if (b.devicePixelRatio) env.push(`<p><strong>DPR:</strong> ${b.devicePixelRatio}</p>`)
+    if (env.length) sections.push(`<h3>Environment</h3>${env.join('')}`)
+
+    // React component (only if captured)
+    const react = e.react ?? {}
+    if (react.componentName) {
+      const r: string[] = []
+      r.push(`<p><strong>Component:</strong> ${this.esc(react.componentName)}</p>`)
+      if (react.source) r.push(`<p><strong>Source:</strong> <code>${this.esc(react.source)}</code></p>`)
+      if (react.componentTree) r.push(`<p><strong>Tree:</strong> ${this.esc(react.componentTree)}</p>`)
+      sections.push(`<h3>React Component</h3>${r.join('')}`)
+    }
+
+    // Performance (only if captured)
+    const perf = m.performanceMetrics ?? {}
+    if (Object.keys(perf).length) {
+      const p: string[] = []
+      if (perf.pageLoadMs != null) p.push(`<strong>Page Load:</strong> ${perf.pageLoadMs}ms`)
+      if (perf.domContentLoadedMs != null) p.push(`<strong>DCL:</strong> ${perf.domContentLoadedMs}ms`)
+      if (perf.ttfbMs != null) p.push(`<strong>TTFB:</strong> ${perf.ttfbMs}ms`)
+      if (perf.firstContentfulPaintMs != null) p.push(`<strong>FCP:</strong> ${perf.firstContentfulPaintMs}ms`)
+      if (p.length) sections.push(`<h3>Performance</h3><p>${p.join(' &nbsp;|&nbsp; ')}</p>`)
+    }
+
+    // App state (only if captured)
+    const appState = m.appState ?? {}
+    if (appState.reactRouterState || appState.zustandStoreKeys?.length) {
+      const a: string[] = []
+      if (appState.reactRouterState) a.push(`<p><strong>Router State:</strong> <code>${this.esc(JSON.stringify(appState.reactRouterState))}</code></p>`)
+      if (appState.zustandStoreKeys?.length) a.push(`<p><strong>Zustand Stores:</strong> ${this.esc(appState.zustandStoreKeys.join(', '))}</p>`)
+      sections.push(`<h3>App State</h3>${a.join('')}`)
+    }
+
+    // Navigation history (only if captured)
+    const nav: any[] = m.navigationHistory ?? []
+    if (nav.length) {
+      const trail = nav.map(n => this.esc(n.url ?? n)).join(' → ')
+      sections.push(`<h3>Navigation History</h3><p>${trail}</p>`)
+    }
+
+    // User info (only if captured)
+    if (m.userInfo?.id || m.userInfo?.email) {
+      const u: string[] = []
+      if (m.userInfo.id) u.push(`<p><strong>User ID:</strong> ${this.esc(m.userInfo.id)}</p>`)
+      if (m.userInfo.email) u.push(`<p><strong>Email:</strong> ${this.esc(m.userInfo.email)}</p>`)
+      if (m.userInfo.name) u.push(`<p><strong>Name:</strong> ${this.esc(m.userInfo.name)}</p>`)
+      sections.push(`<h3>User</h3>${u.join('')}`)
+    }
+
+    sections.push('<p><em>Reported via QA Reporter</em></p>')
+    return sections.join('')
+  }
+
+  private esc(s: string): string {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  }
+
+  private async uploadScreenshotAttachment(baseUrl: string, projectName: string, pat: string, screenshotUrl: string, label = 'screenshot'): Promise<string> {
     // Fetch the image from Supabase
     const imageRes = await fetch(screenshotUrl)
     if (!imageRes.ok) throw new Error('Could not fetch screenshot')
@@ -237,7 +409,7 @@ export class IntegrationsService {
 
     // Upload to Azure DevOps attachments API
     const uploadRes = await fetch(
-      `${baseUrl}/${projectName}/_apis/wit/attachments?fileName=screenshot.${ext}&api-version=7.1`,
+      `${baseUrl}/${projectName}/_apis/wit/attachments?fileName=${label}.${ext}&api-version=7.1`,
       {
         method: 'POST',
         headers: {
