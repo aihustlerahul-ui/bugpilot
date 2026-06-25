@@ -492,3 +492,16 @@
   from { transform: translateX(110%); opacity: 0; }
   to   { transform: translateX(0);    opacity: 1; }
 }
+
+.qa-select {
+  width: 100% !important;
+  border: 1px solid var(--qa-border) !important;
+  border-radius: 6px !important;
+  padding: 6px 10px !important;
+  font-size: 13px !important;
+  background: var(--qa-surface) !important;
+  color: var(--qa-text-hi) !important;
+  -webkit-appearance: auto !important;
+  appearance: auto !important;
+  box-sizing: border-box !important;
+}

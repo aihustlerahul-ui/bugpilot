@@ -132,6 +132,9 @@
 
   // ── State ───────────────────────────────────────────────────────────────────
   var recording     = false;
+  var qaSessionMembers = [];
+  var qaLastAssignee   = null; // sticky: '__me__' or an email string
+  var qaOwnerEmail     = null;
   var capturedCount = 0;
   var highlightEl   = null;
   var hoveredTarget = null;
@@ -194,6 +197,16 @@
     return String(str || '')
       .replace(/&/g, '&amp;').replace(/</g, '&lt;')
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function buildAssigneeOptions(currentValue) {
+    var ownerVal   = '__me__';
+    var ownerLabel = qaOwnerEmail ? 'Me (' + qaOwnerEmail + ')' : 'Me (default)';
+    var html = '<option value="' + ownerVal + '"' + (!currentValue || currentValue === ownerVal ? ' selected' : '') + '>' + ownerLabel + '</option>';
+    qaSessionMembers.forEach(function (m) {
+      html += '<option value="' + escapeHTML(m.email) + '"' + (currentValue === m.email ? ' selected' : '') + '>' + escapeHTML(m.name) + '</option>';
+    });
+    return html;
   }
 
   function safeGetTextContent(element, maxLength) {
@@ -637,7 +650,11 @@
 
   // ── Message listener ─────────────────────────────────────────────────────────
   chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
-    if (message.type === MESSAGE_TYPES.START_REPORTING) { startRecording(); sendResponse({ ok: true }); return true; }
+    if (message.type === MESSAGE_TYPES.START_REPORTING) {
+      qaSessionMembers = message.members || [];
+      chrome.storage.local.get(['qa_user_email'], function (r) { qaOwnerEmail = r.qa_user_email || null; });
+      startRecording(); sendResponse({ ok: true }); return true;
+    }
     if (message.type === MESSAGE_TYPES.STOP_REPORTING)  { stopRecording();  sendResponse({ ok: true }); return true; }
     if (message.type === 'IS_RECORDING')                { sendResponse({ recording: recording }); return true; }
   });
@@ -875,6 +892,7 @@
           '<summary>Severity &amp; more</summary>' +
           '<div class="qa-collapsible-body">' +
             '<div class="qa-form-group"><label class="qa-form-label">Severity</label><select class="qa-form-select" id="qa-severity-select"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option><option value="Critical">Critical</option></select></div>' +
+            '<div class="qa-form-group"><label class="qa-form-label">Assignee</label><select class="qa-select" id="qa-assignee-select">' + buildAssigneeOptions(qaLastAssignee) + '</select></div>' +
           '</div>' +
         '</details>' +
         '<details class="qa-collapsible">' +
@@ -940,6 +958,7 @@
       var labelsInput     = modal.querySelector('#qa-labels-input');
       var sprintInput     = modal.querySelector('#qa-sprint-input');
       var assigneeInput   = modal.querySelector('#qa-assignee-input');
+      var assigneeSelect  = modal.querySelector('#qa-assignee-select');
 
       if (expectedInput && expectedInput.value.trim())  issue.expectedResult = expectedInput.value.trim();
       if (actualInput   && actualInput.value.trim())    issue.actualResult   = actualInput.value.trim();
@@ -948,6 +967,13 @@
       if (labelsInput && labelsInput.value.trim())      issue.labels         = labelsInput.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
       if (sprintInput && sprintInput.value.trim())      issue.sprint         = sprintInput.value.trim();
       if (assigneeInput && assigneeInput.value.trim())  issue.assignee       = assigneeInput.value.trim();
+
+      // Assignee dropdown (always present)
+      var rawAssignee      = assigneeSelect ? assigneeSelect.value : '__me__';
+      var resolvedAssignee = rawAssignee === '__me__' ? (qaOwnerEmail || null) : rawAssignee;
+      qaLastAssignee       = rawAssignee; // sticky for next bug
+      issue.metadata       = issue.metadata || {};
+      issue.metadata.assignee = resolvedAssignee;
 
       // Element info
       issue.element = {
