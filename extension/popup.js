@@ -1,199 +1,375 @@
-const SUPABASE_URL = 'https://faasplsazadmtixuwzsn.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhYXNwbHNhemFkbXRpeHV3enNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyMTYyOTIsImV4cCI6MjA5Nzc5MjI5Mn0.hagIYaR3QzF41p99VQJU0J1C7_lnabBqlJ6MAhl7tbw'
-const API_URL = 'http://localhost:4000'
+// QA Reporter — Popup Script
+'use strict';
 
-let currentToken = null
-let capturedScreenshot = null
+const SUPABASE_URL = 'https://faasplsazadmtixuwzsn.supabase.co';
+const SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhYXNwbHNhemFkbXRpeHV3enNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyMTYyOTIsImV4cCI6MjA5Nzc5MjI5Mn0.hagIYaR3QzF41p99VQJU0J1C7_lnabBqlJ6MAhl7tbw';
 
-function showScreen(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
-  document.getElementById(id).classList.add('active')
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const viewAuth = document.getElementById('view-auth');
+const viewMain = document.getElementById('view-main');
+
+const authEmail    = document.getElementById('auth-email');
+const authPassword = document.getElementById('auth-password');
+const authError    = document.getElementById('auth-error');
+const btnSignin    = document.getElementById('btn-signin');
+
+const displayEmail       = document.getElementById('display-email');
+const btnSignout         = document.getElementById('btn-signout');
+const statusBar          = document.getElementById('status-bar');
+const statusText         = document.getElementById('status-text');
+const projectSelect      = document.getElementById('project-select');
+const btnToggleRecording = document.getElementById('btn-toggle-recording');
+const bufferBadge        = document.getElementById('buffer-badge');
+const bufferActions      = document.getElementById('buffer-actions');
+const btnSubmitAll       = document.getElementById('btn-submit-all');
+const btnClear           = document.getElementById('btn-clear');
+const toast              = document.getElementById('toast');
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let isRecording = false;
+
+// ── View helpers ──────────────────────────────────────────────────────────────
+function showAuth() {
+  viewAuth.classList.add('active');
+  viewMain.classList.remove('active');
 }
 
-async function supabasePost(path, body) {
-  const res = await fetch(`${SUPABASE_URL}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-    body: JSON.stringify(body),
-  })
-  return res.json()
+function showMain() {
+  viewMain.classList.add('active');
+  viewAuth.classList.remove('active');
 }
 
-async function apiGet(path, token) {
-  const res = await fetch(`${API_URL}/api${path}`, {
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-  })
-  if (!res.ok) {
-    const err = new Error(`API error: ${res.status}`)
-    err.status = res.status
-    throw err
-  }
-  return res.json()
+function showToast(msg, type = 'success', durationMs = 3000) {
+  toast.textContent = msg;
+  toast.className = `show ${type}`;
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => { toast.className = ''; }, durationMs);
 }
 
-async function apiPost(path, body, token) {
-  const res = await fetch(`${API_URL}/api${path}`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}))
-    const err = new Error(data.message || `API error: ${res.status}`)
-    err.status = res.status
-    throw err
-  }
-  return res.json()
-}
+// ── Buffer UI ─────────────────────────────────────────────────────────────────
+async function refreshBufferUI() {
+  const { qa_buffered_issues: issues = [] } = await chrome.storage.local.get(['qa_buffered_issues']);
+  const count = issues.length;
 
-async function loadProjects(token) {
-  const select = document.getElementById('project-select')
-  try {
-    const projects = await apiGet('/projects', token)
-    select.innerHTML = ''
-    if (projects.length === 0) {
-      const opt = document.createElement('option')
-      opt.value = ''
-      opt.textContent = 'No projects yet — create one in the dashboard'
-      select.appendChild(opt)
-      document.getElementById('btn-submit').disabled = true
-    } else {
-      projects.forEach(p => {
-        const opt = document.createElement('option')
-        opt.value = p.id
-        opt.textContent = p.name
-        select.appendChild(opt)
-      })
-      document.getElementById('btn-submit').disabled = false
-    }
-  } catch (err) {
-    if (err.status === 401) {
-      await chrome.storage.local.remove(['qa_token', 'qa_email'])
-      showScreen('screen-login')
-      document.getElementById('login-error').textContent = 'Session expired — please sign in again.'
-    } else {
-      const opt = document.createElement('option')
-      opt.value = ''
-      opt.textContent = 'Failed to load projects'
-      select.innerHTML = ''
-      select.appendChild(opt)
-    }
-  }
-}
+  bufferBadge.textContent = count;
+  bufferBadge.className = `buffer-badge${count === 0 ? ' zero' : ''}`;
 
-async function init() {
-  const stored = await chrome.storage.local.get(['qa_token', 'qa_email'])
-  if (stored.qa_token) {
-    currentToken = stored.qa_token
-    document.getElementById('user-email-label').textContent = stored.qa_email || ''
-    showScreen('screen-report')
-    await loadProjects(currentToken)
+  if (count > 0) {
+    bufferActions.style.display = 'flex';
+    btnSubmitAll.textContent = `Submit All (${count})`;
   } else {
-    showScreen('screen-login')
+    bufferActions.style.display = 'none';
   }
 }
 
-document.getElementById('btn-login').addEventListener('click', async () => {
-  const email = document.getElementById('login-email').value.trim()
-  const password = document.getElementById('login-password').value
-  const errorEl = document.getElementById('login-error')
-  errorEl.textContent = ''
+// ── Recording UI ──────────────────────────────────────────────────────────────
+function applyRecordingState(recording) {
+  isRecording = recording;
+  if (recording) {
+    statusBar.className = 'status-bar recording';
+    statusText.textContent = 'Recording…';
+    btnToggleRecording.className = 'btn btn-stop';
+    btnToggleRecording.textContent = '■ Stop Recording';
+  } else {
+    statusBar.className = 'status-bar idle';
+    statusText.textContent = 'Ready to record';
+    btnToggleRecording.className = 'btn btn-record';
+    btnToggleRecording.textContent = '▶ Start Recording';
+  }
+}
 
-  if (!email || !password) { errorEl.textContent = 'Email and password required.'; return }
+// ── Projects ──────────────────────────────────────────────────────────────────
+async function loadProjects() {
+  projectSelect.innerHTML = '<option value="">Loading…</option>';
+  projectSelect.disabled = true;
 
-  const btn = document.getElementById('btn-login')
-  btn.disabled = true
-  btn.textContent = 'Signing in...'
+  const response = await chrome.runtime.sendMessage({ type: 'GET_PROJECTS' });
+
+  if (!response.ok) {
+    const errMsg = response.error || 'Failed to load projects';
+    // 401 = token expired — force sign out
+    if (errMsg.includes('401') || errMsg.includes('Unauthorized')) {
+      await chrome.storage.local.remove(['qa_token', 'qa_user_email', 'qa_recording']);
+      authError.textContent = 'Session expired — please sign in again.';
+      showAuth();
+      return;
+    }
+    projectSelect.innerHTML = `<option value="">Error: ${errMsg}</option>`;
+    projectSelect.disabled = false;
+    return;
+  }
+
+  const projects = response.projects || [];
+  projectSelect.innerHTML = '';
+
+  if (projects.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'No projects — create one in the dashboard';
+    projectSelect.appendChild(opt);
+  } else {
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Select a project…';
+    projectSelect.appendChild(placeholder);
+
+    projects.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      projectSelect.appendChild(opt);
+    });
+
+    // Restore previously selected project
+    const { qa_selected_project } = await chrome.storage.local.get(['qa_selected_project']);
+    if (qa_selected_project && projects.some(p => p.id === qa_selected_project.id)) {
+      projectSelect.value = qa_selected_project.id;
+    }
+  }
+
+  projectSelect.disabled = false;
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  const { qa_token, qa_user_email, qa_recording } = await chrome.storage.local.get([
+    'qa_token',
+    'qa_user_email',
+    'qa_recording',
+  ]);
+
+  if (!qa_token) {
+    showAuth();
+    return;
+  }
+
+  displayEmail.textContent = qa_user_email || 'Signed in';
+  showMain();
+
+  // Verify the active tab's content script is actually recording.
+  // If it doesn't respond (e.g. page refreshed, new tab), clear the stale flag.
+  let actuallyRecording = false;
+  if (qa_recording) {
+    try {
+      const tab = await getActiveTab();
+      if (tab) {
+        const res = await chrome.tabs.sendMessage(tab.id, { type: 'IS_RECORDING' }).catch(() => null);
+        actuallyRecording = !!(res && res.recording);
+      }
+    } catch (_) {}
+    if (!actuallyRecording) {
+      await chrome.storage.local.set({ qa_recording: false });
+    }
+  }
+
+  applyRecordingState(actuallyRecording);
+  await loadProjects();
+  await refreshBufferUI();
+}
+
+// ── Auth: Sign in ─────────────────────────────────────────────────────────────
+btnSignin.addEventListener('click', async () => {
+  const email    = authEmail.value.trim();
+  const password = authPassword.value;
+  authError.textContent = '';
+
+  if (!email || !password) {
+    authError.textContent = 'Email and password are required.';
+    return;
+  }
+
+  btnSignin.disabled = true;
+  btnSignin.textContent = 'Signing in…';
 
   try {
-    const data = await supabasePost('/auth/v1/token?grant_type=password', { email, password })
+    const res = await fetch(
+      `${SUPABASE_URL}/auth/v1/token?grant_type=password`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ email, password }),
+      }
+    );
+    const data = await res.json();
+
     if (data.error || !data.access_token) {
-      errorEl.textContent = data.error_description || data.error || 'Login failed'
-      return
+      authError.textContent = data.error_description || data.error || 'Login failed.';
+      return;
     }
-    await chrome.storage.local.set({ qa_token: data.access_token, qa_email: email })
-    currentToken = data.access_token
-    document.getElementById('user-email-label').textContent = email
-    showScreen('screen-report')
-    await loadProjects(currentToken)
+
+    await chrome.storage.local.set({
+      qa_token: data.access_token,
+      qa_user_email: email,
+    });
+
+    displayEmail.textContent = email;
+    showMain();
+    await loadProjects();
+    await refreshBufferUI();
   } catch (err) {
-    errorEl.textContent = err.message
+    authError.textContent = err.message;
   } finally {
-    btn.disabled = false
-    btn.textContent = 'Sign in'
+    btnSignin.disabled = false;
+    btnSignin.textContent = 'Sign in';
   }
-})
+});
 
-document.getElementById('btn-signout').addEventListener('click', async () => {
-  await chrome.storage.local.remove(['qa_token', 'qa_email'])
-  currentToken = null
-  capturedScreenshot = null
-  document.getElementById('description').value = ''
-  document.getElementById('screenshot-preview').style.display = 'none'
-  document.getElementById('report-error').textContent = ''
-  document.getElementById('report-success').textContent = ''
-  showScreen('screen-login')
-})
+// Allow Enter key in password field to submit
+authPassword.addEventListener('keydown', e => {
+  if (e.key === 'Enter') btnSignin.click();
+});
 
-document.getElementById('btn-capture').addEventListener('click', async () => {
-  const btn = document.getElementById('btn-capture')
-  btn.textContent = 'Capturing...'
-  btn.disabled = true
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
-    capturedScreenshot = dataUrl
-    const preview = document.getElementById('screenshot-preview')
-    preview.src = dataUrl
-    preview.style.display = 'block'
-    btn.textContent = 'Recapture'
-  } catch (err) {
-    document.getElementById('report-error').textContent = 'Screenshot failed: ' + err.message
-    btn.textContent = 'Capture Screenshot'
+// ── Auth: Sign out ────────────────────────────────────────────────────────────
+btnSignout.addEventListener('click', async () => {
+  // Stop recording first if active
+  if (isRecording) {
+    await sendToActiveTab({ type: 'STOP_REPORTING' });
   }
-  btn.disabled = false
-})
+  await chrome.storage.local.remove([
+    'qa_token',
+    'qa_user_email',
+    'qa_recording',
+    'qa_buffered_issues',
+    'qa_selected_project',
+  ]);
+  applyRecordingState(false);
+  authError.textContent = '';
+  authEmail.value = '';
+  authPassword.value = '';
+  showAuth();
+});
 
-document.getElementById('btn-submit').addEventListener('click', async () => {
-  const description = document.getElementById('description').value.trim()
-  const projectId = document.getElementById('project-select').value
-  const errorEl = document.getElementById('report-error')
-  const successEl = document.getElementById('report-success')
-  errorEl.textContent = ''
-  successEl.textContent = ''
+// ── Project selection ─────────────────────────────────────────────────────────
+projectSelect.addEventListener('change', async () => {
+  const id   = projectSelect.value;
+  const name = projectSelect.options[projectSelect.selectedIndex]?.textContent || '';
+  if (id) {
+    await chrome.storage.local.set({ qa_selected_project: { id, name } });
+  }
+});
 
-  if (!description) { errorEl.textContent = 'Description is required.'; return }
-  if (!projectId) { errorEl.textContent = 'Select a project.'; return }
+// ── Recording toggle ──────────────────────────────────────────────────────────
+btnToggleRecording.addEventListener('click', async () => {
+  if (isRecording) {
+    await stopRecording();
+  } else {
+    await startRecording();
+  }
+});
 
-  const btn = document.getElementById('btn-submit')
-  btn.disabled = true
-  btn.textContent = 'Submitting...'
+async function startRecording() {
+  const projectId = projectSelect.value;
+  if (!projectId) {
+    showToast('Please select a project first.', 'error');
+    return;
+  }
 
+  btnToggleRecording.disabled = true;
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    const body = {
-      project_id: projectId,
-      description,
-      url: tab.url,
-      screenshot: capturedScreenshot || undefined,
+    // Pull latest settings from the platform before recording starts
+    await chrome.runtime.sendMessage({ type: 'SYNC_SETTINGS' });
+
+    const tab = await getActiveTab();
+    if (!tab) { showToast('No active tab found.', 'error'); return; }
+
+    await chrome.storage.local.set({ qa_recording: true });
+    applyRecordingState(true);
+
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'START_REPORTING' });
+    } catch (_) {
+      // Content script not yet loaded — inject it then retry
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ['content-styles.css'] });
+      await new Promise(r => setTimeout(r, 300));
+      await chrome.tabs.sendMessage(tab.id, { type: 'START_REPORTING' });
     }
-    await apiPost('/issues', body, currentToken)
-    successEl.textContent = '✓ Bug report submitted!'
-    document.getElementById('description').value = ''
-    capturedScreenshot = null
-    document.getElementById('screenshot-preview').style.display = 'none'
   } catch (err) {
-    if (err.status === 401) {
-      await chrome.storage.local.remove(['qa_token', 'qa_email'])
-      showScreen('screen-login')
-      document.getElementById('login-error').textContent = 'Session expired — please sign in again.'
+    showToast('Error: ' + err.message, 'error');
+    await chrome.storage.local.set({ qa_recording: false });
+    applyRecordingState(false);
+  } finally {
+    btnToggleRecording.disabled = false;
+  }
+}
+
+async function stopRecording() {
+  btnToggleRecording.disabled = true;
+  try {
+    await sendToActiveTab({ type: 'STOP_REPORTING' });
+    await chrome.storage.local.set({ qa_recording: false });
+    applyRecordingState(false);
+    await refreshBufferUI();
+  } catch (err) {
+    // Content script may be gone (navigation); still update state
+    await chrome.storage.local.set({ qa_recording: false });
+    applyRecordingState(false);
+    await refreshBufferUI();
+  } finally {
+    btnToggleRecording.disabled = false;
+  }
+}
+
+// ── Submit All ────────────────────────────────────────────────────────────────
+btnSubmitAll.addEventListener('click', async () => {
+  const { qa_buffered_issues: issues = [] } = await chrome.storage.local.get(['qa_buffered_issues']);
+  if (issues.length === 0) { showToast('No issues to submit.', 'error'); return; }
+
+  btnSubmitAll.disabled = true;
+  btnSubmitAll.textContent = 'Submitting…';
+
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'SUBMIT_ALL', issues });
+    if (!res.ok) { showToast('Submit failed: ' + res.error, 'error'); return; }
+
+    const failed = res.results.filter(r => !r.ok).length;
+    const succeeded = res.results.filter(r => r.ok).length;
+
+    if (failed === 0) {
+      await chrome.storage.local.set({ qa_buffered_issues: [] });
+      showToast(`✓ ${succeeded} issue${succeeded !== 1 ? 's' : ''} submitted!`, 'success');
     } else {
-      errorEl.textContent = err.message
+      // Keep only the failed ones
+      const failedIssues = issues.filter((_, i) => !res.results[i].ok);
+      await chrome.storage.local.set({ qa_buffered_issues: failedIssues });
+      showToast(`${succeeded} submitted, ${failed} failed.`, 'error');
     }
+    await refreshBufferUI();
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
   } finally {
-    btn.disabled = false
-    btn.textContent = 'Submit Bug Report'
+    btnSubmitAll.disabled = false;
+    await refreshBufferUI();
   }
-})
+});
 
-init()
+// ── Clear buffer ──────────────────────────────────────────────────────────────
+btnClear.addEventListener('click', async () => {
+  await chrome.storage.local.set({ qa_buffered_issues: [] });
+  await refreshBufferUI();
+  showToast('Buffer cleared.', 'success');
+});
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+async function getActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab || null;
+}
+
+async function sendToActiveTab(message) {
+  const tab = await getActiveTab();
+  if (!tab) return null;
+  try {
+    return await chrome.tabs.sendMessage(tab.id, message);
+  } catch (_) {
+    return null;
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+init();

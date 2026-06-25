@@ -1,0 +1,91 @@
+{
+  "nodes": [
+    {
+      "id": "qa-reporter-icon",
+      "label": "QA Reporter Icon",
+      "type": "asset",
+      "description": "The QA Reporter Chrome extension icon concept — shared visual identity across all sizes",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/src/icons"
+    },
+    {
+      "id": "icon-128",
+      "label": "Icon 128x128",
+      "type": "icon",
+      "description": "QA Reporter Chrome extension icon at 128x128 pixels — used in Chrome Web Store and extension management page",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/src/icons/icon128.png"
+    },
+    {
+      "id": "icon-48",
+      "label": "Icon 48x48",
+      "type": "icon",
+      "description": "QA Reporter Chrome extension icon at 48x48 pixels — used in Chrome extensions management page",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/src/icons/icon48.png"
+    },
+    {
+      "id": "icon-32",
+      "label": "Icon 32x32",
+      "type": "icon",
+      "description": "QA Reporter Chrome extension icon at 32x32 pixels — used in Windows favicon and browser UI contexts",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/src/icons/icon32.png"
+    },
+    {
+      "id": "icon-16",
+      "label": "Icon 16x16",
+      "type": "icon",
+      "description": "QA Reporter Chrome extension icon at 16x16 pixels — used in Chrome browser toolbar",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/src/icons/icon16.png"
+    }
+  ],
+  "edges": [
+    {
+      "source": "icon-128",
+      "target": "qa-reporter-icon",
+      "label": "instance_of",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "icon-48",
+      "target": "qa-reporter-icon",
+      "label": "instance_of",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "icon-32",
+      "target": "qa-reporter-icon",
+      "label": "instance_of",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "icon-16",
+      "target": "qa-reporter-icon",
+      "label": "instance_of",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "icon-128",
+      "target": "icon-48",
+      "label": "scaled_variant_of",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "icon-48",
+      "target": "icon-32",
+      "label": "scaled_variant_of",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "icon-32",
+      "target": "icon-16",
+      "label": "scaled_variant_of",
+      "confidence": "EXTRACTED"
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

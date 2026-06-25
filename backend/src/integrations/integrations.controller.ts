@@ -2,7 +2,7 @@ import { Controller, Post, Get, Param, Body, UseGuards } from '@nestjs/common'
 import { SupabaseAuthGuard } from '../common/guards/supabase-auth.guard'
 import { CurrentUser } from '../common/decorators/user.decorator'
 import type { AuthUser } from '../common/interfaces/auth-user.interface'
-import { IntegrationsService } from './integrations.service'
+import { IntegrationsService, AZURE_FIELDS, QA_SOURCE_FIELDS } from './integrations.service'
 import { CreateAzureIntegrationDto } from './dto/create-azure-integration.dto'
 
 @UseGuards(SupabaseAuthGuard)
@@ -18,6 +18,11 @@ export class IntegrationsController {
   @Get('azure')
   getAzure(@CurrentUser() user: AuthUser) {
     return this.integrations.getAzure(user.id)
+  }
+
+  @Get('azure/fields')
+  getAzureFields() {
+    return { azureFields: AZURE_FIELDS, qaSourceFields: QA_SOURCE_FIELDS }
   }
 
   @Post('azure/sync/:issueId')

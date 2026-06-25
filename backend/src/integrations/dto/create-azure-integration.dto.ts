@@ -1,4 +1,4 @@
-import { IsString, IsUrl } from 'class-validator'
+import { IsObject, IsOptional, IsString, IsUrl } from 'class-validator'
 
 export class CreateAzureIntegrationDto {
   @IsUrl()
@@ -7,6 +7,11 @@ export class CreateAzureIntegrationDto {
   @IsString()
   projectName: string
 
+  @IsOptional()
   @IsString()
-  pat: string
+  pat?: string
+
+  @IsOptional()
+  @IsObject()
+  fieldMapping?: Record<string, string>
 }

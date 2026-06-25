@@ -1,0 +1,494 @@
+/* QA Reporter Content Styles — all classes prefixed with qa- to avoid conflicts */
+
+/* ── Design tokens ────────────────────────────────────────────────────────── */
+:root {
+  --qa-brand:      #5b5fc7;
+  --qa-brand-dark: #4a4db5;
+  --qa-brand-bg:   rgba(91,95,199,0.08);
+  --qa-surface:    #ffffff;
+  --qa-bg:         #f4f5fb;
+  --qa-border:     #e2e4f0;
+  --qa-text-hi:    #0f1124;
+  --qa-text-mid:   #4b5066;
+  --qa-text-lo:    #9097b3;
+  --qa-red:        #ef4444;
+  --qa-green:      #22c55e;
+  --qa-radius:     10px;
+}
+
+/* ── Highlight overlay ────────────────────────────────────────────────────── */
+.qa-reporter-highlight-overlay {
+  position: absolute !important;
+  pointer-events: none !important;
+  border: 2px solid var(--qa-brand) !important;
+  background: var(--qa-brand-bg) !important;
+  border-radius: 4px !important;
+  z-index: 2147483645 !important;
+  box-sizing: border-box !important;
+  transition: top 0.04s, left 0.04s, width 0.04s, height 0.04s !important;
+}
+
+/* ── Active recording banner ──────────────────────────────────────────────── */
+.qa-reporter-active-indicator {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  z-index: 2147483646 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 7px 16px !important;
+  background: #0f1124 !important;
+  color: #fff !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  font-size: 12.5px !important;
+  font-weight: 500 !important;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.35) !important;
+  user-select: none !important;
+  letter-spacing: 0.01em !important;
+}
+
+.qa-indicator-dot {
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 50% !important;
+  background: var(--qa-red) !important;
+  flex-shrink: 0 !important;
+  animation: qa-pulse 1.3s ease-in-out infinite !important;
+}
+
+@keyframes qa-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.8); }
+}
+
+.qa-indicator-label { flex: 1 !important; color: #c8cbdf !important; }
+
+.qa-indicator-count {
+  font-size: 11.5px !important;
+  color: var(--qa-text-lo) !important;
+  background: rgba(255,255,255,0.08) !important;
+  padding: 2px 8px !important;
+  border-radius: 20px !important;
+}
+
+.qa-indicator-stop-btn {
+  padding: 5px 13px !important;
+  background: var(--qa-red) !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  font-family: inherit !important;
+  transition: background 0.15s !important;
+  letter-spacing: 0.01em !important;
+}
+.qa-indicator-stop-btn:hover { background: #dc2626 !important; }
+
+/* ── Modal overlay ────────────────────────────────────────────────────────── */
+.qa-reporter-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483647 !important;
+  background: rgba(15,17,36,0.5) !important;
+  backdrop-filter: blur(2px) !important;
+}
+
+/* ── Modal card ───────────────────────────────────────────────────────────── */
+.qa-reporter-modal {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  width: 420px !important;
+  height: min(620px, 88vh) !important;
+  background: var(--qa-surface) !important;
+  border-radius: var(--qa-radius) !important;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.12) !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  font-size: 13px !important;
+  color: var(--qa-text-hi) !important;
+  -webkit-font-smoothing: antialiased !important;
+}
+
+.qa-modal-scroll {
+  overflow-y: scroll !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #d1d5db transparent !important;
+}
+
+/* ── Modal header ─────────────────────────────────────────────────────────── */
+.qa-modal-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 13px 16px !important;
+  background: #0f1124 !important;
+  color: #fff !important;
+  border-radius: var(--qa-radius) var(--qa-radius) 0 0 !important;
+  cursor: move !important;
+  user-select: none !important;
+  flex-shrink: 0 !important;
+}
+
+.qa-modal-header-left {
+  display: flex !important;
+  align-items: center !important;
+  gap: 9px !important;
+}
+
+.qa-modal-header-icon {
+  width: 26px !important;
+  height: 26px !important;
+  background: var(--qa-brand) !important;
+  border-radius: 7px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+  font-size: 13px !important;
+}
+
+.qa-modal-header-title {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.1px !important;
+}
+
+.qa-modal-close-btn {
+  width: 26px !important;
+  height: 26px !important;
+  background: rgba(255,255,255,0.08) !important;
+  border: none !important;
+  border-radius: 6px !important;
+  color: #9097b3 !important;
+  cursor: pointer !important;
+  font-size: 16px !important;
+  line-height: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: background 0.15s, color 0.15s !important;
+}
+.qa-modal-close-btn:hover {
+  background: rgba(255,255,255,0.15) !important;
+  color: #fff !important;
+}
+
+/* ── Modal body ───────────────────────────────────────────────────────────── */
+.qa-modal-body {
+  padding: 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 13px !important;
+}
+
+/* ── Screenshot thumbnail ─────────────────────────────────────────────────── */
+.qa-modal-thumbnail-wrap {
+  position: relative !important;
+  border-radius: 7px !important;
+  overflow: hidden !important;
+  border: 1.5px solid var(--qa-border) !important;
+  background: var(--qa-bg) !important;
+}
+.qa-modal-thumbnail {
+  width: 100% !important;
+  max-height: 150px !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+.qa-thumbnail-label {
+  position: absolute !important;
+  bottom: 6px !important;
+  right: 8px !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  color: #fff !important;
+  background: rgba(15,17,36,0.65) !important;
+  padding: 2px 7px !important;
+  border-radius: 4px !important;
+  letter-spacing: 0.03em !important;
+  text-transform: uppercase !important;
+}
+
+/* ── Element info pill ────────────────────────────────────────────────────── */
+.qa-modal-element-info {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  background: var(--qa-bg) !important;
+  border: 1.5px solid var(--qa-border) !important;
+  border-radius: 7px !important;
+  padding: 8px 11px !important;
+  font-size: 12px !important;
+  color: var(--qa-text-mid) !important;
+  overflow: hidden !important;
+}
+
+.qa-element-tag {
+  background: #0f1124 !important;
+  color: #a5b4fc !important;
+  border-radius: 4px !important;
+  padding: 2px 6px !important;
+  font-family: 'SF Mono', 'Cascadia Code', monospace !important;
+  font-size: 11px !important;
+  flex-shrink: 0 !important;
+  letter-spacing: 0.02em !important;
+}
+
+.qa-element-text {
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
+  flex: 1 !important;
+}
+
+/* ── Form controls ────────────────────────────────────────────────────────── */
+.qa-form-group {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 5px !important;
+}
+
+.qa-form-label {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: var(--qa-text-mid) !important;
+}
+
+.qa-form-label .qa-required {
+  color: var(--qa-red) !important;
+  margin-left: 2px !important;
+}
+
+.qa-form-input,
+.qa-form-textarea,
+.qa-form-select {
+  width: 100% !important;
+  box-sizing: border-box !important;
+  border: 1.5px solid var(--qa-border) !important;
+  border-radius: 7px !important;
+  padding: 8px 11px !important;
+  font-size: 13px !important;
+  font-family: inherit !important;
+  color: var(--qa-text-hi) !important;
+  background: var(--qa-bg) !important;
+  outline: none !important;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s !important;
+  resize: vertical !important;
+}
+.qa-form-input::placeholder,
+.qa-form-textarea::placeholder { color: var(--qa-text-lo) !important; }
+
+.qa-form-input:focus,
+.qa-form-textarea:focus,
+.qa-form-select:focus {
+  border-color: var(--qa-brand) !important;
+  box-shadow: 0 0 0 3px rgba(91,95,199,0.15) !important;
+  background: #fff !important;
+}
+
+.qa-form-textarea { min-height: 76px !important; }
+
+/* autocomplete dropdown */
+.qa-autocomplete {
+  position: absolute !important;
+  z-index: 10 !important;
+  background: var(--qa-surface) !important;
+  border: 1.5px solid var(--qa-border) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12) !important;
+  max-height: 160px !important;
+  overflow-y: auto !important;
+  width: 100% !important;
+}
+.qa-autocomplete-item {
+  padding: 9px 12px !important;
+  font-size: 12.5px !important;
+  color: var(--qa-text-hi) !important;
+  cursor: pointer !important;
+  border-bottom: 1px solid var(--qa-border) !important;
+  transition: background 0.1s !important;
+}
+.qa-autocomplete-item:last-child { border-bottom: none !important; }
+.qa-autocomplete-item:hover { background: var(--qa-brand-bg) !important; color: var(--qa-brand) !important; }
+
+/* ── Collapsible sections ─────────────────────────────────────────────────── */
+.qa-collapsible {
+  border: 1.5px solid var(--qa-border) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+}
+
+.qa-collapsible summary {
+  padding: 9px 12px !important;
+  cursor: pointer !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: var(--qa-text-mid) !important;
+  background: var(--qa-bg) !important;
+  list-style: none !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  user-select: none !important;
+  transition: background 0.1s !important;
+}
+.qa-collapsible summary:hover { background: #ecedf7 !important; }
+.qa-collapsible summary::-webkit-details-marker { display: none !important; }
+
+.qa-collapsible summary::before {
+  content: '▶' !important;
+  font-size: 8px !important;
+  transition: transform 0.2s !important;
+  display: inline-block !important;
+  color: var(--qa-text-lo) !important;
+}
+.qa-collapsible[open] summary::before { transform: rotate(90deg) !important; }
+
+.qa-collapsible-body {
+  padding: 10px 12px !important;
+  background: #fff !important;
+  max-height: 150px !important;
+  overflow-y: auto !important;
+}
+
+.qa-collapsible-empty {
+  color: var(--qa-text-lo) !important;
+  font-size: 12px !important;
+  font-style: italic !important;
+}
+
+.qa-error-entry {
+  font-size: 11px !important;
+  font-family: 'SF Mono', monospace !important;
+  color: #dc2626 !important;
+  padding: 3px 0 !important;
+  border-bottom: 1px solid #fee2e2 !important;
+  word-break: break-all !important;
+}
+.qa-error-entry:last-child { border-bottom: none !important; }
+
+.qa-network-entry {
+  font-size: 11px !important;
+  font-family: 'SF Mono', monospace !important;
+  color: #b45309 !important;
+  padding: 3px 0 !important;
+  border-bottom: 1px solid #fef3c7 !important;
+  word-break: break-all !important;
+}
+.qa-network-entry:last-child { border-bottom: none !important; }
+
+/* ── Modal footer ─────────────────────────────────────────────────────────── */
+.qa-modal-footer {
+  display: flex !important;
+  gap: 8px !important;
+  padding: 12px 16px !important;
+  border-top: 1.5px solid var(--qa-border) !important;
+  background: var(--qa-bg) !important;
+  border-radius: 0 0 var(--qa-radius) var(--qa-radius) !important;
+  flex-shrink: 0 !important;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.qa-btn {
+  padding: 8px 15px !important;
+  border-radius: 7px !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  font-family: inherit !important;
+  cursor: pointer !important;
+  border: none !important;
+  transition: background 0.15s, opacity 0.15s, transform 0.1s !important;
+  white-space: nowrap !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  letter-spacing: 0.01em !important;
+}
+.qa-btn:disabled { opacity: 0.5 !important; cursor: not-allowed !important; }
+.qa-btn:not(:disabled):active { transform: scale(0.97) !important; }
+
+.qa-btn-secondary {
+  background: var(--qa-surface) !important;
+  color: var(--qa-text-mid) !important;
+  border: 1.5px solid var(--qa-border) !important;
+}
+.qa-btn-secondary:hover:not(:disabled) {
+  border-color: var(--qa-brand) !important;
+  color: var(--qa-brand) !important;
+  background: var(--qa-brand-bg) !important;
+}
+
+.qa-btn-primary {
+  background: var(--qa-brand) !important;
+  color: #fff !important;
+}
+.qa-btn-primary:hover:not(:disabled) { background: var(--qa-brand-dark) !important; }
+
+.qa-btn-danger {
+  background: var(--qa-red) !important;
+  color: #fff !important;
+}
+.qa-btn-danger:hover:not(:disabled) { background: #dc2626 !important; }
+
+/* ── Element detail items ─────────────────────────────────────────────────── */
+.qa-detail-item {
+  display: flex !important;
+  flex-direction: column !important;
+  margin-bottom: 8px !important;
+}
+.qa-detail-item:last-child { margin-bottom: 0 !important; }
+
+.qa-detail-label {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  color: var(--qa-text-lo) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+  margin-bottom: 3px !important;
+}
+
+.qa-detail-item code {
+  font-family: 'SF Mono', 'Cascadia Code', monospace !important;
+  font-size: 11px !important;
+  background: var(--qa-bg) !important;
+  padding: 4px 7px !important;
+  border-radius: 5px !important;
+  color: #334155 !important;
+  word-break: break-all !important;
+  border: 1px solid var(--qa-border) !important;
+}
+
+/* ── Toast notification ───────────────────────────────────────────────────── */
+.qa-reporter-notification {
+  position: fixed !important;
+  bottom: 24px !important;
+  right: 24px !important;
+  z-index: 2147483647 !important;
+  padding: 11px 16px !important;
+  border-radius: 9px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  color: #fff !important;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.22) !important;
+  max-width: 300px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  animation: qa-slide-in 0.22s ease !important;
+}
+.qa-reporter-notification.qa-notif-success { background: #16a34a !important; }
+.qa-reporter-notification.qa-notif-error   { background: var(--qa-red) !important; }
+
+@keyframes qa-slide-in {
+  from { transform: translateX(110%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}

@@ -1,0 +1,14 @@
+/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md
+/Users/rahulsarawagi/Desktop/project 3/PRODUCT.md
+/Users/rahulsarawagi/Desktop/project 3/README.md
+/Users/rahulsarawagi/Desktop/project 3/backend/README.md
+/Users/rahulsarawagi/Desktop/project 3/docs/superpowers/plans/2026-06-23-qa-reporter-platform.md
+/Users/rahulsarawagi/Desktop/project 3/docs/superpowers/specs/2026-06-23-qa-reporter-platform-design.md
+/Users/rahulsarawagi/Desktop/project 3/extension/popup.html
+/Users/rahulsarawagi/Desktop/project 3/extension/sidepanel.html
+/Users/rahulsarawagi/Desktop/project 3/platform/README.md
+/Users/rahulsarawagi/Desktop/project 3/src/popup/popup.html
+/Users/rahulsarawagi/Desktop/project 3/src/icons/icon128.png
+/Users/rahulsarawagi/Desktop/project 3/src/icons/icon16.png
+/Users/rahulsarawagi/Desktop/project 3/src/icons/icon32.png
+/Users/rahulsarawagi/Desktop/project 3/src/icons/icon48.png

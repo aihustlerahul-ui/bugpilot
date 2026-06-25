@@ -4,8 +4,16 @@ export class CreateIssueDto {
   @IsString()
   project_id: string
 
+  @IsOptional()
+  @IsString()
+  title?: string
+
   @IsString()
   description: string
+
+  @IsOptional()
+  @IsString()
+  severity?: string
 
   @IsOptional()
   @IsString()
@@ -17,17 +25,23 @@ export class CreateIssueDto {
 
   @IsOptional()
   @IsObject()
-  browser_info?: Record<string, string>
+  browser_info?: Record<string, unknown>
 
   @IsOptional()
   @IsObject()
-  element_info?: Record<string, string>
+  element_info?: Record<string, unknown>
 
   @IsOptional()
   @IsString()
-  screenshot?: string  // base64
+  screenshot?: string
 
   @IsOptional()
   @IsString()
-  element_screenshot?: string  // base64
+  element_screenshot?: string
+
+  // Rich metadata: pageContext, performanceMetrics, appState, consoleErrors,
+  // networkErrors, navigationHistory, form fields (expectedResult, priority…)
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown>
 }

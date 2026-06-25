@@ -111,10 +111,11 @@ export default function ConnectorsPage() {
 
   const { data: azureIntegration } = useQuery({
     queryKey: ['integration', 'azure'],
-    queryFn: () => api.get<{ id: string; config: Record<string, string> } | null>('/integrations/azure').catch(() => null),
+    queryFn: () => api.get<{ id: string; config: Record<string, string>; invalid?: boolean } | null>('/integrations/azure').catch(() => null),
   })
 
-  const isConnected = (id: ConnectorId) => id === 'azure' && !!azureIntegration
+  const isConnected = (id: ConnectorId) => id === 'azure' && !!azureIntegration && !azureIntegration.invalid
+  const isInvalid = (id: ConnectorId) => id === 'azure' && !!azureIntegration && azureIntegration.invalid
 
   return (
     <div className="relative">
@@ -145,6 +146,11 @@ export default function ConnectorsPage() {
                   <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
                   Connected
                 </span>
+              ) : isInvalid(connector.id) ? (
+                <span className="flex items-center gap-1.5 text-xs font-medium text-red-700 bg-red-50 border border-red-200 px-2.5 py-1 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
+                  Token invalid
+                </span>
               ) : connector.available ? (
                 <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full">Not connected</span>
               ) : (
@@ -160,6 +166,7 @@ export default function ConnectorsPage() {
         <ConnectorPanel
           connector={activeConnector}
           isConnected={isConnected(activeConnector.id)}
+          isInvalid={isInvalid(activeConnector.id)}
           existingConfig={activeConnector.id === 'azure' ? azureIntegration?.config : undefined}
           onClose={() => setActiveConnector(null)}
         />

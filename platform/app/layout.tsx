@@ -9,6 +9,7 @@ export const metadata = { title: 'QA Reporter', description: 'Bug reporting plat
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head><meta name="qa-reporter-platform" content="true" /></head>
       <body className={inter.className}>
         <Providers>{children}</Providers>
       </body>

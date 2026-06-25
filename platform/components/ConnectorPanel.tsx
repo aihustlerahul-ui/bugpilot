@@ -1,29 +1,48 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api/client'
 import type { ConnectorConfig } from '@/app/(dashboard)/connectors/page'
+
+interface AzureFieldMeta { field: string; label: string; required?: boolean }
+interface QASourceMeta { key: string; label: string }
+interface FieldsResponse { azureFields: AzureFieldMeta[]; qaSourceFields: QASourceMeta[] }
+
+const DEFAULT_MAPPING: Record<string, string> = {
+  'System.Title': 'description',
+  'Microsoft.VSTS.TCM.ReproSteps': 'repro_steps',
+  'System.Description': 'system_info',
+}
 
 interface Props {
   connector: ConnectorConfig
   isConnected: boolean
+  isInvalid?: boolean
   existingConfig?: Record<string, string>
   onClose: () => void
 }
 
-export function ConnectorPanel({ connector, isConnected, existingConfig, onClose }: Props) {
+export function ConnectorPanel({ connector, isConnected, isInvalid, existingConfig, onClose }: Props) {
   const qc = useQueryClient()
   const [values, setValues] = useState<Record<string, string>>({})
+  const [mapping, setMapping] = useState<Record<string, string>>(DEFAULT_MAPPING)
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
   const [error, setError] = useState('')
+
+  const { data: fieldsMeta } = useQuery<FieldsResponse>({
+    queryKey: ['integration', 'azure', 'fields'],
+    queryFn: () => api.get<FieldsResponse>('/integrations/azure/fields'),
+    enabled: connector.id === 'azure' && connector.available,
+  })
 
   useEffect(() => {
     if (existingConfig) {
       setValues({
         ...Object.fromEntries(connector.fields.map(f => [f.key, ''])),
-        org_url: existingConfig.org_url ?? '',
-        project_name: existingConfig.project_name ?? '',
+        orgUrl: existingConfig.org_url ?? '',
+        projectName: existingConfig.project_name ?? '',
       })
+      if (existingConfig.field_mapping) setMapping(existingConfig.field_mapping as unknown as Record<string, string>)
     } else {
       setValues(Object.fromEntries(connector.fields.map(f => [f.key, ''])))
     }
@@ -36,14 +55,17 @@ export function ConnectorPanel({ connector, isConnected, existingConfig, onClose
     setError('')
     try {
       if (connector.id === 'azure') {
-        await api.post('/integrations/azure', {
-          orgUrl: values.orgUrl || values.org_url,
-          projectName: values.projectName || values.project_name,
-          pat: values.pat,
-        })
+        const payload: Record<string, string> = {
+          orgUrl: values.orgUrl || values.org_url || '',
+          projectName: values.projectName || values.project_name || '',
+        }
+        if (values.pat?.trim()) payload.pat = values.pat.trim()
+        if (!isConnected && !payload.pat) { setStatus('error'); setError('PAT is required'); return }
+        await api.post('/integrations/azure', { ...payload, fieldMapping: mapping })
         qc.invalidateQueries({ queryKey: ['integration', 'azure'] })
       }
       setStatus('success')
+      setTimeout(onClose, 1200)
     } catch (err: unknown) {
       setStatus('error')
       setError(err instanceof Error ? err.message : 'An error occurred')
@@ -70,6 +92,12 @@ export function ConnectorPanel({ connector, isConnected, existingConfig, onClose
                 <span className="flex items-center gap-1.5 text-xs text-green-700 mt-0.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
                   Connected
+                </span>
+              )}
+              {isInvalid && (
+                <span className="flex items-center gap-1.5 text-xs text-red-600 mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
+                  Token invalid — please reconnect
                 </span>
               )}
             </div>
@@ -120,7 +148,7 @@ export function ConnectorPanel({ connector, isConnected, existingConfig, onClose
               {/* Divider */}
               <div className="border-t border-gray-100" />
 
-              {/* Form */}
+              {/* Credentials form */}
               <div>
                 <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
                   {isConnected ? 'Update credentials' : 'Enter your credentials'}
@@ -140,6 +168,41 @@ export function ConnectorPanel({ connector, isConnected, existingConfig, onClose
                   ))}
                 </div>
               </div>
+
+              {/* Field mapping */}
+              {fieldsMeta && (
+                <>
+                  <div className="border-t border-gray-100" />
+                  <div>
+                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Field mapping</h3>
+                    <p className="text-xs text-gray-400 mb-4">Choose which QA Reporter data populates each Azure Bug field.</p>
+                    <div className="space-y-3">
+                      {fieldsMeta.azureFields.map(af => (
+                        <div key={af.field} className="flex items-center gap-3">
+                          <div className="w-44 flex-shrink-0">
+                            <span className="text-sm font-medium text-gray-700">{af.label}</span>
+                            {af.required && <span className="text-red-400 ml-1 text-xs">*</span>}
+                          </div>
+                          <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                          <select
+                            value={mapping[af.field] ?? ''}
+                            onChange={e => setMapping(m => ({ ...m, [af.field]: e.target.value }))}
+                            disabled={af.required}
+                            className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
+                          >
+                            <option value="">— not mapped —</option>
+                            {fieldsMeta.qaSourceFields.map(qf => (
+                              <option key={qf.key} value={qf.key}>{qf.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

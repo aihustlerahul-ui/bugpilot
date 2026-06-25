@@ -44,13 +44,16 @@ export class IssuesService {
       .insert({
         project_id: dto.project_id,
         reporter_id: userId,
+        title: dto.title ?? dto.description.split('\n')[0],
         description: dto.description,
+        severity: dto.severity ?? 'Medium',
         url: dto.url ?? null,
         route: dto.route ?? null,
         browser_info: dto.browser_info ?? null,
         element_info: dto.element_info ?? null,
         screenshot_url,
         element_screenshot_url,
+        metadata: dto.metadata ?? null,
         sync_status: 'pending',
       })
       .select()

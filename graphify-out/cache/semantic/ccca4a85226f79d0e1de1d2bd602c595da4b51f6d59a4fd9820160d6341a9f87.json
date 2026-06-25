@@ -1,0 +1,1 @@
+{"nodes": [{"id": "popup-html", "label": "popup.html (Legacy)", "type": "component", "description": "Legacy popup UI \u2014 no longer launched (action has no default_popup). Kept for reference. Contains auth view and main view with project selector, record button, and buffer card.", "confidence": "EXTRACTED", "source_file": "extension/popup.html"}], "edges": [], "hyperedges": []}

@@ -1,0 +1,411 @@
+{
+  "nodes": [
+    {
+      "id": "qa-reporter",
+      "label": "QA Reporter",
+      "type": "concept",
+      "description": "Chrome extension + NestJS API + Next.js dashboard for QA teams to capture UI bugs in-context from any web page",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md"
+    },
+    {
+      "id": "chrome-extension",
+      "label": "Chrome Extension (MV3)",
+      "type": "component",
+      "description": "Manifest V3 Chrome extension — the capture tool. Opens as a side panel, stays open across navigation. Handles element selection, screenshot capture, bug reporting form, and issue buffer.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md"
+    },
+    {
+      "id": "nestjs-backend",
+      "label": "NestJS Backend API",
+      "type": "component",
+      "description": "NestJS API running on port 4000 with global prefix /api. Handles JWT validation, issue creation, screenshot upload, workspace settings, and integrations.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md"
+    },
+    {
+      "id": "nextjs-platform",
+      "label": "Next.js Web Platform",
+      "type": "component",
+      "description": "Next.js 14 dashboard (port 3000) with TailwindCSS. Provides project management, issue list/detail, connectors hub, extension settings page.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md"
+    },
+    {
+      "id": "supabase",
+      "label": "Supabase",
+      "type": "module",
+      "description": "PostgreSQL database, Auth (ES256 JWT), and Storage (private bucket for screenshots). Used as the data and auth layer.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md"
+    },
+    {
+      "id": "sidepanel-js",
+      "label": "sidepanel.js",
+      "type": "component",
+      "description": "Primary extension UI logic — auth, recording controls, buffer list. Sends messages to background.js and content.js.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md"
+    },
+    {
+      "id": "sidepanel-html",
+      "label": "sidepanel.html",
+      "type": "component",
+      "description": "Side panel HTML UI with auth view and main view. Shows user email, project selector, record/stop button, buffered issues list, Submit All / Clear actions, and toast notifications.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/extension/sidepanel.html"
+    },
+    {
+      "id": "background-js",
+      "label": "background.js (Service Worker)",
+      "type": "component",
+      "description": "MV3 service worker handling message routing, API calls, token refresh, screenshot capture (captureVisibleTab), and keyboard shortcut (⌥⇧Q).",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md"
+    },
+    {
+      "id": "content-js",
+      "label": "content.js",
+      "type": "component",
+      "description": "Injected into target pages. Manages hover highlighting, in-page draggable modal near clicked element, screenshot pipeline (crop/highlight modes), CSS selector + XPath generation, React component detection, console/network error capture.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md"
+    },
+    {
+      "id": "screenshot-modes",
+      "label": "Screenshot Modes",
+      "type": "feature",
+      "description": "5 configurable modes: full, element_crop, element_context (default, 80px padding), full_highlighted, both. Selectable per workspace from the web app.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/PRODUCT.md"
+    },
+    {
+      "id": "issue-buffer",
+      "label": "Issue Buffer",
+      "type": "feature",
+      "description": "Local buffer of captured issues stored in chrome.storage. Side panel shows list with severity badges. Submit All POSTs all buffered issues to backend; Clear wipes them.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/PRODUCT.md"
+    },
+    {
+      "id": "azure-devops-integration",
+      "label": "Azure DevOps Integration",
+      "type": "module",
+      "description": "Backend integration that encrypts PAT (AES-256-GCM) at rest, creates work items, and syncs issues. PAT never returned to frontend in plaintext.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md"
+    },
+    {
+      "id": "encryption-service",
+      "label": "Encryption Service",
+      "type": "module",
+      "description": "AES-256-GCM encrypt/decrypt for Personal Access Tokens (PATs). Located at backend/src/integrations/encryption.service.ts.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md"
+    },
+    {
+      "id": "workspace-settings",
+      "label": "Workspace Settings",
+      "type": "feature",
+      "description": "JSONB column on workspaces table. GET/PATCH /api/workspaces/settings returns/merges screenshot mode and data capture toggles. Extension syncs on recording start via SYNC_SETTINGS.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md"
+    },
+    {
+      "id": "supabase-auth-flow",
+      "label": "Supabase Auth Flow",
+      "type": "concept",
+      "description": "Email/password login → ES256 JWT (access_token + refresh_token). Extension stores in chrome.storage.local; platform in sessionStorage. Backend validates via supabase.auth.getUser(). Silent refresh on 401.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md"
+    },
+    {
+      "id": "popup-html",
+      "label": "popup.html (Legacy)",
+      "type": "component",
+      "description": "Legacy popup UI — no longer launched (action has no default_popup). Kept for reference. Contains auth view and main view with project selector, record button, and buffer card.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/extension/popup.html"
+    },
+    {
+      "id": "connectors-hub",
+      "label": "Connectors Hub",
+      "type": "feature",
+      "description": "Web platform page with step-by-step setup guides for Azure DevOps, Jira, Trello, and Monday integrations.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/PRODUCT.md"
+    },
+    {
+      "id": "api-client",
+      "label": "API Client (platform/lib/api/client.ts)",
+      "type": "module",
+      "description": "Typed fetch wrappers get<T>(), post<T>(), patch<T>() used by the Next.js platform to call the NestJS backend.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md"
+    },
+    {
+      "id": "extension-design-system",
+      "label": "Extension Design System",
+      "type": "concept",
+      "description": "CSS custom property tokens: --qa-brand #5b5fc7 (indigo), dark header #0f1124, gradient record (green) and stop (red) buttons. All content.js styles prefixed qa- with !important.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md"
+    },
+    {
+      "id": "supabase-storage",
+      "label": "Supabase Storage (Screenshots)",
+      "type": "module",
+      "description": "Private bucket for screenshot uploads. Accessed only via signed URLs. Backend uploads on issue creation.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/CLAUDE.md"
+    },
+    {
+      "id": "react-component-detection",
+      "label": "React Component Detection",
+      "type": "feature",
+      "description": "Reads __reactFiber$ to extract component name, tree, and props from the clicked element for richer bug context.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/PRODUCT.md"
+    },
+    {
+      "id": "selector-generation",
+      "label": "CSS Selector & XPath Generation",
+      "type": "feature",
+      "description": "Prioritized selector strategy: ID → data attributes (data-testid, data-cy) → stable class combos → attribute selectors → structural nth-of-type. Stable across React re-renders.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/README.md"
+    },
+    {
+      "id": "keyboard-shortcut",
+      "label": "Keyboard Shortcut (⌥⇧Q)",
+      "type": "feature",
+      "description": "Alt+Shift+Q toggles recording from any page. Handled in background.js.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/PRODUCT.md"
+    },
+    {
+      "id": "implementation-plan-doc",
+      "label": "Implementation Plan (2026-06-23)",
+      "type": "config",
+      "description": "Superpowers implementation plan for QA Reporter SaaS platform. Defines repo structure, tech stack (NestJS + Next.js 14 + Supabase + Chrome MV3), and task checklist.",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/rahulsarawagi/Desktop/project 3/docs/superpowers/plans/2026-06-23-qa-reporter-platform.md"
+    }
+  ],
+  "edges": [
+    {
+      "source": "qa-reporter",
+      "target": "chrome-extension",
+      "label": "comprises",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "qa-reporter",
+      "target": "nestjs-backend",
+      "label": "comprises",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "qa-reporter",
+      "target": "nextjs-platform",
+      "label": "comprises",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "chrome-extension",
+      "target": "sidepanel-js",
+      "label": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "chrome-extension",
+      "target": "sidepanel-html",
+      "label": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "chrome-extension",
+      "target": "background-js",
+      "label": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "chrome-extension",
+      "target": "content-js",
+      "label": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "chrome-extension",
+      "target": "popup-html",
+      "label": "contains (legacy)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "sidepanel-js",
+      "target": "background-js",
+      "label": "sends messages to (CAPTURE_SCREENSHOT, GET_PROJECTS, SUBMIT_ALL, SYNC_SETTINGS)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "content-js",
+      "target": "background-js",
+      "label": "sends messages to (CAPTURE_SCREENSHOT, SUBMIT_ISSUE)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "sidepanel-js",
+      "target": "content-js",
+      "label": "sends tab messages to (START_REPORTING, STOP_REPORTING, IS_RECORDING)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "background-js",
+      "target": "nestjs-backend",
+      "label": "calls API",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "nestjs-backend",
+      "target": "supabase",
+      "label": "uses for auth, database, storage",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "nestjs-backend",
+      "target": "supabase-storage",
+      "label": "uploads screenshots to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "nestjs-backend",
+      "target": "azure-devops-integration",
+      "label": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "azure-devops-integration",
+      "target": "encryption-service",
+      "label": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "nextjs-platform",
+      "target": "api-client",
+      "label": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "api-client",
+      "target": "nestjs-backend",
+      "label": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "nextjs-platform",
+      "target": "connectors-hub",
+      "label": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "chrome-extension",
+      "target": "supabase-auth-flow",
+      "label": "authenticates-via",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "nextjs-platform",
+      "target": "supabase-auth-flow",
+      "label": "authenticates-via",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "nestjs-backend",
+      "target": "supabase-auth-flow",
+      "label": "validates JWT via",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "content-js",
+      "target": "screenshot-modes",
+      "label": "implements",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "background-js",
+      "target": "screenshot-modes",
+      "label": "executes captureVisibleTab for",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "chrome-extension",
+      "target": "issue-buffer",
+      "label": "maintains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "sidepanel-html",
+      "target": "issue-buffer",
+      "label": "displays",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "chrome-extension",
+      "target": "workspace-settings",
+      "label": "syncs from backend via SYNC_SETTINGS",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "nestjs-backend",
+      "target": "workspace-settings",
+      "label": "serves GET/PATCH /workspaces/settings",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "content-js",
+      "target": "react-component-detection",
+      "label": "implements",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "content-js",
+      "target": "selector-generation",
+      "label": "implements",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "background-js",
+      "target": "keyboard-shortcut",
+      "label": "handles",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "sidepanel-html",
+      "target": "extension-design-system",
+      "label": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "content-js",
+      "target": "extension-design-system",
+      "label": "uses (qa- prefix, !important)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "nestjs-backend",
+      "target": "supabase-storage",
+      "label": "stores screenshots in",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "connectors-hub",
+      "target": "azure-devops-integration",
+      "label": "setup guide for",
+      "confidence": "EXTRACTED"
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

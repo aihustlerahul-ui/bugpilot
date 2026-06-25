@@ -121,6 +121,7 @@ The extension uses a prioritized approach for generating robust selectors:
 ## Framework Compatibility
 
 Works correctly on:
+
 - React (Create React App, Next.js)
 - Vue.js
 - Angular
@@ -131,6 +132,7 @@ The extension does not rely on framework-specific internals.
 ## Future Extensibility
 
 The architecture is designed to easily add:
+
 - Screenshot capture
 - Azure DevOps ticket creation
 - Jira integration
@@ -166,3 +168,6 @@ No build process required - the extension runs directly from source files.
 ## License
 
 Internal tool for QA teams.
+
+groscl.ltd@gmail.com
+Test1234!

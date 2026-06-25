@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common'
+import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common'
 import { SupabaseAuthGuard } from '../common/guards/supabase-auth.guard'
 import { CurrentUser } from '../common/decorators/user.decorator'
 import { WorkspacesService } from './workspaces.service'
@@ -18,5 +18,15 @@ export class WorkspacesController {
   @Get('me')
   findMine(@CurrentUser() user: AuthUser) {
     return this.workspaces.findByOwner(user.id)
+  }
+
+  @Get('settings')
+  getSettings(@CurrentUser() user: AuthUser) {
+    return this.workspaces.getSettings(user.id)
+  }
+
+  @Patch('settings')
+  updateSettings(@CurrentUser() user: AuthUser, @Body() body: Record<string, unknown>) {
+    return this.workspaces.updateSettings(user.id, body as any)
   }
 }

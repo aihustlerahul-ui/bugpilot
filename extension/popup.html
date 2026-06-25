@@ -1,69 +1,523 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
+  <title>QA Reporter</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { width: 340px; font-family: -apple-system, sans-serif; font-size: 14px; color: #111; }
-    .screen { display: none; flex-direction: column; padding: 16px; gap: 12px; }
-    .screen.active { display: flex; }
-    h2 { font-size: 16px; font-weight: 600; }
-    label { font-size: 12px; font-weight: 500; color: #555; margin-bottom: 2px; display: block; }
-    input, select, textarea { width: 100%; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 10px; font-size: 13px; outline: none; }
-    input:focus, select:focus, textarea:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
-    textarea { resize: vertical; min-height: 80px; }
-    button { width: 100%; padding: 9px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; }
-    .btn-primary { background: #2563eb; color: white; }
-    .btn-primary:hover { background: #1d4ed8; }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-secondary { background: #f3f4f6; color: #374151; }
-    .error { color: #dc2626; font-size: 12px; }
-    .success { color: #16a34a; font-size: 12px; }
-    .user-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #6b7280; }
-    .sign-out { background: none; border: none; color: #3b82f6; cursor: pointer; font-size: 12px; padding: 0; width: auto; }
-    .screenshot-preview { width: 100%; border-radius: 6px; border: 1px solid #e5e7eb; max-height: 120px; object-fit: cover; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --brand:       #5b5fc7;
+      --brand-dark:  #4a4db5;
+      --brand-light: rgba(91,95,199,0.1);
+      --surface:     #ffffff;
+      --bg:          #f4f5fb;
+      --border:      #e2e4f0;
+      --text-hi:     #0f1124;
+      --text-mid:    #4b5066;
+      --text-lo:     #9097b3;
+      --green:       #22c55e;
+      --green-bg:    #f0fdf4;
+      --green-border:#bbf7d0;
+      --red:         #ef4444;
+      --red-bg:      #fef2f2;
+      --red-border:  #fecaca;
+      --radius-lg:   10px;
+      --radius-md:   8px;
+      --radius-sm:   6px;
+    }
+
+    body {
+      width: 360px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+      font-size: 13px;
+      color: var(--text-hi);
+      background: var(--bg);
+      min-height: 200px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .view { display: none; }
+    .view.active { display: flex; flex-direction: column; }
+
+    /* ─── AUTH VIEW ──────────────────────────────────────── */
+    #view-auth {
+      padding: 32px 24px 28px;
+      gap: 18px;
+      background: var(--surface);
+    }
+
+    .auth-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 2px;
+    }
+    .auth-brand-icon {
+      width: 32px;
+      height: 32px;
+      background: var(--brand);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .auth-brand-icon svg { display: block; }
+    .auth-brand-name {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text-hi);
+      letter-spacing: -0.3px;
+    }
+    .auth-tagline {
+      font-size: 12.5px;
+      color: var(--text-lo);
+      padding-left: 42px;
+      margin-top: -14px;
+    }
+
+    .auth-divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 0;
+    }
+
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+
+    .form-label {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-mid);
+      letter-spacing: 0.02em;
+    }
+
+    .input-wrap { position: relative; }
+
+    .form-input {
+      width: 100%;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 9px 12px;
+      font-size: 13px;
+      color: var(--text-hi);
+      background: var(--bg);
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+    }
+    .form-input:focus {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(91,95,199,0.15);
+      background: #fff;
+    }
+    .form-input::placeholder { color: var(--text-lo); }
+
+    /* password show/hide */
+    .form-input.has-toggle { padding-right: 40px; }
+    .toggle-pw {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-lo);
+      padding: 2px;
+      display: flex;
+      align-items: center;
+      transition: color 0.15s;
+    }
+    .toggle-pw:hover { color: var(--brand); }
+
+    .error-msg {
+      font-size: 12px;
+      color: var(--red);
+      min-height: 16px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* ─── BUTTONS ────────────────────────────────────────── */
+    .btn {
+      padding: 10px 16px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+      transition: background 0.15s, opacity 0.15s, transform 0.1s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      letter-spacing: 0.01em;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn:not(:disabled):active { transform: scale(0.98); }
+    .btn-full { width: 100%; }
+    .btn-primary { background: var(--brand); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--brand-dark); }
+    .btn-ghost {
+      background: none;
+      border: none;
+      color: var(--brand);
+      cursor: pointer;
+      font-size: 12px;
+      font-family: inherit;
+      padding: 0;
+      font-weight: 600;
+      transition: color 0.15s;
+    }
+    .btn-ghost:hover { color: var(--brand-dark); }
+    .btn-record {
+      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+      color: #fff;
+      font-size: 13.5px;
+      padding: 11px 16px;
+      box-shadow: 0 2px 8px rgba(34,197,94,0.3);
+    }
+    .btn-record:hover:not(:disabled) {
+      background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+      box-shadow: 0 4px 12px rgba(34,197,94,0.35);
+    }
+    .btn-stop {
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+      color: #fff;
+      font-size: 13.5px;
+      padding: 11px 16px;
+      box-shadow: 0 2px 8px rgba(239,68,68,0.3);
+    }
+    .btn-stop:hover:not(:disabled) {
+      background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    }
+    .btn-outline {
+      background: none;
+      border: 1.5px solid var(--border);
+      color: var(--text-mid);
+      font-size: 12px;
+      padding: 7px 12px;
+    }
+    .btn-outline:hover:not(:disabled) {
+      border-color: var(--brand);
+      color: var(--brand);
+      background: var(--brand-light);
+    }
+    .btn-submit {
+      background: var(--brand);
+      color: #fff;
+      font-size: 12px;
+      padding: 7px 12px;
+    }
+    .btn-submit:hover:not(:disabled) { background: var(--brand-dark); }
+
+    /* ─── MAIN VIEW HEADER ───────────────────────────────── */
+    #view-main { background: var(--bg); }
+
+    .main-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .main-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .main-brand-icon {
+      width: 26px;
+      height: 26px;
+      background: var(--brand);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .main-brand-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-hi);
+      letter-spacing: -0.2px;
+    }
+    .main-header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .main-email {
+      font-size: 11.5px;
+      color: var(--text-lo);
+      max-width: 130px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ─── STATUS BAR ─────────────────────────────────────── */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      font-size: 12.5px;
+      font-weight: 500;
+    }
+    .status-bar.idle {
+      background: var(--green-bg);
+      color: #166534;
+      border-bottom: 1px solid var(--green-border);
+    }
+    .status-bar.recording {
+      background: var(--red-bg);
+      color: #991b1b;
+      border-bottom: 1px solid var(--red-border);
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-bar.idle .status-dot { background: var(--green); }
+    .status-bar.recording .status-dot {
+      background: var(--red);
+      animation: pulse-dot 1.3s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.8); }
+    }
+    .status-shortcut {
+      margin-left: auto;
+      font-size: 10px;
+      color: var(--text-lo);
+      background: rgba(0,0,0,0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      letter-spacing: 0.02em;
+    }
+
+    /* ─── POPUP BODY ─────────────────────────────────────── */
+    .popup-body {
+      padding: 14px 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .field-label {
+      font-size: 10.5px;
+      font-weight: 700;
+      color: var(--text-lo);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 5px;
+    }
+
+    #project-select {
+      width: 100%;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 9px 12px;
+      font-size: 13px;
+      font-family: inherit;
+      color: var(--text-hi);
+      background: var(--surface);
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%239097b3' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      background-size: 18px;
+      padding-right: 32px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    #project-select:focus {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(91,95,199,0.15);
+    }
+
+    #btn-toggle-recording { width: 100%; }
+
+    /* ─── BUFFER CARD ─────────────────────────────────────── */
+    .buffer-card {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .buffer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 11px 14px;
+    }
+    .buffer-label {
+      font-size: 12.5px;
+      color: var(--text-mid);
+      font-weight: 500;
+    }
+    .buffer-badge {
+      background: var(--brand);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      border-radius: 20px;
+      padding: 2px 9px;
+      min-width: 24px;
+      text-align: center;
+    }
+    .buffer-badge.zero {
+      background: var(--border);
+      color: var(--text-lo);
+    }
+    .buffer-actions {
+      display: flex;
+      gap: 8px;
+      padding: 0 14px 11px;
+    }
+    .buffer-actions .btn { flex: 1; }
+
+    /* ─── TOAST ──────────────────────────────────────────── */
+    #toast {
+      margin: 0 14px 12px;
+      padding: 9px 13px;
+      border-radius: var(--radius-md);
+      font-size: 12.5px;
+      font-weight: 500;
+      display: none;
+      align-items: center;
+      gap: 8px;
+    }
+    #toast.show { display: flex; }
+    #toast.success { background: var(--green-bg); color: #166534; border: 1.5px solid var(--green-border); }
+    #toast.error { background: var(--red-bg); color: #991b1b; border: 1.5px solid var(--red-border); }
   </style>
 </head>
 <body>
 
-<!-- Login screen -->
-<div id="screen-login" class="screen">
-  <h2>QA Reporter</h2>
-  <div>
-    <label>Email</label>
-    <input type="email" id="login-email" placeholder="you@example.com">
+<!-- ── Auth View ──────────────────────────────────────────────────────── -->
+<div id="view-auth" class="view">
+
+  <div class="auth-brand">
+    <div class="auth-brand-icon">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="9" cy="9" r="4" fill="#fff" opacity="0.9"/>
+        <path d="M9 2v2M9 14v2M2 9h2M14 9h2" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+      </svg>
+    </div>
+    <span class="auth-brand-name">QA Reporter</span>
   </div>
-  <div>
-    <label>Password</label>
-    <input type="password" id="login-password" placeholder="••••••••">
+  <p class="auth-tagline">Sign in to start capturing bugs</p>
+
+  <hr class="auth-divider">
+
+  <div class="form-group">
+    <label class="form-label" for="auth-email">Email</label>
+    <div class="input-wrap">
+      <input class="form-input" type="email" id="auth-email" placeholder="you@example.com" autocomplete="email">
+    </div>
   </div>
-  <p id="login-error" class="error"></p>
-  <button class="btn-primary" id="btn-login">Sign in</button>
+
+  <div class="form-group">
+    <label class="form-label" for="auth-password">Password</label>
+    <div class="input-wrap">
+      <input class="form-input has-toggle" type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password">
+      <button class="toggle-pw" id="btn-toggle-pw" type="button" tabindex="-1" title="Show/hide password">
+        <!-- eye icon -->
+        <svg id="icon-eye" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+        <svg id="icon-eye-off" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+          <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/>
+          <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <p id="auth-error" class="error-msg"></p>
+
+  <button class="btn btn-primary btn-full" id="btn-signin">Sign in</button>
+
 </div>
 
-<!-- Report screen -->
-<div id="screen-report" class="screen">
-  <div class="user-row">
-    <span id="user-email-label"></span>
-    <button class="sign-out" id="btn-signout">Sign out</button>
+<!-- ── Main View ─────────────────────────────────────────────────────── -->
+<div id="view-main" class="view">
+
+  <div class="main-header">
+    <div class="main-brand">
+      <div class="main-brand-icon">
+        <svg width="14" height="14" viewBox="0 0 18 18" fill="none">
+          <circle cx="9" cy="9" r="4" fill="#fff" opacity="0.9"/>
+          <path d="M9 2v2M9 14v2M2 9h2M14 9h2" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+        </svg>
+      </div>
+      <span class="main-brand-name">QA Reporter</span>
+    </div>
+    <div class="main-header-right">
+      <span class="main-email" id="display-email"></span>
+      <button class="btn-ghost" id="btn-signout">Sign out</button>
+    </div>
   </div>
-  <div>
-    <label>Project</label>
-    <select id="project-select">
-      <option value="">Loading projects...</option>
-    </select>
+
+  <div id="status-bar" class="status-bar idle">
+    <span class="status-dot"></span>
+    <span id="status-text">Ready to record</span>
+    <span class="status-shortcut">⌥⇧Q</span>
   </div>
-  <div>
-    <label>Description</label>
-    <textarea id="description" placeholder="What went wrong?"></textarea>
+
+  <div class="popup-body">
+
+    <div>
+      <div class="field-label">Project</div>
+      <select id="project-select">
+        <option value="">Loading…</option>
+      </select>
+    </div>
+
+    <button class="btn btn-record" id="btn-toggle-recording">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><polygon points="3,1 11,6 3,11"/></svg>
+      Start Recording
+    </button>
+
+    <div class="buffer-card">
+      <div class="buffer-row">
+        <span class="buffer-label">Issues buffered</span>
+        <span class="buffer-badge zero" id="buffer-badge">0</span>
+      </div>
+      <div class="buffer-actions" id="buffer-actions" style="display:none;">
+        <button class="btn btn-submit" id="btn-submit-all">Submit All</button>
+        <button class="btn btn-outline" id="btn-clear">Clear</button>
+      </div>
+    </div>
+
   </div>
-  <img id="screenshot-preview" class="screenshot-preview" style="display:none">
-  <button class="btn-secondary" id="btn-capture">Capture Screenshot</button>
-  <p id="report-error" class="error"></p>
-  <p id="report-success" class="success"></p>
-  <button class="btn-primary" id="btn-submit" disabled>Submit Bug Report</button>
+
+  <div id="toast"></div>
+
 </div>
 
+<script>
+  // Show / hide password toggle
+  document.getElementById('btn-toggle-pw').addEventListener('click', () => {
+    const input = document.getElementById('auth-password');
+    const eyeOn  = document.getElementById('icon-eye');
+    const eyeOff = document.getElementById('icon-eye-off');
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    eyeOn.style.display  = show ? 'none'  : '';
+    eyeOff.style.display = show ? ''      : 'none';
+  });
+</script>
 <script src="popup.js"></script>
 </body>
 </html>

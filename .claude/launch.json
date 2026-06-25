@@ -2,10 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "Node Hello",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["index.js"],
-      "port": 3000
+      "name": "platform",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "platform",
+      "port": 3000,
+      "autoPort": false
     }
   ]
 }

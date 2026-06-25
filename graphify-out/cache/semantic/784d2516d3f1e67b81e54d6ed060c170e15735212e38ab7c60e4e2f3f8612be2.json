@@ -1,0 +1,1 @@
+{"nodes": [{"id": "icon-32", "label": "Icon 32x32", "type": "icon", "description": "QA Reporter Chrome extension icon at 32x32 pixels \u2014 used in Windows favicon and browser UI contexts", "confidence": "EXTRACTED", "source_file": "src/icons/icon32.png"}], "edges": [], "hyperedges": []}
