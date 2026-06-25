@@ -972,6 +972,7 @@
       var rawAssignee      = assigneeSelect ? assigneeSelect.value : '__me__';
       var resolvedAssignee = rawAssignee === '__me__' ? (qaOwnerEmail || null) : rawAssignee;
       qaLastAssignee       = rawAssignee; // sticky for next bug
+      issue.assignee       = resolvedAssignee;
       issue.metadata       = issue.metadata || {};
       issue.metadata.assignee = resolvedAssignee;
 

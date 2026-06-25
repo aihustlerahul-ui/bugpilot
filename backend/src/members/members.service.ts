@@ -112,8 +112,19 @@ export class MembersService {
     return data ?? null
   }
 
+  private async assertProjectBelongsToWorkspace(projectId: string, workspaceId: string): Promise<void> {
+    const { data } = await this.supabase.db
+      .from('projects')
+      .select('id')
+      .eq('id', projectId)
+      .eq('workspace_id', workspaceId)
+      .maybeSingle()
+    if (!data) throw new NotFoundException('Project not found')
+  }
+
   async listProjectMembers(userId: string, projectId: string) {
-    await this.workspaces.findByOwner(userId) // auth check
+    const workspace = await this.workspaces.findByOwner(userId)
+    await this.assertProjectBelongsToWorkspace(projectId, workspace.id)
     const { data, error } = await this.supabase.db
       .from('project_members')
       .select('member_id, workspace_members(id, name, email, created_at)')
@@ -125,6 +136,7 @@ export class MembersService {
 
   async addToProject(userId: string, projectId: string, dto: AddProjectMemberDto) {
     const workspaceId = await this.getWorkspaceId(userId)
+    await this.assertProjectBelongsToWorkspace(projectId, workspaceId)
 
     // Check email conflict
     const byEmail = await this.findByEmail(workspaceId, dto.email)
@@ -159,7 +171,8 @@ export class MembersService {
   }
 
   async removeFromProject(userId: string, projectId: string, memberId: string) {
-    await this.workspaces.findByOwner(userId) // auth check
+    const workspace = await this.workspaces.findByOwner(userId)
+    await this.assertProjectBelongsToWorkspace(projectId, workspace.id)
     const { error } = await this.supabase.db
       .from('project_members')
       .delete()
