@@ -505,3 +505,230 @@
   appearance: auto !important;
   box-sizing: border-box !important;
 }
+
+/* ── Annotation Canvas Overlay ────────────────────────────────────────────── */
+#qa-annotator-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483647 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: transparent !important;
+}
+
+#qa-annotator-toolbar {
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 8px 12px !important;
+  background: #0f1124 !important;
+  flex-shrink: 0 !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4) !important;
+}
+
+.qa-ann-tool {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 6px !important;
+  border: none !important;
+  background: transparent !important;
+  color: #9097b3 !important;
+  cursor: pointer !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  flex-shrink: 0 !important;
+  transition: background 0.1s, color 0.1s !important;
+}
+
+.qa-ann-tool:hover {
+  background: rgba(91,95,199,0.3) !important;
+  color: #fff !important;
+}
+
+.qa-ann-tool.active {
+  background: #5b5fc7 !important;
+  color: #fff !important;
+}
+
+.qa-ann-separator {
+  width: 1px !important;
+  height: 24px !important;
+  background: #2d2f45 !important;
+  margin: 0 4px !important;
+  flex-shrink: 0 !important;
+}
+
+#qa-ann-color-picker {
+  width: 26px !important;
+  height: 26px !important;
+  border: 2px solid #4b5066 !important;
+  border-radius: 50% !important;
+  padding: 0 !important;
+  cursor: pointer !important;
+  background: none !important;
+  flex-shrink: 0 !important;
+}
+
+.qa-ann-spacer {
+  flex: 1 !important;
+}
+
+.qa-ann-btn-undo {
+  padding: 5px 12px !important;
+  background: #2d2f45 !important;
+  color: #9097b3 !important;
+  border: none !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  cursor: pointer !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+.qa-ann-btn-undo:hover {
+  background: #3d3f55 !important;
+  color: #fff !important;
+}
+
+.qa-ann-btn-done {
+  padding: 5px 14px !important;
+  background: #22c55e !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+.qa-ann-btn-done:hover {
+  background: #16a34a !important;
+}
+
+#qa-annotator-canvas {
+  flex: 1 !important;
+  display: block !important;
+  cursor: crosshair !important;
+  min-height: 0 !important;
+}
+
+#qa-annotator-footer {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 12px !important;
+  padding: 12px 16px !important;
+  background: #0f1124 !important;
+  flex-shrink: 0 !important;
+}
+
+.qa-ann-footer-label {
+  color: #9097b3 !important;
+  font-size: 12px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+.qa-ann-btn-replace {
+  padding: 7px 18px !important;
+  background: #5b5fc7 !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 7px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+.qa-ann-btn-replace:hover {
+  background: #4a4db5 !important;
+}
+
+.qa-ann-btn-keep {
+  padding: 7px 18px !important;
+  background: #2d2f45 !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 7px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+.qa-ann-btn-keep:hover {
+  background: #3d3f55 !important;
+}
+
+/* ── Image slider in modal ─────────────────────────────────────────────────── */
+.qa-modal-slider {
+  position: relative !important;
+  width: 100% !important;
+  margin-bottom: 10px !important;
+  border-radius: 6px !important;
+  overflow: hidden !important;
+  background: #0f1124 !important;
+}
+
+.qa-modal-slider-img {
+  display: block !important;
+  width: 100% !important;
+  max-height: 200px !important;
+  object-fit: contain !important;
+}
+
+.qa-slider-nav {
+  position: absolute !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  background: rgba(15,17,36,0.7) !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 4px !important;
+  width: 24px !important;
+  height: 36px !important;
+  cursor: pointer !important;
+  font-size: 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 2 !important;
+}
+
+.qa-slider-nav-prev { left: 4px !important; }
+.qa-slider-nav-next { right: 4px !important; }
+
+.qa-slider-counter {
+  position: absolute !important;
+  bottom: 6px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  background: rgba(15,17,36,0.7) !important;
+  color: #9097b3 !important;
+  font-size: 10px !important;
+  padding: 2px 7px !important;
+  border-radius: 10px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+.qa-slider-edit-btn {
+  position: absolute !important;
+  top: 6px !important;
+  right: 6px !important;
+  background: rgba(91,95,199,0.9) !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 5px !important;
+  padding: 3px 9px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  z-index: 2 !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+.qa-slider-edit-btn:hover {
+  background: #5b5fc7 !important;
+}
