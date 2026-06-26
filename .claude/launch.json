@@ -8,6 +8,13 @@
       "cwd": "platform",
       "port": 3000,
       "autoPort": false
+    },
+    {
+      "name": "justhustle",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "3002"],
+      "cwd": "justhustle",
+      "port": 3002
     }
   ]
 }

@@ -12,22 +12,37 @@ type HandwritingTitleProps = {
 export function HandwritingTitle({ text }: HandwritingTitleProps) {
   return (
     <div className="mb-8 flex justify-center">
-      <div
-        className="hello-canvas"
-        style={{ ['--hello-width' as string]: `${JUST_HUSTLE_WIDTH}px` }}
-        role="img"
-        aria-label={text}
-      >
+      <div className="hello-canvas" role="img" aria-label={text}>
         <svg
           viewBox={JUST_HUSTLE_VIEWBOX}
           width={JUST_HUSTLE_WIDTH}
           height={JUST_HUSTLE_HEIGHT}
-          className="hello-svg block shrink-0"
-          style={{ height: 'clamp(5.5rem, 14vw, 7.5rem)', width: 'auto' }}
-          preserveAspectRatio="xMinYMid meet"
+          className="block shrink-0"
+          style={{ height: 'clamp(7rem, 17vw, 11rem)', width: 'auto' }}
+          preserveAspectRatio="xMidYMid meet"
         >
+          <defs>
+            <filter id="pen-glow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
           <g transform={`translate(0, ${JUST_HUSTLE_HEIGHT}) scale(1, -1)`}>
-            <path d={JUST_HUSTLE_PATH} className="hello-text-path" />
+            {/* Glow layer — draws same path with blur */}
+            <path
+              d={JUST_HUSTLE_PATH}
+              className="hello-glow-path"
+              pathLength="1"
+            />
+            {/* Main stroke-draw path */}
+            <path
+              d={JUST_HUSTLE_PATH}
+              className="hello-text-path"
+              pathLength="1"
+            />
           </g>
         </svg>
       </div>
