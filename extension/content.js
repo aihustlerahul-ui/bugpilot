@@ -202,7 +202,8 @@
   function buildAssigneeOptions(currentValue) {
     var ownerVal   = '__me__';
     var ownerLabel = qaOwnerEmail ? 'Me (' + qaOwnerEmail + ')' : 'Me (default)';
-    var html = '<option value="' + ownerVal + '"' + (!currentValue || currentValue === ownerVal ? ' selected' : '') + '>' + ownerLabel + '</option>';
+    var html = '<option value="__unassigned__"' + (currentValue === '__unassigned__' ? ' selected' : '') + '>Unassigned</option>';
+    html += '<option value="' + ownerVal + '"' + (!currentValue || currentValue === ownerVal ? ' selected' : '') + '>' + ownerLabel + '</option>';
     qaSessionMembers.forEach(function (m) {
       html += '<option value="' + escapeHTML(m.email) + '"' + (currentValue === m.email ? ' selected' : '') + '>' + escapeHTML(m.name) + '</option>';
     });
@@ -970,7 +971,9 @@
 
       // Assignee dropdown (always present)
       var rawAssignee      = assigneeSelect ? assigneeSelect.value : '__me__';
-      var resolvedAssignee = rawAssignee === '__me__' ? (qaOwnerEmail || null) : rawAssignee;
+      var resolvedAssignee = rawAssignee === '__unassigned__' ? null
+                           : rawAssignee === '__me__'         ? (qaOwnerEmail || null)
+                           : rawAssignee;
       qaLastAssignee       = rawAssignee; // sticky for next bug
       issue.assignee       = resolvedAssignee;
       issue.metadata       = issue.metadata || {};
