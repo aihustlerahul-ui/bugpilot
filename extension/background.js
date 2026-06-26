@@ -31,6 +31,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     handleSyncSettings(sendResponse);
     return true;
   }
+  if (type === 'OPEN_ANNOTATOR') {
+    handleOpenAnnotator(message, sendResponse);
+    return false;
+  }
 });
 
 // ── CAPTURE_SCREENSHOT ────────────────────────────────────────────────────────
@@ -130,6 +134,24 @@ async function handleSyncSettings(sendResponse) {
     sendResponse({ ok: true, settings });
   } catch (err) {
     sendResponse({ ok: false, error: err.message });
+  }
+}
+
+// ── OPEN_ANNOTATOR ────────────────────────────────────────────────────────────
+async function handleOpenAnnotator(message, sender) {
+  const tabId = sender.tab && sender.tab.id;
+  if (!tabId) return;
+
+  // Store dataUrl + imageIndex so annotate.js can read it after injection
+  await chrome.storage.local.set({
+    qa_annotator_data: { dataUrl: message.dataUrl, imageIndex: message.imageIndex }
+  });
+
+  // Inject annotate.js on demand (guard against double-injection is inside annotate.js)
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['annotate.js'] });
+  } catch (err) {
+    console.error('[QA Reporter] Failed to inject annotate.js:', err);
   }
 }
 
