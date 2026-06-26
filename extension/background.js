@@ -35,6 +35,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     handleOpenAnnotator(message, _sender);
     return false;
   }
+  if (type === 'ANNOTATION_DONE') {
+    // Forward from annotate.js (content script) back to content.js on the same tab
+    const tabId = _sender.tab && _sender.tab.id;
+    if (tabId) chrome.tabs.sendMessage(tabId, message);
+    return false;
+  }
 });
 
 // ── CAPTURE_SCREENSHOT ────────────────────────────────────────────────────────
