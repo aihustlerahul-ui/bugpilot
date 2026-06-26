@@ -309,7 +309,7 @@ function App() {
         {/* Eyebrow */}
         <div className="flex items-center gap-4 mb-10 animate-fade-in-up">
           <div className="divider-line" />
-          <span style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontStyle: 'italic', color: 'rgba(245,158,11,1)', fontSize: '0.95rem', letterSpacing: '0.18em' }}>
+          <span style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontStyle: 'italic', color: '#ffffff', fontSize: '1rem', fontWeight: 500, fontStyle: 'normal', letterSpacing: '0.18em' }}>
             hustle. build. repeat.
           </span>
           <div className="divider-line" />
@@ -324,7 +324,7 @@ function App() {
         <div className="h-28 flex flex-col items-center justify-center mt-6 animate-fade-in-up animate-delay-400">
           <p
             className="quote-text text-xl md:text-2xl max-w-xl text-center leading-relaxed"
-            style={{ color: 'rgba(254,243,199,0.95)', fontStyle: 'italic', fontWeight: 300 }}
+            style={{ color: '#ffffff', fontStyle: 'italic', fontWeight: 600 }}
           >
             {displayedText}
             <span
