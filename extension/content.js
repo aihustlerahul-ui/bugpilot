@@ -1019,11 +1019,26 @@
         return null;
       }
 
-      // Use current slider images (may have been annotated)
-      var screenshot     = sliderImages[0] ? sliderImages[0].dataUrl.replace(/^data:image\/[a-z+]+;base64,/, '') : undefined;
-      var fullScreenshot = sliderImages[1] ? sliderImages[1].dataUrl.replace(/^data:image\/[a-z+]+;base64,/, '') : undefined;
-      // If "keep both" added a 3rd image (annotated), include it as fullScreenshot override
-      if (sliderImages[2]) fullScreenshot = sliderImages[2].dataUrl.replace(/^data:image\/[a-z+]+;base64,/, '');
+      // Use current slider images (may have been annotated) — look up by label, not by position
+      function stripBase64Header(dataUrl) {
+        return dataUrl ? dataUrl.replace(/^data:image\/[a-z+]+;base64,/, '') : undefined;
+      }
+
+      // Priority: annotated version of slot > original slot
+      var elementImg = sliderImages.find(function(img) {
+        return img.label === 'Element (annotated)' || img.label === 'Annotated';
+      }) || sliderImages.find(function(img) {
+        return img.label === 'Element';
+      }) || sliderImages[0];
+
+      var fullImg = sliderImages.find(function(img) {
+        return img.label === 'Full page (annotated)';
+      }) || sliderImages.find(function(img) {
+        return img.label === 'Full page';
+      });
+
+      var screenshot     = elementImg ? stripBase64Header(elementImg.dataUrl) : undefined;
+      var fullScreenshot = fullImg    ? stripBase64Header(fullImg.dataUrl)    : undefined;
 
       var issue = {
         id:          generateUUID(),

@@ -32,7 +32,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (type === 'OPEN_ANNOTATOR') {
-    handleOpenAnnotator(message, sendResponse);
+    handleOpenAnnotator(message, _sender);
     return false;
   }
 });
