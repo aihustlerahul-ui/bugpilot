@@ -287,6 +287,21 @@
     }
     imageIndex = data.imageIndex || 0;
     initCanvas(data.dataUrl);
+
+    // ── Resize handler: redraw canvas at new viewport size ──────────────────
+    window.addEventListener('resize', function () {
+      if (history.length === 0) return;
+      var currentState = history[history.length - 1];
+      var toolbarH = toolbar.getBoundingClientRect().height || 50;
+      var dispW = window.innerWidth;
+      var dispH = window.innerHeight - toolbarH;
+      canvas.style.width  = dispW + 'px';
+      canvas.style.height = dispH + 'px';
+      canvas.width  = Math.round(dispW  * dpr);
+      canvas.height = Math.round(dispH * dpr);
+      ctx.scale(dpr, dpr);
+      ctx.putImageData(currentState, 0, 0);
+    });
   });
 
 })();

@@ -856,6 +856,7 @@
         };
       }
       refreshSlider();
+      modal.style.pointerEvents = '';
       sendResponse({ ok: true });
       return true;
     }
@@ -987,6 +988,7 @@
     }
     if (editBtn) {
       editBtn.addEventListener('click', function () {
+        modal.style.pointerEvents = 'none';   // freeze modal while annotating
         chrome.runtime.sendMessage({
           type:       'OPEN_ANNOTATOR',
           dataUrl:    sliderImages[sliderIndex].dataUrl,
@@ -994,6 +996,14 @@
         });
       });
     }
+
+    // ── Storage listener: restore modal if annotator dismissed via Escape ─────
+    function onStorageChanged(changes) {
+      if (changes.qa_annotator_data && !changes.qa_annotator_data.newValue) {
+        modal.style.pointerEvents = '';
+      }
+    }
+    chrome.storage.onChanged.addListener(onStorageChanged);
 
     // ── Build issue data ─────────────────────────────────────────────────────
     function buildIssue() {
@@ -1134,6 +1144,7 @@
     function closeModal() {
       modalOpen = false;
       chrome.runtime.onMessage.removeListener(onAnnotationDone);
+      chrome.storage.onChanged.removeListener(onStorageChanged);
       var modalEl = document.getElementById(MODAL_ID);
       var dimEl   = document.getElementById(DIM_ID);
       if (modalEl) modalEl.remove();
