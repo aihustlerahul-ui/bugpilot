@@ -262,6 +262,8 @@ async function postIssue(issue) {
       networkErrors:      issue.recentNetworkRequests || issue.networkErrors || [],
       // Navigation
       navigationHistory:  issue.navigationHistory  || [],
+      // All captured images (no limit — element, full page, annotated versions, etc.)
+      screenshots:        issue.allScreenshots     || undefined,
       // Optional form fields
       expectedResult:     issue.expectedResult     || null,
       actualResult:       issue.actualResult       || null,

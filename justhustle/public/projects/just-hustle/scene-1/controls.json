@@ -1,0 +1,12 @@
+{
+  "controls": [
+    {
+      "sid": "strokeColor",
+      "label": "Stroke color"
+    },
+    {
+      "sid": "fillColor",
+      "label": "Fill color"
+    }
+  ]
+}

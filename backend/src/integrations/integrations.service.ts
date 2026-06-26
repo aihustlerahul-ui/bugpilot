@@ -133,17 +133,20 @@ export class IntegrationsService {
     const mapping: Record<string, string> = integration.config.field_mapping ?? DEFAULT_FIELD_MAPPING
     const body = this.buildPatchBody(issue, mapping)
 
-    // Upload screenshots as Azure attachments if present
-    if (issue.screenshot_url) {
-      const attachmentUrl = await this.uploadScreenshotAttachment(baseUrl, project_name, pat, issue.screenshot_url, 'element-screenshot').catch(() => null)
+    // Upload all screenshots as Azure attachments — use metadata.screenshots if available, fall back to the two columns
+    const allScreenshots: { label: string; url: string }[] =
+      Array.isArray(issue.metadata?.screenshots) && issue.metadata.screenshots.length > 0
+        ? issue.metadata.screenshots
+        : [
+            issue.screenshot_url         && { label: 'Element screenshot',   url: issue.screenshot_url },
+            issue.element_screenshot_url && { label: 'Full page screenshot', url: issue.element_screenshot_url },
+          ].filter(Boolean) as { label: string; url: string }[]
+
+    for (const shot of allScreenshots) {
+      const slug = shot.label.toLowerCase().replace(/\s+/g, '-')
+      const attachmentUrl = await this.uploadScreenshotAttachment(baseUrl, project_name, pat, shot.url, slug).catch(() => null)
       if (attachmentUrl) {
-        body.push({ op: 'add', path: '/relations/-', value: { rel: 'AttachedFile', url: attachmentUrl, attributes: { comment: 'Element screenshot captured by QA Reporter' } } } as any)
-      }
-    }
-    if (issue.element_screenshot_url) {
-      const attachmentUrl = await this.uploadScreenshotAttachment(baseUrl, project_name, pat, issue.element_screenshot_url, 'full-page-screenshot').catch(() => null)
-      if (attachmentUrl) {
-        body.push({ op: 'add', path: '/relations/-', value: { rel: 'AttachedFile', url: attachmentUrl, attributes: { comment: 'Full page screenshot captured by QA Reporter' } } } as any)
+        body.push({ op: 'add', path: '/relations/-', value: { rel: 'AttachedFile', url: attachmentUrl, attributes: { comment: `${shot.label} — captured by QA Reporter` } } } as any)
       }
     }
 
@@ -279,27 +282,45 @@ export class IntegrationsService {
       const qs = Object.entries(ctx.queryParams).map(([k, v]) => `${k}=${v}`).join('&amp;')
       location.push(`<p><strong>Query Params:</strong> ?${this.esc(qs)}</p>`)
     }
-    if (ctx.scrollPosition) location.push(`<p><strong>Scroll:</strong> (${ctx.scrollPosition.x}, ${ctx.scrollPosition.y})</p>`)
+    if (ctx.scrollPosition && (ctx.scrollPosition.x !== 0 || ctx.scrollPosition.y !== 0)) {
+      location.push(`<p><strong>Scroll:</strong> (${ctx.scrollPosition.x}, ${ctx.scrollPosition.y})</p>`)
+    }
     if (location.length) sections.push(`<h3>Location</h3>${location.join('')}`)
 
     // Element
     const elParts: string[] = []
-    const tagStr = [e.tag, e.id ? `#${e.id}` : '', e.cssSelector ?? e.selector].filter(Boolean)
-    if (tagStr.length) elParts.push(`<p><strong>Selector:</strong> <code>${this.esc(tagStr.join(' '))}</code></p>`)
+    const selector = e.cssSelector ?? e.selector
+    if (selector) elParts.push(`<p><strong>Selector:</strong> <code>${this.esc(selector)}</code></p>`)
     if (e.text) elParts.push(`<p><strong>Text:</strong> ${this.esc(e.text)}</p>`)
     if (e.xpath) elParts.push(`<p><strong>XPath:</strong> <code>${this.esc(e.xpath)}</code></p>`)
-    if (e.domBreadcrumb) elParts.push(`<p><strong>DOM Path:</strong> <code>${this.esc(e.domBreadcrumb)}</code></p>`)
+    if (Array.isArray(e.domBreadcrumb) && e.domBreadcrumb.length) {
+      const crumb = e.domBreadcrumb.map((n: any) => {
+        let s = n.tag ?? ''
+        if (n.id) s += `#${n.id}`
+        if (n.role) s += `[${n.role}]`
+        if (Array.isArray(n.classes) && n.classes.length) s += `.${n.classes.slice(0, 2).join('.')}`
+        return s
+      }).join(' › ')
+      elParts.push(`<p><strong>DOM Path:</strong> <code>${this.esc(crumb)}</code></p>`)
+    }
     if (e.dimensions) {
       const d = e.dimensions
       elParts.push(`<p><strong>Dimensions:</strong> ${d.width}×${d.height} at (${d.left}, ${d.top})</p>`)
     }
     if (elParts.length) sections.push(`<h3>Element</h3>${elParts.join('')}`)
 
-    // Screenshots
-    const shots: string[] = []
-    if (issue.screenshot_url) shots.push(`<p>📸 <a href="${issue.screenshot_url}">Element Screenshot</a></p>`)
-    if (issue.element_screenshot_url) shots.push(`<p>🖥️ <a href="${issue.element_screenshot_url}">Full Page Screenshot</a></p>`)
-    if (shots.length) sections.push(`<h3>Screenshots</h3>${shots.join('')}`)
+    // Screenshots — use all images from metadata if present, fall back to the two columns
+    const allShots: { label: string; url: string }[] =
+      Array.isArray(m.screenshots) && m.screenshots.length > 0
+        ? m.screenshots
+        : [
+            issue.screenshot_url         && { label: 'Element Screenshot',   url: issue.screenshot_url },
+            issue.element_screenshot_url && { label: 'Full Page Screenshot', url: issue.element_screenshot_url },
+          ].filter(Boolean) as { label: string; url: string }[]
+    if (allShots.length) {
+      const shotLinks = allShots.map(s => `<p><a href="${s.url}">${this.esc(s.label)}</a></p>`).join('')
+      sections.push(`<h3>Screenshots</h3>${shotLinks}`)
+    }
 
     // Expected / Actual (only if captured in form)
     const form: string[] = []

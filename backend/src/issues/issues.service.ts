@@ -30,14 +30,33 @@ export class IssuesService {
     const timestamp = Date.now()
     const basePath = `${userId}/${dto.project_id}/${timestamp}`
 
-    const [screenshot_url, element_screenshot_url] = await Promise.all([
+    const screenshotsRaw: { label: string; data: string }[] =
+      Array.isArray(dto.metadata?.screenshots)
+        ? (dto.metadata!.screenshots as { label: string; data: string }[])
+        : []
+
+    // Upload all images in parallel — no limit
+    const [screenshot_url, element_screenshot_url, ...screenshotUrls] = await Promise.all([
       dto.screenshot
         ? this.uploadScreenshot(dto.screenshot, `${basePath}-screenshot.png`)
         : Promise.resolve(null),
       dto.element_screenshot
         ? this.uploadScreenshot(dto.element_screenshot, `${basePath}-element.png`)
         : Promise.resolve(null),
+      ...screenshotsRaw.map((img, i) =>
+        img.data
+          ? this.uploadScreenshot(img.data, `${basePath}-img-${i}.png`)
+          : Promise.resolve(null),
+      ),
     ])
+
+    const screenshots = screenshotsRaw.length
+      ? screenshotsRaw.map((img, i) => ({ label: img.label, url: screenshotUrls[i] })).filter(e => e.url)
+      : undefined
+
+    const metadataWithExtras = dto.metadata
+      ? { ...dto.metadata, screenshots }
+      : (screenshots ? { screenshots } : null)
 
     const { data, error } = await this.supabase.db
       .from('issues')
@@ -53,7 +72,7 @@ export class IssuesService {
         element_info: dto.element_info ?? null,
         screenshot_url,
         element_screenshot_url,
-        metadata: dto.metadata ?? null,
+        metadata: metadataWithExtras,
         sync_status: 'pending',
       })
       .select()

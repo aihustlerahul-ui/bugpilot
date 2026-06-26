@@ -1019,38 +1019,36 @@
         return null;
       }
 
-      // Use current slider images (may have been annotated) — look up by label, not by position
       function stripBase64Header(dataUrl) {
         return dataUrl ? dataUrl.replace(/^data:image\/[a-z+]+;base64,/, '') : undefined;
       }
 
-      // Priority: annotated version of slot > original slot
+      // Send all slider images — no artificial limit
+      var allScreenshots = sliderImages.map(function(img) {
+        return { label: img.label, data: stripBase64Header(img.dataUrl) };
+      });
+
+      // Also populate legacy fields from the first element/full-page slots for backwards compat
       var elementImg = sliderImages.find(function(img) {
         return img.label === 'Element (annotated)' || img.label === 'Annotated';
-      }) || sliderImages.find(function(img) {
-        return img.label === 'Element';
-      }) || sliderImages[0];
+      }) || sliderImages.find(function(img) { return img.label === 'Element'; }) || sliderImages[0];
 
       var fullImg = sliderImages.find(function(img) {
         return img.label === 'Full page (annotated)';
-      }) || sliderImages.find(function(img) {
-        return img.label === 'Full page';
-      });
-
-      var screenshot     = elementImg ? stripBase64Header(elementImg.dataUrl) : undefined;
-      var fullScreenshot = fullImg    ? stripBase64Header(fullImg.dataUrl)    : undefined;
+      }) || sliderImages.find(function(img) { return img.label === 'Full page'; });
 
       var issue = {
-        id:          generateUUID(),
-        title:       title,
-        description: desc,
-        severity:    severity,
-        url:         window.location.href,
-        route:       settings.captureRoute !== false ? window.location.pathname : undefined,
-        timestamp:   new Date().toISOString(),
-        capturedAt:  new Date().toISOString(),
-        screenshot:  screenshot,
-        fullScreenshot: fullScreenshot,
+        id:               generateUUID(),
+        title:            title,
+        description:      desc,
+        severity:         severity,
+        url:              window.location.href,
+        route:            settings.captureRoute !== false ? window.location.pathname : undefined,
+        timestamp:        new Date().toISOString(),
+        capturedAt:       new Date().toISOString(),
+        screenshot:       elementImg ? stripBase64Header(elementImg.dataUrl) : undefined,
+        fullScreenshot:   fullImg    ? stripBase64Header(fullImg.dataUrl)    : undefined,
+        allScreenshots:   allScreenshots,
       };
 
       // Optional form fields

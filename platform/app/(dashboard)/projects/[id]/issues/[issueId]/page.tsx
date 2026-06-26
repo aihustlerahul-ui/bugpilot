@@ -141,14 +141,19 @@ export default function IssueDetailPage({ params }: { params: { id: string; issu
   )
   if (!issue) return <div className="text-red-500 text-sm">Issue not found</div>
 
-  const screenshots = [
-    issue.screenshot_url         && { src: issue.screenshot_url,         label: 'Element View' },
-    issue.element_screenshot_url && { src: issue.element_screenshot_url, label: 'Full Page' },
-  ].filter(Boolean) as { src: string; label: string }[]
+  const meta = issue.metadata ?? {}
+  const metaScreenshots = (meta as Record<string, unknown>).screenshots
+  const screenshots: { src: string; label: string }[] = Array.isArray(metaScreenshots) && metaScreenshots.length > 0
+    // New path: all images stored in metadata.screenshots (no limit)
+    ? (metaScreenshots as { label: string; url: string }[]).filter(s => s.url).map(s => ({ src: s.url, label: s.label }))
+    // Legacy fallback: two fixed columns
+    : [
+        issue.screenshot_url         && { src: issue.screenshot_url,         label: 'Element View' },
+        issue.element_screenshot_url && { src: issue.element_screenshot_url, label: 'Full Page' },
+      ].filter(Boolean) as { src: string; label: string }[]
 
   const st  = STATUS_CONFIG[issue.sync_status] ?? STATUS_CONFIG.pending
   const sev = issue.severity ?? 'Medium'
-  const meta = issue.metadata ?? {}
   const el   = (issue.element_info ?? {}) as Record<string, unknown>
   const env  = (issue.browser_info ?? {}) as Record<string, unknown>
 
