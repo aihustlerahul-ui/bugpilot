@@ -818,9 +818,48 @@
     var consoleSnap = _consoleBuffer.slice(-10).reverse();
     var networkSnap = _networkBuffer.slice(-10).reverse();
 
-    var screenshotHtml = screenshotDataUrl
-      ? '<img class="qa-modal-thumbnail" src="' + screenshotDataUrl + '" alt="Screenshot">'
-      : '<div style="height:4px"></div>';
+    // ── Slider state ─────────────────────────────────────────────────────────
+    var sliderImages = [];
+    if (screenshotDataUrl)     sliderImages.push({ dataUrl: screenshotDataUrl,     label: 'Element' });
+    if (fullScreenshotDataUrl) sliderImages.push({ dataUrl: fullScreenshotDataUrl, label: 'Full page' });
+    var sliderIndex = 0;
+
+    function buildSliderHtml() {
+      if (sliderImages.length === 0) return '<div style="height:4px"></div>';
+      var img = sliderImages[sliderIndex];
+      var navHtml = sliderImages.length > 1
+        ? '<button class="qa-slider-nav qa-slider-nav-prev" id="qa-slider-prev">‹</button>' +
+          '<button class="qa-slider-nav qa-slider-nav-next" id="qa-slider-next">›</button>' +
+          '<span class="qa-slider-counter" id="qa-slider-counter">' + (sliderIndex + 1) + ' / ' + sliderImages.length + '</span>'
+        : '';
+      return '<div class="qa-modal-slider" id="qa-modal-slider">' +
+        '<img class="qa-modal-slider-img" id="qa-slider-img" src="' + img.dataUrl + '" alt="Screenshot">' +
+        navHtml +
+        '<button class="qa-slider-edit-btn" id="qa-slider-edit">✏ Edit</button>' +
+      '</div>';
+    }
+    var screenshotHtml = buildSliderHtml();
+
+    // ── ANNOTATION_DONE handler (closure over slider state) ───────────────────
+    function onAnnotationDone(message, _sender, sendResponse) {
+      if (message.type !== 'ANNOTATION_DONE') return;
+      if (message.keepOriginal) {
+        sliderImages.splice(message.imageIndex + 1, 0, {
+          dataUrl: message.dataUrl,
+          label:   'Annotated',
+        });
+        sliderIndex = message.imageIndex + 1;
+      } else {
+        sliderImages[message.imageIndex] = {
+          dataUrl: message.dataUrl,
+          label:   (sliderImages[message.imageIndex].label || '') + ' (annotated)',
+        };
+      }
+      refreshSlider();
+      sendResponse({ ok: true });
+      return true;
+    }
+    chrome.runtime.onMessage.addListener(onAnnotationDone);
 
     var reactHtml = '';
     if (elemData.react && settings.captureReact !== false) {
@@ -921,6 +960,41 @@
     setTimeout(function () { var inp = modal.querySelector('#qa-title-input'); if (inp) inp.focus(); }, 50);
     makeDraggable(modal, document.getElementById('qa-modal-drag-handle'));
 
+    // ── Slider interactivity ──────────────────────────────────────────────────
+    function refreshSlider() {
+      var imgEl     = modal.querySelector('#qa-slider-img');
+      var counterEl = modal.querySelector('#qa-slider-counter');
+      if (!imgEl) return;
+      imgEl.src = sliderImages[sliderIndex].dataUrl;
+      if (counterEl) counterEl.textContent = (sliderIndex + 1) + ' / ' + sliderImages.length;
+    }
+
+    var prevBtn = modal.querySelector('#qa-slider-prev');
+    var nextBtn = modal.querySelector('#qa-slider-next');
+    var editBtn = modal.querySelector('#qa-slider-edit');
+
+    if (prevBtn) {
+      prevBtn.addEventListener('click', function () {
+        sliderIndex = (sliderIndex - 1 + sliderImages.length) % sliderImages.length;
+        refreshSlider();
+      });
+    }
+    if (nextBtn) {
+      nextBtn.addEventListener('click', function () {
+        sliderIndex = (sliderIndex + 1) % sliderImages.length;
+        refreshSlider();
+      });
+    }
+    if (editBtn) {
+      editBtn.addEventListener('click', function () {
+        chrome.runtime.sendMessage({
+          type:       'OPEN_ANNOTATOR',
+          dataUrl:    sliderImages[sliderIndex].dataUrl,
+          imageIndex: sliderIndex,
+        });
+      });
+    }
+
     // ── Build issue data ─────────────────────────────────────────────────────
     function buildIssue() {
       var title    = modal.querySelector('#qa-title-input').value.trim();
@@ -935,8 +1009,11 @@
         return null;
       }
 
-      var screenshot     = screenshotDataUrl     ? screenshotDataUrl.replace(/^data:image\/[a-z]+;base64,/, '')     : undefined;
-      var fullScreenshot = fullScreenshotDataUrl ? fullScreenshotDataUrl.replace(/^data:image\/[a-z]+;base64,/, '') : undefined;
+      // Use current slider images (may have been annotated)
+      var screenshot     = sliderImages[0] ? sliderImages[0].dataUrl.replace(/^data:image\/[a-z+]+;base64,/, '') : undefined;
+      var fullScreenshot = sliderImages[1] ? sliderImages[1].dataUrl.replace(/^data:image\/[a-z+]+;base64,/, '') : undefined;
+      // If "keep both" added a 3rd image (annotated), include it as fullScreenshot override
+      if (sliderImages[2]) fullScreenshot = sliderImages[2].dataUrl.replace(/^data:image\/[a-z+]+;base64,/, '');
 
       var issue = {
         id:          generateUUID(),
@@ -1051,6 +1128,17 @@
       }
 
       return issue;
+    }
+
+    // ── Local closeModal (removes annotation listener) ────────────────────────
+    function closeModal() {
+      modalOpen = false;
+      chrome.runtime.onMessage.removeListener(onAnnotationDone);
+      var modalEl = document.getElementById(MODAL_ID);
+      var dimEl   = document.getElementById(DIM_ID);
+      if (modalEl) modalEl.remove();
+      if (dimEl)   dimEl.remove();
+      if (recording) enableHover();
     }
 
     // ── Buttons ──────────────────────────────────────────────────────────────
