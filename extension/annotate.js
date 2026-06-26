@@ -51,7 +51,7 @@
 
   var footer = document.createElement('div');
   footer.id = 'qa-annotator-footer';
-  footer.style.display = 'none';
+  footer.style.setProperty('display', 'none', 'important');
   footer.innerHTML =
     '<span class="qa-ann-footer-label">Save as:</span>' +
     '<button class="qa-ann-btn-replace" id="qa-ann-replace">Replace original</button>' +
@@ -248,8 +248,8 @@
 
   // ── Done — show footer ─────────────────────────────────────────────────────
   document.getElementById('qa-ann-done').addEventListener('click', function () {
-    toolbar.style.display = 'none';
-    footer.style.display  = 'flex';
+    toolbar.style.setProperty('display', 'none', 'important');
+    footer.style.setProperty('display', 'flex', 'important');
     canvas.style.pointerEvents = 'none';
   });
 
