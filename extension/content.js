@@ -807,11 +807,11 @@
     var modalW = 400;
     var modalH = 600;
     var top, left;
-    if (rect.bottom + modalH + 16 < vh) top = rect.bottom + window.scrollY + 8;
-    else if (rect.top - modalH - 16 > 0) top = rect.top + window.scrollY - modalH - 8;
-    else top = window.scrollY + Math.max(16, (vh - modalH) / 2);
-    left = Math.max(8, Math.min(rect.left + window.scrollX, window.scrollX + vw - modalW - 8));
-    top  = Math.max(window.scrollY + 8, top);
+    if (rect.bottom + modalH + 16 < vh) top = rect.bottom + 8;
+    else if (rect.top - modalH - 16 > 0) top = rect.top - modalH - 8;
+    else top = Math.max(16, (vh - modalH) / 2);
+    left = Math.max(8, Math.min(rect.left, vw - modalW - 8));
+    top  = Math.max(8, top);
 
     modal.style.cssText = 'top: ' + top + 'px !important; left: ' + left + 'px !important;';
 
