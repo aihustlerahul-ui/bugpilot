@@ -14,10 +14,12 @@ Session replay lets QA reporters attach a recording of their browser session to 
 ## Architecture
 
 ```
-content.js (rrweb record)
-  → rolling event buffer (user-selected window: 30s–5min)
-  → on submit: compress with CompressionStream (gzip)
-  → include in SUBMIT_ISSUE message to background.js
+background.js (on START_REPORTING, if replay enabled)
+  → chrome.scripting.executeScript: inject rrweb.min.js then replay-recorder.js into tab
+
+replay-recorder.js (injected only when toggle is on)
+  → rrweb.record() → rolling event buffer (user-selected window: 30s–5min)
+  → on GET_REPLAY_EVENTS message: compress with CompressionStream (gzip) → send to background.js
 
 background.js
   → multipart POST to /api/issues (screenshot + replayBlob)
@@ -47,22 +49,27 @@ Platform issue detail
   - `qa_replay_window_ms` (number, milliseconds)
 - Toggle and dropdown are disabled while a recording is active (settings locked mid-session)
 
-### Recording (content.js)
+### Recording (replay-recorder.js — lazy injected)
 
-- rrweb bundled statically in content.js (~80KB addition)
-- Recording starts on `START_REPORTING` message if `qa_replay_enabled` is true
-- Strategy: **rolling window** — always keep the last N milliseconds of events (N = `qa_replay_window_ms`)
-  - Events pushed to `_replayEvents[]`
-  - On each new event: drop events older than `Date.now() - windowMs` from the front
-  - This ensures submit always captures the most recent window regardless of session length
-- Recording stops on `STOP_REPORTING` message or tab navigation
-- `_replayEvents` cleared on stop
+- `rrweb.min.js` and `replay-recorder.js` are **separate files** in `extension/`, declared in `web_accessible_resources`
+- Neither file is loaded on any page unless the user has the toggle on and starts a recording
+- Zero overhead for users who don't use replay
+- `background.js` injects both files via `chrome.scripting.executeScript({ target: { tabId }, files: [...] })` when `START_REPORTING` is received and `qa_replay_enabled` is true
+- `replay-recorder.js` is a thin wrapper (~50 lines):
+  - Calls `rrweb.record({ emit(event) { ... } })`
+  - Maintains rolling buffer: drops events older than `Date.now() - windowMs` on each new event
+  - Listens for `GET_REPLAY_EVENTS` message → returns current buffer
+  - Listens for `STOP_REPLAY` message → calls stop function, clears buffer
+- Strategy: **rolling window** — always keeps the last N milliseconds of events (N = `qa_replay_window_ms`)
+  - Ensures submit always captures the most recent window regardless of session length
+  - If user picks 30s window and submits quickly after the bug, early events are preserved
 
 ### Capture + Submit
 
-- On `CAPTURE_SCREENSHOT` / `SUBMIT_ISSUE`: `_replayEvents` included in the message payload
-- `background.js` compresses using `CompressionStream('gzip')` before upload
-- If `qa_replay_enabled` is false or events array is empty, replay fields are omitted — issue submits normally
+- On `SUBMIT_ISSUE`: `background.js` sends `GET_REPLAY_EVENTS` to the tab's `replay-recorder.js`
+- `replay-recorder.js` returns the events array
+- `background.js` compresses using `CompressionStream('gzip')` before including in the multipart POST
+- If `qa_replay_enabled` is false or no recorder was injected, replay fields are omitted — issue submits normally
 
 ---
 
@@ -185,7 +192,7 @@ USING (bucket_id = 'qa-replays' AND auth.role() = 'authenticated');
 
 - **Max replay window:** 5 minutes (user-selectable, default 2 min)
 - **Estimated compressed size:** 30s ≈ 40KB, 2min ≈ 200KB, 5min ≈ 400KB
-- **rrweb bundle size:** ~80KB added to content.js (loaded on all pages)
+- **rrweb bundle size:** ~80KB, loaded only when replay toggle is on (lazy-injected via `chrome.scripting.executeScript`)
 - **Signed URL expiry:** 1 hour for issue detail, 24 hours for public replay page fetch
 - **Share token expiry:** 7 days
 - **Storage bucket:** private (`qa-replays`), access via signed URLs only
