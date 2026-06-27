@@ -27,9 +27,8 @@ const bufferActions      = document.getElementById('buffer-actions');
 const btnSubmitAll       = document.getElementById('btn-submit-all');
 const btnClear           = document.getElementById('btn-clear');
 const toast              = document.getElementById('toast');
-const toggleReplay     = document.getElementById('toggle-replay');
-const replayWindowSel  = document.getElementById('replay-window-select');
-const replayRow        = document.getElementById('replay-row');
+const btnScreenRec    = document.getElementById('btn-screen-recording');
+const replayWindowSel = document.getElementById('replay-window-select');
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let isRecording    = false;
@@ -92,19 +91,19 @@ function applyRecordingState(recording, count) {
     statusCount.textContent = captureCount + ' captured';
     btnToggleRecording.className = 'btn btn-stop btn-full';
     btnToggleRecording.innerHTML =
-      '<svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><rect x="1" y="1" width="10" height="10" rx="1.5"/></svg> Stop Recording';
+      '<svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><rect x="1" y="1" width="10" height="10" rx="1.5"/></svg> Stop Capturing';
     // Lock replay controls during recording
-    toggleReplay.disabled = true;
     replayWindowSel.disabled = true;
+    btnScreenRec.disabled = true;
   } else {
     statusBar.className = 'status-bar idle';
     statusText.textContent = 'Ready to record';
     btnToggleRecording.className = 'btn btn-record btn-full';
     btnToggleRecording.innerHTML =
-      '<svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><polygon points="3,1 11,6 3,11"/></svg> Start Recording';
+      '<svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><polygon points="3,1 11,6 3,11"/></svg> Capture Now';
     // Unlock replay controls when stopped
-    toggleReplay.disabled = false;
     replayWindowSel.disabled = false;
+    btnScreenRec.disabled = false;
   }
 }
 
@@ -445,18 +444,40 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-// ── Replay toggle persistence ─────────────────────────────────────────────────
-chrome.storage.local.get(['qa_replay_enabled', 'qa_replay_window_ms'], function (result) {
-  const enabled = result.qa_replay_enabled ?? false;
+// ── Screen recording button ───────────────────────────────────────────────────
+let isScreenRecording = false;
+
+chrome.storage.local.get(['qa_screen_recording', 'qa_replay_window_ms'], function (result) {
+  isScreenRecording = result.qa_screen_recording ?? false;
   const windowMs = result.qa_replay_window_ms ?? 120000;
-  toggleReplay.setAttribute('aria-pressed', String(enabled));
   replayWindowSel.value = String(windowMs);
+  applyScreenRecordingState(isScreenRecording);
 });
 
-toggleReplay.addEventListener('click', function () {
-  const next = toggleReplay.getAttribute('aria-pressed') !== 'true';
-  toggleReplay.setAttribute('aria-pressed', String(next));
-  chrome.storage.local.set({ qa_replay_enabled: next });
+function applyScreenRecordingState(active) {
+  isScreenRecording = active;
+  if (active) {
+    btnScreenRec.className = 'btn btn-screen-rec btn-full active';
+    btnScreenRec.innerHTML =
+      '<svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><rect x="1" y="1" width="10" height="10" rx="1.5"/></svg> Stop Recording Screen';
+  } else {
+    btnScreenRec.className = 'btn btn-screen-rec btn-full';
+    btnScreenRec.innerHTML =
+      '<svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="6" cy="6" r="2.5"/></svg> Start Recording Screen';
+  }
+}
+
+btnScreenRec.addEventListener('click', async function () {
+  const next = !isScreenRecording;
+  await chrome.storage.local.set({ qa_screen_recording: next });
+  applyScreenRecordingState(next);
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) return;
+  if (next) {
+    chrome.runtime.sendMessage({ type: 'START_SCREEN_RECORDING', tabId: tab.id });
+  } else {
+    chrome.runtime.sendMessage({ type: 'STOP_SCREEN_RECORDING', tabId: tab.id });
+  }
 });
 
 replayWindowSel.addEventListener('change', function () {
