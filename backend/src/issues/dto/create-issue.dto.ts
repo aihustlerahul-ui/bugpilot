@@ -44,4 +44,8 @@ export class CreateIssueDto {
   @IsOptional()
   @IsObject()
   metadata?: Record<string, unknown>
+
+  @IsOptional()
+  @IsString()
+  replay_data?: string
 }

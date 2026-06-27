@@ -6,6 +6,19 @@ import { CreateIssueDto } from './dto/create-issue.dto'
 export class IssuesService {
   constructor(private supabase: SupabaseService) {}
 
+  private async uploadReplay(base64Gzip: string, path: string): Promise<string | null> {
+    try {
+      const binary = Buffer.from(base64Gzip, 'base64');
+      const { error } = await this.supabase.db.storage
+        .from('qa-replays')
+        .upload(path, binary, { contentType: 'application/gzip', upsert: false });
+      if (error) return null;
+      return path;
+    } catch {
+      return null;
+    }
+  }
+
   private async uploadScreenshot(base64: string, path: string): Promise<string | null> {
     try {
       const buffer = Buffer.from(
@@ -36,12 +49,15 @@ export class IssuesService {
         : []
 
     // Upload all images in parallel — no limit
-    const [screenshot_url, element_screenshot_url, ...screenshotUrls] = await Promise.all([
+    const [screenshot_url, element_screenshot_url, replayPath, ...screenshotUrls] = await Promise.all([
       dto.screenshot
         ? this.uploadScreenshot(dto.screenshot, `${basePath}-screenshot.png`)
         : Promise.resolve(null),
       dto.element_screenshot
         ? this.uploadScreenshot(dto.element_screenshot, `${basePath}-element.png`)
+        : Promise.resolve(null),
+      dto.replay_data
+        ? this.uploadReplay(dto.replay_data, `${userId}/${dto.project_id}/${timestamp}-replay.json.gz`)
         : Promise.resolve(null),
       ...screenshotsRaw.map((img, i) =>
         img.data
@@ -72,6 +88,7 @@ export class IssuesService {
         element_info: dto.element_info ?? null,
         screenshot_url,
         element_screenshot_url,
+        replay_storage_path: replayPath ?? null,
         metadata: metadataWithExtras,
         sync_status: 'pending',
       })
@@ -99,7 +116,16 @@ export class IssuesService {
       .eq('id', issueId)
       .single()
     if (error) throw new NotFoundException('Issue not found')
-    return data
+
+    let replayUrl: string | null = null;
+    if (data.replay_storage_path) {
+      const { data: signed } = await this.supabase.db.storage
+        .from('qa-replays')
+        .createSignedUrl(data.replay_storage_path, 60 * 60); // 1 hour
+      replayUrl = signed?.signedUrl ?? null;
+    }
+
+    return { ...data, replayUrl };
   }
 
   async updateSyncStatus(
