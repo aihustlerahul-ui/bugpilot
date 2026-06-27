@@ -3,6 +3,27 @@
 
 const API_URL = 'http://localhost:4000';
 
+// ── Replay compression ────────────────────────────────────────────────────────
+async function compressReplayEvents(events) {
+  try {
+    const json = JSON.stringify(events);
+    const encoded = new TextEncoder().encode(json);
+    const cs = new CompressionStream('gzip');
+    const writer = cs.writable.getWriter();
+    writer.write(encoded);
+    writer.close();
+    const compressed = await new Response(cs.readable).arrayBuffer();
+    // Convert to base64 for JSON transport
+    const bytes = new Uint8Array(compressed);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  } catch (err) {
+    console.warn('[QA] replay compress failed:', err.message);
+    return null;
+  }
+}
+
 // ── Message router ────────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const { type } = message;
@@ -179,18 +200,38 @@ chrome.commands.onCommand.addListener(async (command) => {
   if (recording) {
     // Stop recording
     try { await chrome.tabs.sendMessage(tab.id, { type: 'STOP_REPORTING' }); } catch (_) {}
+    // Stop replay recorder if active
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'STOP_REPLAY' }); } catch (_) {}
     await chrome.storage.local.set({ qa_recording: false });
   } else {
     // Sync settings then start recording
     await handleSyncSettings(() => {});
     await chrome.storage.local.set({ qa_recording: true });
+    // Inject rrweb + replay recorder if toggle is on
+    const { qa_replay_enabled } = await chrome.storage.local.get(['qa_replay_enabled']);
     try {
       await chrome.tabs.sendMessage(tab.id, { type: 'START_REPORTING' });
+      if (qa_replay_enabled) {
+        try {
+          await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['rrweb.min.js'] });
+          await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['replay-recorder.js'] });
+        } catch (err) {
+          console.warn('[QA] replay inject failed:', err.message);
+        }
+      }
     } catch (_) {
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
       await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ['content-styles.css'] });
       await new Promise(r => setTimeout(r, 300));
       try { await chrome.tabs.sendMessage(tab.id, { type: 'START_REPORTING' }); } catch (_) {}
+      if (qa_replay_enabled) {
+        try {
+          await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['rrweb.min.js'] });
+          await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['replay-recorder.js'] });
+        } catch (err) {
+          console.warn('[QA] replay inject failed (fallback):', err.message);
+        }
+      }
     }
   }
 });
@@ -227,6 +268,23 @@ async function tryRefreshToken() {
 
 // ── Shared POST helper ────────────────────────────────────────────────────────
 async function postIssue(issue) {
+  // Collect replay events if recording was active
+  let replayData = null;
+  const { qa_replay_enabled } = await chrome.storage.local.get(['qa_replay_enabled']);
+  if (qa_replay_enabled) {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab) {
+        const replayRes = await chrome.tabs.sendMessage(tab.id, { type: 'GET_REPLAY_EVENTS' });
+        if (replayRes?.ok && replayRes.events?.length > 0) {
+          replayData = await compressReplayEvents(replayRes.events);
+        }
+      }
+    } catch (_) {
+      // Tab may not have replay recorder injected — that's fine
+    }
+  }
+
   const { qa_token: token } = await chrome.storage.local.get(['qa_token']);
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -273,6 +331,7 @@ async function postIssue(issue) {
       sprint:             issue.sprint             || null,
       assignee:           issue.assignee           || null,
     },
+    replay_data: replayData ?? undefined,
   };
 
   const res = await fetch(`${API_URL}/api/issues`, {
