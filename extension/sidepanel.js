@@ -27,6 +27,9 @@ const bufferActions      = document.getElementById('buffer-actions');
 const btnSubmitAll       = document.getElementById('btn-submit-all');
 const btnClear           = document.getElementById('btn-clear');
 const toast              = document.getElementById('toast');
+const toggleReplay     = document.getElementById('toggle-replay');
+const replayWindowSel  = document.getElementById('replay-window-select');
+const replayRow        = document.getElementById('replay-row');
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let isRecording    = false;
@@ -90,12 +93,18 @@ function applyRecordingState(recording, count) {
     btnToggleRecording.className = 'btn btn-stop btn-full';
     btnToggleRecording.innerHTML =
       '<svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><rect x="1" y="1" width="10" height="10" rx="1.5"/></svg> Stop Recording';
+    // Lock replay controls during recording
+    toggleReplay.disabled = true;
+    replayWindowSel.disabled = true;
   } else {
     statusBar.className = 'status-bar idle';
     statusText.textContent = 'Ready to record';
     btnToggleRecording.className = 'btn btn-record btn-full';
     btnToggleRecording.innerHTML =
       '<svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><polygon points="3,1 11,6 3,11"/></svg> Start Recording';
+    // Unlock replay controls when stopped
+    toggleReplay.disabled = false;
+    replayWindowSel.disabled = false;
   }
 }
 
@@ -434,6 +443,24 @@ chrome.storage.onChanged.addListener((changes, area) => {
     const rec = changes.qa_recording.newValue;
     applyRecordingState(!!rec);
   }
+});
+
+// ── Replay toggle persistence ─────────────────────────────────────────────────
+chrome.storage.local.get(['qa_replay_enabled', 'qa_replay_window_ms'], function (result) {
+  const enabled = result.qa_replay_enabled ?? false;
+  const windowMs = result.qa_replay_window_ms ?? 120000;
+  toggleReplay.setAttribute('aria-pressed', String(enabled));
+  replayWindowSel.value = String(windowMs);
+});
+
+toggleReplay.addEventListener('click', function () {
+  const next = toggleReplay.getAttribute('aria-pressed') !== 'true';
+  toggleReplay.setAttribute('aria-pressed', String(next));
+  chrome.storage.local.set({ qa_replay_enabled: next });
+});
+
+replayWindowSel.addEventListener('change', function () {
+  chrome.storage.local.set({ qa_replay_window_ms: Number(replayWindowSel.value) });
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
