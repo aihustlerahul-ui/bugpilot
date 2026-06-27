@@ -183,7 +183,15 @@ async function handleStartScreenRecording(message, sendResponse) {
   const tabId = message.tabId;
   if (!tabId) { sendResponse({ ok: false, error: 'No tab id' }); return; }
   try {
-    await chrome.scripting.executeScript({ target: { tabId }, files: ['rrweb.min.js'] });
+    // Chrome's executeScript({files}) rejects large files as "not UTF-8" even when they are.
+    // Workaround: fetch the source in the service worker and inject it as inline code.
+    const rrwebUrl = chrome.runtime.getURL('rrweb.min.js');
+    const rrwebCode = await fetch(rrwebUrl).then(r => r.text());
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (code) => { (0, eval)(code); },
+      args: [rrwebCode],
+    });
     await chrome.scripting.executeScript({ target: { tabId }, files: ['replay-recorder.js'] });
     await chrome.storage.local.set({ qa_screen_recording: true });
     sendResponse({ ok: true });
