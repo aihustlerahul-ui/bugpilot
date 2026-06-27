@@ -27,8 +27,10 @@ const bufferActions      = document.getElementById('buffer-actions');
 const btnSubmitAll       = document.getElementById('btn-submit-all');
 const btnClear           = document.getElementById('btn-clear');
 const toast              = document.getElementById('toast');
-const btnScreenRec    = document.getElementById('btn-screen-recording');
-const replayWindowSel = document.getElementById('replay-window-select');
+const btnScreenRec       = document.getElementById('btn-screen-recording');
+const replayWindowSel    = document.getElementById('replay-window-select');
+const screenRecTimerRow  = document.getElementById('screen-rec-timer-row');
+const screenRecTimerEl   = document.getElementById('screen-rec-timer');
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let isRecording    = false;
@@ -444,6 +446,42 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
+// ── Screen recording countdown ────────────────────────────────────────────────
+let _screenRecIntervalId = null;
+
+function formatCountdown(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+function startCountdown(totalSeconds) {
+  clearInterval(_screenRecIntervalId);
+  let remaining = totalSeconds;
+  screenRecTimerEl.textContent = formatCountdown(remaining);
+  screenRecTimerRow.style.display = 'block';
+
+  _screenRecIntervalId = setInterval(async () => {
+    remaining -= 1;
+    screenRecTimerEl.textContent = formatCountdown(remaining);
+    if (remaining <= 0) {
+      clearInterval(_screenRecIntervalId);
+      _screenRecIntervalId = null;
+      // Auto-stop screen recording
+      await chrome.storage.local.set({ qa_screen_recording: false });
+      applyScreenRecordingState(false);
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab) chrome.runtime.sendMessage({ type: 'STOP_SCREEN_RECORDING', tabId: tab.id });
+    }
+  }, 1000);
+}
+
+function stopCountdown() {
+  clearInterval(_screenRecIntervalId);
+  _screenRecIntervalId = null;
+  screenRecTimerRow.style.display = 'none';
+}
+
 // ── Screen recording button ───────────────────────────────────────────────────
 let isScreenRecording = false;
 
@@ -460,10 +498,13 @@ function applyScreenRecordingState(active) {
     btnScreenRec.className = 'btn btn-screen-rec btn-full active';
     btnScreenRec.innerHTML =
       '<svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><rect x="1" y="1" width="10" height="10" rx="1.5"/></svg> Stop Recording Screen';
+    const windowMs = Number(replayWindowSel.value) || 120000;
+    startCountdown(Math.floor(windowMs / 1000));
   } else {
     btnScreenRec.className = 'btn btn-screen-rec btn-full';
     btnScreenRec.innerHTML =
       '<svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="6" cy="6" r="2.5"/></svg> Start Recording Screen';
+    stopCountdown();
   }
 }
 
