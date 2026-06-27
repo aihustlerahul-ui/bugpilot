@@ -128,6 +128,31 @@ export class IssuesService {
     return { ...data, replayUrl };
   }
 
+  async createReplayToken(userId: string, issueId: string): Promise<{ token: string; url: string }> {
+    const { data: issue } = await this.supabase.db
+      .from('issues')
+      .select('id, replay_storage_path')
+      .eq('id', issueId)
+      .single();
+
+    if (!issue?.replay_storage_path) {
+      throw new NotFoundException('No replay available for this issue');
+    }
+
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data, error } = await this.supabase.db
+      .from('replay_tokens')
+      .insert({ issue_id: issueId, expires_at: expiresAt, created_by: userId })
+      .select('id')
+      .single();
+
+    if (error) throw new Error(error.message);
+
+    const url = `${process.env.PLATFORM_URL ?? 'http://localhost:3000'}/replay/${data.id}`;
+    return { token: data.id, url };
+  }
+
   async updateSyncStatus(
     issueId: string,
     status: 'pending' | 'synced' | 'failed',

@@ -24,4 +24,9 @@ export class IssuesController {
   findOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.issues.findOne(user.id, id)
   }
+
+  @Post(':id/replay-token')
+  createReplayToken(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.issues.createReplayToken(user.id, id);
+  }
 }
