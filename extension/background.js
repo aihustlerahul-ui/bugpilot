@@ -52,6 +52,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     handleSyncSettings(sendResponse);
     return true;
   }
+  if (type === 'START_SCREEN_RECORDING') {
+    handleStartScreenRecording(message);
+    return false;
+  }
+  if (type === 'STOP_SCREEN_RECORDING') {
+    handleStopScreenRecording(message);
+    return false;
+  }
   if (type === 'OPEN_ANNOTATOR') {
     handleOpenAnnotator(message, _sender);
     return false;
@@ -76,6 +84,12 @@ async function handleCaptureScreenshot(sendResponse) {
       format: 'jpeg',
       quality: 80,
     });
+
+    // Snapshot replay events at bug-capture moment (before modal opens)
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'SNAPSHOT_REPLAY' });
+    } catch (_) {}
+
     sendResponse({ ok: true, dataUrl });
   } catch (err) {
     sendResponse({ ok: false, error: err.message });
@@ -164,6 +178,29 @@ async function handleSyncSettings(sendResponse) {
   }
 }
 
+// ── START_SCREEN_RECORDING ────────────────────────────────────────────────────
+async function handleStartScreenRecording(message) {
+  const tabId = message.tabId;
+  if (!tabId) return;
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['rrweb.min.js'] });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['replay-recorder.js'] });
+  } catch (err) {
+    console.warn('[QA] screen recording inject failed:', err.message);
+  }
+  await chrome.storage.local.set({ qa_screen_recording: true });
+}
+
+// ── STOP_SCREEN_RECORDING ─────────────────────────────────────────────────────
+async function handleStopScreenRecording(message) {
+  const tabId = message.tabId;
+  if (!tabId) return;
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'STOP_REPLAY' });
+  } catch (_) {}
+  await chrome.storage.local.set({ qa_screen_recording: false });
+}
+
 // ── OPEN_ANNOTATOR ────────────────────────────────────────────────────────────
 async function handleOpenAnnotator(message, sender) {
   const tabId = sender.tab && sender.tab.id;
@@ -207,31 +244,13 @@ chrome.commands.onCommand.addListener(async (command) => {
     // Sync settings then start recording
     await handleSyncSettings(() => {});
     await chrome.storage.local.set({ qa_recording: true });
-    // Inject rrweb + replay recorder if toggle is on
-    const { qa_replay_enabled } = await chrome.storage.local.get(['qa_replay_enabled']);
     try {
       await chrome.tabs.sendMessage(tab.id, { type: 'START_REPORTING' });
-      if (qa_replay_enabled) {
-        try {
-          await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['rrweb.min.js'] });
-          await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['replay-recorder.js'] });
-        } catch (err) {
-          console.warn('[QA] replay inject failed:', err.message);
-        }
-      }
     } catch (_) {
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
       await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ['content-styles.css'] });
       await new Promise(r => setTimeout(r, 300));
       try { await chrome.tabs.sendMessage(tab.id, { type: 'START_REPORTING' }); } catch (_) {}
-      if (qa_replay_enabled) {
-        try {
-          await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['rrweb.min.js'] });
-          await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['replay-recorder.js'] });
-        } catch (err) {
-          console.warn('[QA] replay inject failed (fallback):', err.message);
-        }
-      }
     }
   }
 });
@@ -270,8 +289,8 @@ async function tryRefreshToken() {
 async function postIssue(issue) {
   // Collect replay events if recording was active
   let replayData = null;
-  const { qa_replay_enabled } = await chrome.storage.local.get(['qa_replay_enabled']);
-  if (qa_replay_enabled) {
+  const { qa_screen_recording } = await chrome.storage.local.get(['qa_screen_recording']);
+  if (qa_screen_recording) {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab) {
