@@ -46,4 +46,5 @@ export interface Issue {
   metadata: IssueMetadata | null
   sync_status: SyncStatus; external_ticket_id: string | null
   external_ticket_url: string | null; created_at: string
+  replayUrl?: string | null
 }

@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { api } from '@/lib/api/client'
 import { SyncButton } from '@/components/SyncButton'
+import { ReplayPlayer } from '@/components/ReplayPlayer'
 import type { Issue } from '@/lib/types'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -242,6 +243,32 @@ export default function IssueDetailPage({ params }: { params: { id: string; issu
                   </div>
                 </button>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Session Replay */}
+        {issue.replayUrl && (
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+            <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Session Replay</h2>
+              <button
+                onClick={async () => {
+                  try {
+                    const data = await api.post<{ url: string }>(`/issues/${issue.id}/replay-token`, {})
+                    await navigator.clipboard.writeText(data.url)
+                    alert('Replay link copied to clipboard — valid for 7 days')
+                  } catch {
+                    alert('Failed to generate replay link')
+                  }
+                }}
+                className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+              >
+                Share replay link
+              </button>
+            </div>
+            <div className="p-4">
+              <ReplayPlayer replayUrl={issue.replayUrl} issueTitle={issue.title ?? undefined} />
             </div>
           </div>
         )}
