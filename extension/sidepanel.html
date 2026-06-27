@@ -323,39 +323,30 @@
     #toast.show { display: flex; }
     #toast.success { background: var(--green-bg); color: #166534; border: 1px solid var(--green-border); }
     #toast.error { background: var(--red-bg); color: #991b1b; border: 1px solid var(--red-border); }
-    /* ── REPLAY ROW ── */
-    .replay-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 8px 14px; background: var(--bg); border-top: 1px solid var(--border);
-      gap: 8px;
-    }
-    .replay-label {
+    /* ── SCREEN RECORDING ROW ── */
+    .screen-rec-row {
       display: flex; align-items: center; gap: 6px;
-      font-size: 11.5px; font-weight: 600; color: var(--text-mid);
-      cursor: pointer; user-select: none;
+      padding: 6px 14px 10px;
     }
-    .replay-icon { font-size: 10px; color: var(--red); }
-    .replay-controls { display: flex; align-items: center; gap: 6px; }
+    .btn-screen-rec {
+      flex: 1;
+      background: var(--surface); color: var(--text-hi);
+      border: 1px solid var(--border);
+      font-size: 12px; padding: 8px 10px;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-screen-rec:hover:not(:disabled) { background: var(--bg); }
+    .btn-screen-rec.active {
+      background: var(--red-bg); color: #991b1b;
+      border-color: var(--red-border);
+    }
+    .btn-screen-rec.active svg circle:last-child { fill: var(--red); }
     .replay-window-select {
       font-size: 11px; padding: 3px 6px; border: 1px solid var(--border);
       border-radius: 6px; background: var(--surface); color: var(--text-hi);
-      cursor: pointer;
+      cursor: pointer; flex-shrink: 0;
     }
     .replay-window-select:disabled { opacity: 0.4; cursor: not-allowed; }
-    .replay-toggle {
-      width: 32px; height: 18px; border-radius: 9px;
-      border: none; background: var(--border); cursor: pointer;
-      position: relative; transition: background 0.2s; flex-shrink: 0;
-    }
-    .replay-toggle::after {
-      content: ''; position: absolute; top: 2px; left: 2px;
-      width: 14px; height: 14px; border-radius: 50%;
-      background: #fff; transition: transform 0.2s;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-    }
-    .replay-toggle[aria-pressed="true"] { background: var(--brand); }
-    .replay-toggle[aria-pressed="true"]::after { transform: translateX(14px); }
-    .replay-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -446,25 +437,22 @@
 
     <button class="btn btn-record btn-full" id="btn-toggle-recording">
       <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><polygon points="3,1 11,6 3,11"/></svg>
-      Start Recording
+      Capture Now
     </button>
 
-    <div class="replay-row" id="replay-row">
-      <label class="replay-label" for="toggle-replay">
-        <span class="replay-icon">⏺</span>
-        Record session replay
-      </label>
-      <div class="replay-controls">
-        <select class="replay-window-select" id="replay-window-select">
-          <option value="30000">30s</option>
-          <option value="60000">1 min</option>
-          <option value="120000" selected>2 min</option>
-          <option value="180000">3 min</option>
-          <option value="240000">4 min</option>
-          <option value="300000">5 min</option>
-        </select>
-        <button class="replay-toggle" id="toggle-replay" aria-pressed="false" title="Toggle session replay"></button>
-      </div>
+    <div class="screen-rec-row" id="screen-rec-row">
+      <button class="btn btn-screen-rec btn-full" id="btn-screen-recording">
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="6" cy="6" r="2.5"/></svg>
+        Start Recording Screen
+      </button>
+      <select class="replay-window-select" id="replay-window-select" title="Replay window length">
+        <option value="30000">30s</option>
+        <option value="60000">1 min</option>
+        <option value="120000" selected>2 min</option>
+        <option value="180000">3 min</option>
+        <option value="240000">4 min</option>
+        <option value="300000">5 min</option>
+      </select>
     </div>
 
     <p class="shortcut-hint">Press <span class="kbd">⌥⇧Q</span> to toggle from any page</p>
