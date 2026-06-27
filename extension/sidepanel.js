@@ -510,15 +510,29 @@ function applyScreenRecordingState(active) {
 
 btnScreenRec.addEventListener('click', async function () {
   const next = !isScreenRecording;
-  await chrome.storage.local.set({ qa_screen_recording: next });
-  applyScreenRecordingState(next);
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) return;
+  if (!tab) { showToast('No active tab found.', 'error'); return; }
+
+  btnScreenRec.disabled = true;
+
   if (next) {
-    chrome.runtime.sendMessage({ type: 'START_SCREEN_RECORDING', tabId: tab.id });
+    applyScreenRecordingState(true);
+    const res = await chrome.runtime.sendMessage({ type: 'START_SCREEN_RECORDING', tabId: tab.id });
+    if (res && res.ok) {
+      showToast('Screen recording ready — events are being captured.', 'success', 3000);
+    } else {
+      // Injection failed — revert UI
+      applyScreenRecordingState(false);
+      await chrome.storage.local.set({ qa_screen_recording: false });
+      showToast('Recording failed: ' + (res?.error || 'could not inject on this page'), 'error', 5000);
+    }
   } else {
+    applyScreenRecordingState(false);
+    await chrome.storage.local.set({ qa_screen_recording: false });
     chrome.runtime.sendMessage({ type: 'STOP_SCREEN_RECORDING', tabId: tab.id });
   }
+
+  btnScreenRec.disabled = false;
 });
 
 replayWindowSel.addEventListener('change', function () {

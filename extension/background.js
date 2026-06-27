@@ -53,12 +53,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (type === 'START_SCREEN_RECORDING') {
-    handleStartScreenRecording(message);
-    return false;
+    handleStartScreenRecording(message, sendResponse);
+    return true;
   }
   if (type === 'STOP_SCREEN_RECORDING') {
-    handleStopScreenRecording(message);
-    return false;
+    handleStopScreenRecording(message, sendResponse);
+    return true;
   }
   if (type === 'OPEN_ANNOTATOR') {
     handleOpenAnnotator(message, _sender);
@@ -179,26 +179,30 @@ async function handleSyncSettings(sendResponse) {
 }
 
 // ── START_SCREEN_RECORDING ────────────────────────────────────────────────────
-async function handleStartScreenRecording(message) {
+async function handleStartScreenRecording(message, sendResponse) {
   const tabId = message.tabId;
-  if (!tabId) return;
+  if (!tabId) { sendResponse({ ok: false, error: 'No tab id' }); return; }
   try {
     await chrome.scripting.executeScript({ target: { tabId }, files: ['rrweb.min.js'] });
     await chrome.scripting.executeScript({ target: { tabId }, files: ['replay-recorder.js'] });
+    await chrome.storage.local.set({ qa_screen_recording: true });
+    sendResponse({ ok: true });
   } catch (err) {
     console.warn('[QA] screen recording inject failed:', err.message);
+    await chrome.storage.local.set({ qa_screen_recording: false });
+    sendResponse({ ok: false, error: err.message });
   }
-  await chrome.storage.local.set({ qa_screen_recording: true });
 }
 
 // ── STOP_SCREEN_RECORDING ─────────────────────────────────────────────────────
-async function handleStopScreenRecording(message) {
+async function handleStopScreenRecording(message, sendResponse) {
   const tabId = message.tabId;
-  if (!tabId) return;
+  if (!tabId) { sendResponse({ ok: true }); return; }
   try {
     await chrome.tabs.sendMessage(tabId, { type: 'STOP_REPLAY' });
   } catch (_) {}
   await chrome.storage.local.set({ qa_screen_recording: false });
+  sendResponse({ ok: true });
 }
 
 // ── OPEN_ANNOTATOR ────────────────────────────────────────────────────────────
