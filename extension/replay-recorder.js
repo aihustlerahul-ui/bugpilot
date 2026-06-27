@@ -22,9 +22,8 @@
           _events.shift();
         }
       },
-      // Mask sensitive inputs by default
-      maskAllInputs: false,
-      maskInputOptions: { password: true },
+      // Mask all inputs by default to prevent PII capture
+      maskAllInputs: true,
     });
   }
 

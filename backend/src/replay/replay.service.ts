@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common'
+import { Injectable, NotFoundException } from '@nestjs/common'
 import { SupabaseService } from '../supabase/supabase.service'
 
 @Injectable()
@@ -10,12 +10,10 @@ export class ReplayService {
       .from('replay_tokens')
       .select('id, issue_id, expires_at')
       .eq('id', token)
+      .gte('expires_at', new Date().toISOString())
       .single();
 
     if (error || !tokenRow) throw new NotFoundException('Replay link not found or has expired');
-    if (new Date(tokenRow.expires_at) < new Date()) {
-      throw new UnauthorizedException('This replay link has expired');
-    }
 
     const { data: issue } = await this.supabase.db
       .from('issues')
