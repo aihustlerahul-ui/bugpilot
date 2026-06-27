@@ -8,6 +8,7 @@
   var _events = [];
   var _windowMs = 2 * 60 * 1000; // default 2 min, overridden by START message
   var _stopFn = null;
+  var _snapshotEvents = [];
 
   function startRecording(windowMs) {
     _windowMs = windowMs || _windowMs;
@@ -30,12 +31,18 @@
   function stopRecording() {
     if (_stopFn) { _stopFn(); _stopFn = null; }
     _events = [];
+    _snapshotEvents = [];
     window.__qaReplayActive = false;
   }
 
   chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     if (message.type === 'GET_REPLAY_EVENTS') {
-      sendResponse({ ok: true, events: _events.slice() });
+      sendResponse({ ok: true, events: _snapshotEvents.slice() });
+      return true;
+    }
+    if (message.type === 'SNAPSHOT_REPLAY') {
+      _snapshotEvents = _events.slice(); // freeze current buffer at bug moment
+      sendResponse({ ok: true });
       return true;
     }
     if (message.type === 'STOP_REPLAY') {
