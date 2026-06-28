@@ -502,8 +502,9 @@ function startCountdown(totalSeconds) {
       _screenRecIntervalId = null;
       // Delegate to background — it will saveRecording, set qa_screen_recording: false,
       // and write qa_saved_replay. storage.onChanged will update our UI.
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab) chrome.runtime.sendMessage({ type: 'STOP_SCREEN_RECORDING', tabId: tab.id });
+      const { qa_screen_recording_tab_id } = await chrome.storage.local.get(['qa_screen_recording_tab_id']);
+      const targetTabId = qa_screen_recording_tab_id || null;
+      chrome.runtime.sendMessage({ type: 'STOP_SCREEN_RECORDING', tabId: targetTabId });
     }
   }, 1000);
 }
