@@ -348,20 +348,17 @@ async function tryRefreshToken() {
 
 // ── Shared POST helper ────────────────────────────────────────────────────────
 async function postIssue(issue) {
-  // Collect replay events if recording was active
+  // Attach saved replay if it exists and was recorded on the same tab as this bug
   let replayData = null;
-  const { qa_screen_recording } = await chrome.storage.local.get(['qa_screen_recording']);
-  if (qa_screen_recording) {
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab) {
-        const replayRes = await chrome.tabs.sendMessage(tab.id, { type: 'GET_REPLAY_EVENTS' });
-        if (replayRes?.ok && replayRes.events?.length > 0) {
-          replayData = await compressReplayEvents(replayRes.events);
-        }
-      }
-    } catch (_) {
-      // Tab may not have replay recorder injected — that's fine
+  let replayStatus = null;
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const { qa_saved_replay } = await chrome.storage.local.get(['qa_saved_replay']);
+  if (qa_saved_replay?.data) {
+    if (activeTab && qa_saved_replay.tabId === activeTab.id) {
+      replayData = qa_saved_replay.data;
+      replayStatus = 'attached';
+    } else {
+      replayStatus = 'skipped';
     }
   }
 
@@ -425,5 +422,13 @@ async function postIssue(issue) {
     const text = await res.text();
     throw new Error(`HTTP ${res.status}: ${text}`);
   }
-  return res.json();
+  const result = await res.json();
+  // Clear saved replay after successful submit and signal sidepanel
+  if (replayStatus === 'attached') {
+    await chrome.storage.local.remove(['qa_saved_replay']);
+  }
+  if (replayStatus) {
+    await chrome.storage.local.set({ qa_replay_status: replayStatus });
+  }
+  return result;
 }
