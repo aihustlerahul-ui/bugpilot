@@ -289,29 +289,31 @@ chrome.action.onClicked.addListener((tab) => {
 chrome.commands.onCommand.addListener(async (command) => {
   if (command !== 'toggle-recording') return;
 
-  const { qa_token: token, qa_recording: recording } = await chrome.storage.local.get(['qa_token', 'qa_recording']);
+  const { qa_token: token, qa_recording: recording, qa_recording_tab_id: recordingTabId } =
+    await chrome.storage.local.get(['qa_token', 'qa_recording', 'qa_recording_tab_id']);
   if (!token) return; // not signed in, do nothing
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) return;
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!activeTab) return;
 
   if (recording) {
-    // Stop recording
-    try { await chrome.tabs.sendMessage(tab.id, { type: 'STOP_REPORTING' }); } catch (_) {}
+    // Always stop the tab that capture was started on, not the current active tab
+    const targetTabId = recordingTabId || activeTab.id;
+    try { await chrome.tabs.sendMessage(targetTabId, { type: 'STOP_REPORTING' }); } catch (_) {}
     // Stop replay recorder if active
-    try { await chrome.tabs.sendMessage(tab.id, { type: 'STOP_REPLAY' }); } catch (_) {}
-    await chrome.storage.local.set({ qa_recording: false });
+    try { await chrome.tabs.sendMessage(targetTabId, { type: 'STOP_RELAY' }); } catch (_) {}
+    await chrome.storage.local.set({ qa_recording: false, qa_recording_tab_id: null });
   } else {
-    // Sync settings then start recording
+    // Sync settings then start recording on the currently active tab
     await handleSyncSettings(() => {});
-    await chrome.storage.local.set({ qa_recording: true });
+    await chrome.storage.local.set({ qa_recording: true, qa_recording_tab_id: activeTab.id });
     try {
-      await chrome.tabs.sendMessage(tab.id, { type: 'START_REPORTING' });
+      await chrome.tabs.sendMessage(activeTab.id, { type: 'START_REPORTING' });
     } catch (_) {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
-      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ['content-styles.css'] });
+      await chrome.scripting.executeScript({ target: { tabId: activeTab.id }, files: ['content.js'] });
+      await chrome.scripting.insertCSS({ target: { tabId: activeTab.id }, files: ['content-styles.css'] });
       await new Promise(r => setTimeout(r, 300));
-      try { await chrome.tabs.sendMessage(tab.id, { type: 'START_REPORTING' }); } catch (_) {}
+      try { await chrome.tabs.sendMessage(activeTab.id, { type: 'START_REPORTING' }); } catch (_) {}
     }
   }
 });

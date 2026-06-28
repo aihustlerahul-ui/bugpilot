@@ -313,10 +313,16 @@ authPassword.addEventListener('keydown', e => { if (e.key === 'Enter') btnSignin
 
 // ── Auth: sign out ────────────────────────────────────────────────────────────
 btnSignout.addEventListener('click', async () => {
-  if (isRecording) await sendToActiveTab({ type: 'STOP_REPORTING' });
+  if (isRecording) {
+    const { qa_recording_tab_id } = await chrome.storage.local.get(['qa_recording_tab_id']);
+    const stopTabId = qa_recording_tab_id;
+    if (stopTabId) {
+      try { await chrome.tabs.sendMessage(stopTabId, { type: 'STOP_REPORTING' }); } catch (_) {}
+    }
+  }
   await chrome.storage.local.remove([
     'qa_token', 'qa_refresh_token', 'qa_user_email', 'qa_recording',
-    'qa_buffered_issues', 'qa_selected_project',
+    'qa_recording_tab_id', 'qa_buffered_issues', 'qa_selected_project',
   ]);
   applyRecordingState(false);
   authError.textContent = '';
@@ -354,7 +360,7 @@ async function startRecording() {
     const tab = await getActiveTab();
     if (!tab) { showToast('No active tab found.', 'error'); return; }
 
-    await chrome.storage.local.set({ qa_recording: true });
+    await chrome.storage.local.set({ qa_recording: true, qa_recording_tab_id: tab.id });
     applyRecordingState(true);
 
     try {
@@ -377,12 +383,15 @@ async function startRecording() {
 async function stopRecording() {
   btnToggleRecording.disabled = true;
   try {
-    await sendToActiveTab({ type: 'STOP_REPORTING' });
-    await chrome.storage.local.set({ qa_recording: false });
+    const { qa_recording_tab_id } = await chrome.storage.local.get(['qa_recording_tab_id']);
+    if (qa_recording_tab_id) {
+      try { await chrome.tabs.sendMessage(qa_recording_tab_id, { type: 'STOP_REPORTING' }); } catch (_) {}
+    }
+    await chrome.storage.local.set({ qa_recording: false, qa_recording_tab_id: null });
     applyRecordingState(false);
     await refreshBufferUI();
   } catch (_) {
-    await chrome.storage.local.set({ qa_recording: false });
+    await chrome.storage.local.set({ qa_recording: false, qa_recording_tab_id: null });
     applyRecordingState(false);
     await refreshBufferUI();
   } finally {
