@@ -242,8 +242,12 @@ async function handleStartScreenRecording(message, sendResponse) {
 
 // ── STOP_SCREEN_RECORDING ─────────────────────────────────────────────────────
 async function handleStopScreenRecording(message, sendResponse) {
-  const tabId = message.tabId;
-  if (!tabId) { sendResponse({ ok: true }); return; }
+  let tabId = message.tabId;
+  if (!tabId) {
+    const stored = await chrome.storage.local.get(['qa_screen_recording_tab_id']);
+    tabId = stored.qa_screen_recording_tab_id || null;
+  }
+  if (!tabId) { sendResponse({ ok: false, error: 'No recording tab found' }); return; }
   await saveRecording(tabId);
   sendResponse({ ok: true });
 }
