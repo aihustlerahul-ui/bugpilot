@@ -24,6 +24,35 @@ async function compressReplayEvents(events) {
   }
 }
 
+// ── Save recording to storage ─────────────────────────────────────────────────
+async function saveRecording(tabId) {
+  try {
+    const replayRes = await chrome.tabs.sendMessage(tabId, { type: 'GET_REPLAY_EVENTS' });
+    if (replayRes?.ok && replayRes.events?.length > 0) {
+      const data = await compressReplayEvents(replayRes.events);
+      const tab = await chrome.tabs.get(tabId).catch(() => null);
+      const firstTs = replayRes.events[0].timestamp;
+      const lastTs  = replayRes.events[replayRes.events.length - 1].timestamp;
+      const duration = Math.round((lastTs - firstTs) / 1000);
+      await chrome.storage.local.set({
+        qa_saved_replay: {
+          data,
+          url: tab?.url || '',
+          tabId,
+          duration,
+          recordedAt: Date.now(),
+        },
+      });
+    }
+  } catch (_) {}
+  // Always stop the recorder and clear active flag
+  try { await chrome.tabs.sendMessage(tabId, { type: 'STOP_REPLAY' }); } catch (_) {}
+  await chrome.storage.local.set({
+    qa_screen_recording: false,
+    qa_screen_recording_tab_id: null,
+  });
+}
+
 // ── Message router ────────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const { type } = message;
@@ -60,6 +89,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     handleStopScreenRecording(message, sendResponse);
     return true;
   }
+  if (type === 'AUTO_STOP_RECORDING') {
+    handleAutoStopRecording(_sender, sendResponse);
+    return true;
+  }
   if (type === 'OPEN_ANNOTATOR') {
     handleOpenAnnotator(message, _sender);
     return false;
@@ -85,10 +118,12 @@ async function handleCaptureScreenshot(sendResponse) {
       quality: 80,
     });
 
-    // Snapshot replay events at bug-capture moment (before modal opens)
-    try {
-      await chrome.tabs.sendMessage(tab.id, { type: 'SNAPSHOT_REPLAY' });
-    } catch (_) {}
+    // If screen recording is active on this same tab, save it now before the modal opens
+    const { qa_screen_recording, qa_screen_recording_tab_id } =
+      await chrome.storage.local.get(['qa_screen_recording', 'qa_screen_recording_tab_id']);
+    if (qa_screen_recording && qa_screen_recording_tab_id === tab.id) {
+      await saveRecording(tab.id);
+    }
 
     sendResponse({ ok: true, dataUrl });
   } catch (err) {
@@ -193,7 +228,10 @@ async function handleStartScreenRecording(message, sendResponse) {
       args: [rrwebCode],
     });
     await chrome.scripting.executeScript({ target: { tabId }, files: ['replay-recorder.js'] });
-    await chrome.storage.local.set({ qa_screen_recording: true });
+    await chrome.storage.local.set({
+      qa_screen_recording: true,
+      qa_screen_recording_tab_id: tabId,
+    });
     sendResponse({ ok: true });
   } catch (err) {
     console.warn('[QA] screen recording inject failed:', err.message);
@@ -206,10 +244,21 @@ async function handleStartScreenRecording(message, sendResponse) {
 async function handleStopScreenRecording(message, sendResponse) {
   const tabId = message.tabId;
   if (!tabId) { sendResponse({ ok: true }); return; }
-  try {
-    await chrome.tabs.sendMessage(tabId, { type: 'STOP_REPLAY' });
-  } catch (_) {}
-  await chrome.storage.local.set({ qa_screen_recording: false });
+  await saveRecording(tabId);
+  sendResponse({ ok: true });
+}
+
+// ── AUTO_STOP_RECORDING (tab hidden / visibilitychange) ───────────────────────
+async function handleAutoStopRecording(sender, sendResponse) {
+  const tabId = sender.tab && sender.tab.id;
+  if (!tabId) { sendResponse({ ok: true }); return; }
+  const { qa_screen_recording, qa_screen_recording_tab_id } =
+    await chrome.storage.local.get(['qa_screen_recording', 'qa_screen_recording_tab_id']);
+  if (!qa_screen_recording || qa_screen_recording_tab_id !== tabId) {
+    sendResponse({ ok: true });
+    return;
+  }
+  await saveRecording(tabId);
   sendResponse({ ok: true });
 }
 
