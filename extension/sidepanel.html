@@ -367,6 +367,36 @@
       vertical-align: middle;
       animation: pulse-dot 1.3s ease-in-out infinite;
     }
+
+    /* ── REPLAY CHIP ── */
+    .replay-chip {
+      display: none;
+      background: #fef9ec;
+      border: 1px solid #fde68a;
+      border-radius: var(--radius);
+      padding: 8px 11px;
+      margin-top: -4px;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    .replay-chip.show { display: flex; }
+    .replay-chip-icon { font-size: 16px; flex-shrink: 0; line-height: 1.4; }
+    .replay-chip-body { flex: 1; min-width: 0; }
+    .replay-chip-title {
+      font-size: 12px; font-weight: 700; color: #92400e;
+      margin-bottom: 2px;
+    }
+    .replay-chip-meta {
+      font-size: 10.5px; color: #a16207;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .btn-delete-replay {
+      background: none; border: none; cursor: pointer;
+      font-size: 11px; color: #b45309; font-weight: 600;
+      font-family: inherit; flex-shrink: 0; padding: 2px 0;
+      text-decoration: underline;
+    }
+    .btn-delete-replay:hover { color: #92400e; }
   </style>
 </head>
 <body>
@@ -477,6 +507,15 @@
 
     <div class="screen-rec-timer-row" id="screen-rec-timer-row">
       <span class="screen-rec-timer-dot"></span><span id="screen-rec-timer">2:00</span> remaining
+    </div>
+
+    <div class="replay-chip" id="replay-chip">
+      <span class="replay-chip-icon">🎬</span>
+      <div class="replay-chip-body">
+        <div class="replay-chip-title">Recording saved — <span id="replay-chip-duration">0:00</span></div>
+        <div class="replay-chip-meta" id="replay-chip-url"></div>
+      </div>
+      <button class="btn-delete-replay" id="btn-delete-replay">Delete</button>
     </div>
 
     <p class="shortcut-hint">Press <span class="kbd">⌥⇧Q</span> to toggle from any page</p>
