@@ -544,8 +544,8 @@ function applyReplayChip(savedReplay) {
     replayWindowSel.disabled = true;
   } else {
     replayChip.classList.remove('show');
-    // Only re-enable if not currently recording or in capture mode
-    if (!isRecording) {
+    // Only re-enable if not currently in capture mode or screen recording
+    if (!isRecording && !isScreenRecording) {
       btnScreenRec.disabled = false;
       replayWindowSel.disabled = false;
     }
@@ -588,8 +588,8 @@ btnScreenRec.addEventListener('click', async function () {
     }
   } else {
     // Let background handle state — it calls saveRecording then sets qa_screen_recording: false
-    // storage.onChanged will fire applyScreenRecordingState(false) for us
-    chrome.runtime.sendMessage({ type: 'STOP_SCREEN_RECORDING', tabId: tab.id });
+    // storage.onChanged will fire applyScreenRecordingState(false) and applyReplayChip for us
+    await chrome.runtime.sendMessage({ type: 'STOP_SCREEN_RECORDING', tabId: tab.id });
   }
 
   btnScreenRec.disabled = false;
