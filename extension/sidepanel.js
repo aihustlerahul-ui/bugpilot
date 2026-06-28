@@ -31,6 +31,10 @@ const btnScreenRec       = document.getElementById('btn-screen-recording');
 const replayWindowSel    = document.getElementById('replay-window-select');
 const screenRecTimerRow  = document.getElementById('screen-rec-timer-row');
 const screenRecTimerEl   = document.getElementById('screen-rec-timer');
+const replayChip         = document.getElementById('replay-chip');
+const replayChipDuration = document.getElementById('replay-chip-duration');
+const replayChipUrl      = document.getElementById('replay-chip-url');
+const btnDeleteReplay    = document.getElementById('btn-delete-replay');
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let isRecording    = false;
@@ -228,9 +232,8 @@ async function sendToActiveTab(message) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
-  const { qa_token, qa_user_email, qa_recording } = await chrome.storage.local.get([
-    'qa_token', 'qa_user_email', 'qa_recording',
-  ]);
+  const { qa_token, qa_user_email, qa_recording, qa_saved_replay } =
+    await chrome.storage.local.get(['qa_token', 'qa_user_email', 'qa_recording', 'qa_saved_replay']);
 
   if (!qa_token) { showAuth(); return; }
 
@@ -253,6 +256,7 @@ async function init() {
   }
 
   applyRecordingState(actuallyRecording);
+  applyReplayChip(qa_saved_replay);
   await loadProjects();
   await refreshBufferUI();
 }
@@ -441,8 +445,28 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (changes.qa_buffered_issues) refreshBufferUI();
   if (changes.qa_recording) {
-    const rec = changes.qa_recording.newValue;
-    applyRecordingState(!!rec);
+    applyRecordingState(!!changes.qa_recording.newValue);
+  }
+  if (changes.qa_screen_recording) {
+    applyScreenRecordingState(!!changes.qa_screen_recording.newValue);
+  }
+  if (changes.qa_saved_replay) {
+    applyReplayChip(changes.qa_saved_replay.newValue);
+    // Show toast when a new recording is saved
+    if (changes.qa_saved_replay.newValue?.data && !changes.qa_saved_replay.oldValue?.data) {
+      const dur = formatDuration(changes.qa_saved_replay.newValue.duration || 0);
+      showToast('Recording saved — ' + dur + ' captured', 'success', 4000);
+    }
+  }
+  if (changes.qa_replay_status) {
+    const status = changes.qa_replay_status.newValue;
+    if (status === 'attached') {
+      showToast('Bug submitted with replay attached ✓', 'success', 3500);
+    } else if (status === 'skipped') {
+      showToast('Bug submitted — replay was from a different tab, not attached', 'error', 5000);
+    }
+    // Clear the status signal
+    if (status) chrome.storage.local.remove(['qa_replay_status']);
   }
 });
 
@@ -467,9 +491,8 @@ function startCountdown(totalSeconds) {
     if (remaining <= 0) {
       clearInterval(_screenRecIntervalId);
       _screenRecIntervalId = null;
-      // Auto-stop screen recording
-      await chrome.storage.local.set({ qa_screen_recording: false });
-      applyScreenRecordingState(false);
+      // Delegate to background — it will saveRecording, set qa_screen_recording: false,
+      // and write qa_saved_replay. storage.onChanged will update our UI.
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab) chrome.runtime.sendMessage({ type: 'STOP_SCREEN_RECORDING', tabId: tab.id });
     }
@@ -491,6 +514,33 @@ chrome.storage.local.get(['qa_screen_recording', 'qa_replay_window_ms'], functio
   replayWindowSel.value = String(windowMs);
   applyScreenRecordingState(isScreenRecording);
 });
+
+function formatDuration(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+function applyReplayChip(savedReplay) {
+  if (savedReplay && savedReplay.data) {
+    replayChipDuration.textContent = formatDuration(savedReplay.duration || 0);
+    try {
+      replayChipUrl.textContent = new URL(savedReplay.url).hostname || savedReplay.url;
+    } catch (_) {
+      replayChipUrl.textContent = savedReplay.url || '';
+    }
+    replayChip.classList.add('show');
+    btnScreenRec.disabled = true;
+    replayWindowSel.disabled = true;
+  } else {
+    replayChip.classList.remove('show');
+    // Only re-enable if not currently recording or in capture mode
+    if (!isRecording) {
+      btnScreenRec.disabled = false;
+      replayWindowSel.disabled = false;
+    }
+  }
+}
 
 function applyScreenRecordingState(active) {
   isScreenRecording = active;
@@ -527,8 +577,8 @@ btnScreenRec.addEventListener('click', async function () {
       showToast('Recording failed: ' + (res?.error || 'could not inject on this page'), 'error', 5000);
     }
   } else {
-    applyScreenRecordingState(false);
-    await chrome.storage.local.set({ qa_screen_recording: false });
+    // Let background handle state — it calls saveRecording then sets qa_screen_recording: false
+    // storage.onChanged will fire applyScreenRecordingState(false) for us
     chrome.runtime.sendMessage({ type: 'STOP_SCREEN_RECORDING', tabId: tab.id });
   }
 
@@ -537,6 +587,13 @@ btnScreenRec.addEventListener('click', async function () {
 
 replayWindowSel.addEventListener('change', function () {
   chrome.storage.local.set({ qa_replay_window_ms: Number(replayWindowSel.value) });
+});
+
+// ── Delete saved replay ───────────────────────────────────────────────────────
+btnDeleteReplay.addEventListener('click', async function () {
+  await chrome.storage.local.remove(['qa_saved_replay']);
+  applyReplayChip(null);
+  showToast('Recording deleted', 'success', 2500);
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
