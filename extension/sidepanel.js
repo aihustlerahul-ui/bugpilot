@@ -107,9 +107,11 @@ function applyRecordingState(recording, count) {
     btnToggleRecording.className = 'btn btn-record btn-full';
     btnToggleRecording.innerHTML =
       '<svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><polygon points="3,1 11,6 3,11"/></svg> Capture Now';
-    // Unlock replay controls when stopped
+    // Unlock replay controls when stopped — but not if screen recording or chip is active
     replayWindowSel.disabled = false;
-    btnScreenRec.disabled = false;
+    if (!isScreenRecording && !replayChip.classList.contains('show')) {
+      btnScreenRec.disabled = false;
+    }
   }
 }
 
@@ -558,8 +560,11 @@ function applyScreenRecordingState(active) {
     btnScreenRec.className = 'btn btn-screen-rec btn-full active';
     btnScreenRec.innerHTML =
       '<svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><rect x="1" y="1" width="10" height="10" rx="1.5"/></svg> Stop Recording Screen';
-    const windowMs = Number(replayWindowSel.value) || 120000;
-    startCountdown(Math.floor(windowMs / 1000));
+    // Only start countdown if not already running (prevents reset when storage.onChanged fires)
+    if (!_screenRecIntervalId) {
+      const windowMs = Number(replayWindowSel.value) || 120000;
+      startCountdown(Math.floor(windowMs / 1000));
+    }
   } else {
     btnScreenRec.className = 'btn btn-screen-rec btn-full';
     btnScreenRec.innerHTML =
