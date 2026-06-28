@@ -373,7 +373,7 @@ async function startRecording() {
     }
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
-    await chrome.storage.local.set({ qa_recording: false });
+    await chrome.storage.local.set({ qa_recording: false, qa_recording_tab_id: null });
     applyRecordingState(false);
   } finally {
     btnToggleRecording.disabled = false;

@@ -301,7 +301,7 @@ chrome.commands.onCommand.addListener(async (command) => {
     const targetTabId = recordingTabId || activeTab.id;
     try { await chrome.tabs.sendMessage(targetTabId, { type: 'STOP_REPORTING' }); } catch (_) {}
     // Stop replay recorder if active
-    try { await chrome.tabs.sendMessage(targetTabId, { type: 'STOP_RELAY' }); } catch (_) {}
+    try { await chrome.tabs.sendMessage(targetTabId, { type: 'STOP_REPLAY' }); } catch (_) {}
     await chrome.storage.local.set({ qa_recording: false, qa_recording_tab_id: null });
   } else {
     // Sync settings then start recording on the currently active tab
