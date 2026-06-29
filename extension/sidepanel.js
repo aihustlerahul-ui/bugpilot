@@ -516,11 +516,15 @@ function startCountdown(totalSeconds) {
     if (remaining <= 0) {
       clearInterval(_screenRecIntervalId);
       _screenRecIntervalId = null;
-      // Delegate to background — it will saveRecording, set qa_screen_recording: false,
-      // and write qa_saved_replay. storage.onChanged will update our UI.
       const { qa_screen_recording_tab_id } = await chrome.storage.local.get(['qa_screen_recording_tab_id']);
       const targetTabId = qa_screen_recording_tab_id || null;
-      chrome.runtime.sendMessage({ type: 'STOP_SCREEN_RECORDING', tabId: targetTabId });
+      const res = await chrome.runtime.sendMessage({ type: 'STOP_SCREEN_RECORDING', tabId: targetTabId });
+      // Show feedback if nothing was saved — success toast comes from storage.onChanged
+      if (!res || !res.ok) {
+        showToast('Recording ended — page may have navigated, nothing captured', 'error', 5000);
+      } else if (!res.saved) {
+        showToast('Recording ended — no events were captured', 'error', 4000);
+      }
     }
   }, 1000);
 }
@@ -608,7 +612,13 @@ btnScreenRec.addEventListener('click', async function () {
   } else {
     // Let background handle state — it calls saveRecording then sets qa_screen_recording: false
     // storage.onChanged will fire applyScreenRecordingState(false) and applyReplayChip for us
-    await chrome.runtime.sendMessage({ type: 'STOP_SCREEN_RECORDING', tabId: tab.id });
+    const res = await chrome.runtime.sendMessage({ type: 'STOP_SCREEN_RECORDING', tabId: tab.id });
+    if (!res || !res.ok) {
+      showToast('Could not stop recording — page may have navigated', 'error', 5000);
+    } else if (!res.saved) {
+      showToast('Recording ended — no events were captured', 'error', 4000);
+    }
+    // Success toast fires from storage.onChanged when qa_saved_replay is written
   }
 
   btnScreenRec.disabled = false;

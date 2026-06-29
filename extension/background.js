@@ -26,6 +26,7 @@ async function compressReplayEvents(events) {
 
 // ── Save recording to storage ─────────────────────────────────────────────────
 async function saveRecording(tabId) {
+  let saved = false;
   try {
     const replayRes = await chrome.tabs.sendMessage(tabId, { type: 'GET_REPLAY_EVENTS' });
     if (replayRes?.ok && replayRes.events?.length > 0) {
@@ -43,6 +44,7 @@ async function saveRecording(tabId) {
           recordedAt: Date.now(),
         },
       });
+      saved = true;
     }
   } catch (_) {}
   // Always stop the recorder and clear active flag
@@ -51,6 +53,7 @@ async function saveRecording(tabId) {
     qa_screen_recording: false,
     qa_screen_recording_tab_id: null,
   });
+  return saved;
 }
 
 // ── Message router ────────────────────────────────────────────────────────────
@@ -248,8 +251,8 @@ async function handleStopScreenRecording(message, sendResponse) {
     tabId = stored.qa_screen_recording_tab_id || null;
   }
   if (!tabId) { sendResponse({ ok: false, error: 'No recording tab found' }); return; }
-  await saveRecording(tabId);
-  sendResponse({ ok: true });
+  const saved = await saveRecording(tabId);
+  sendResponse({ ok: true, saved });
 }
 
 // ── AUTO_STOP_RECORDING (tab hidden / visibilitychange) ───────────────────────
