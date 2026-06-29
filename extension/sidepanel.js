@@ -35,6 +35,11 @@ const replayChip         = document.getElementById('replay-chip');
 const replayChipDuration = document.getElementById('replay-chip-duration');
 const replayChipUrl      = document.getElementById('replay-chip-url');
 const btnDeleteReplay    = document.getElementById('btn-delete-replay');
+const multitabRow    = document.getElementById('multitab-row');
+const btnMultitab    = document.getElementById('btn-multitab-toggle');
+const multitabBadge  = document.getElementById('multitab-badge');
+const multitabCount  = document.getElementById('multitab-tab-count');
+const multitabPlural = document.getElementById('multitab-tab-plural');
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let isRecording    = false;
@@ -491,6 +496,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.qa_screen_recording) {
     applyScreenRecordingState(!!changes.qa_screen_recording.newValue);
   }
+  if (changes.qa_ext_settings) {
+    applyMultiTabVisibility(changes.qa_ext_settings.newValue);
+  }
+  if (changes.qa_multitab_recorded_tabs) {
+    applyMultiTabBadge(changes.qa_multitab_recorded_tabs.newValue);
+  }
   if (changes.qa_saved_replay) {
     applyReplayChip(changes.qa_saved_replay.newValue);
     // Show toast when a new recording is saved
@@ -509,6 +520,41 @@ chrome.storage.onChanged.addListener((changes, area) => {
     // Clear the status signal
     if (status) chrome.storage.local.remove(['qa_replay_status']);
   }
+});
+
+// ── Multi-tab toggle ──────────────────────────────────────────────────────────
+let isMultiTabMode = false;
+
+function applyMultiTabToggle(on) {
+  isMultiTabMode = on;
+  btnMultitab.setAttribute('aria-pressed', String(on));
+}
+
+function applyMultiTabBadge(tabIds) {
+  const count = Array.isArray(tabIds) ? tabIds.length : 0;
+  if (count > 0 && isScreenRecording) {
+    multitabCount.textContent = String(count);
+    multitabPlural.textContent = count === 1 ? '' : 's';
+    multitabBadge.style.display = 'inline-flex';
+  } else {
+    multitabBadge.style.display = 'none';
+  }
+}
+
+function applyMultiTabVisibility(settings) {
+  multitabRow.style.display = settings?.multiTabRecording ? 'flex' : 'none';
+}
+
+chrome.storage.local.get(['qa_ext_settings', 'qa_multitab_mode', 'qa_multitab_recorded_tabs'], function (r) {
+  applyMultiTabVisibility(r.qa_ext_settings);
+  applyMultiTabToggle(r.qa_multitab_mode ?? false);
+  applyMultiTabBadge(r.qa_multitab_recorded_tabs);
+});
+
+btnMultitab.addEventListener('click', async function () {
+  const next = !isMultiTabMode;
+  applyMultiTabToggle(next);
+  await chrome.storage.local.set({ qa_multitab_mode: next });
 });
 
 // ── Screen recording countdown ────────────────────────────────────────────────
@@ -570,10 +616,14 @@ function formatDuration(seconds) {
 function applyReplayChip(savedReplay) {
   if (savedReplay && savedReplay.data) {
     replayChipDuration.textContent = formatDuration(savedReplay.duration || 0);
-    try {
-      replayChipUrl.textContent = new URL(savedReplay.url).hostname || savedReplay.url;
-    } catch (_) {
-      replayChipUrl.textContent = savedReplay.url || '';
+    if (savedReplay.version === 2 && savedReplay.urls?.length > 0) {
+      replayChipUrl.textContent = `${savedReplay.urls.length} tab${savedReplay.urls.length === 1 ? '' : 's'}`;
+    } else {
+      try {
+        replayChipUrl.textContent = new URL(savedReplay.url).hostname || savedReplay.url;
+      } catch (_) {
+        replayChipUrl.textContent = savedReplay.url || '';
+      }
     }
     replayChip.classList.add('show');
     btnScreenRec.disabled = true;
@@ -616,9 +666,15 @@ btnScreenRec.addEventListener('click', async function () {
 
   if (next) {
     applyScreenRecordingState(true);
-    const res = await chrome.runtime.sendMessage({ type: 'START_SCREEN_RECORDING', tabId: tab.id });
+    const msgType = isMultiTabMode ? 'START_MULTITAB_RECORDING' : 'START_SCREEN_RECORDING';
+    const res = await chrome.runtime.sendMessage({ type: msgType, tabId: tab.id });
     if (res && res.ok) {
-      showToast('Screen recording ready — events are being captured.', 'success', 3000);
+      showToast(
+        isMultiTabMode
+          ? 'Multi-tab recording started — switch tabs freely.'
+          : 'Screen recording ready — events are being captured.',
+        'success', 3000
+      );
     } else {
       // Injection failed — revert UI
       applyScreenRecordingState(false);
@@ -626,9 +682,8 @@ btnScreenRec.addEventListener('click', async function () {
       showToast('Recording failed: ' + (res?.error || 'could not inject on this page'), 'error', 5000);
     }
   } else {
-    // Let background handle state — it calls saveRecording then sets qa_screen_recording: false
-    // storage.onChanged will fire applyScreenRecordingState(false) and applyReplayChip for us
-    const res = await chrome.runtime.sendMessage({ type: 'STOP_SCREEN_RECORDING', tabId: tab.id });
+    const msgType = isMultiTabMode ? 'STOP_MULTITAB_RECORDING' : 'STOP_SCREEN_RECORDING';
+    const res = await chrome.runtime.sendMessage({ type: msgType, tabId: tab.id });
     if (!res || !res.ok) {
       showToast('Could not stop recording — page may have navigated', 'error', 5000);
     } else if (!res.saved) {
