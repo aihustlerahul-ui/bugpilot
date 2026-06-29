@@ -35,6 +35,10 @@ export interface ExtensionSettings {
   formLabels: boolean
   formSprint: boolean
   formAssignee: boolean
+
+  // Session Replay
+  captureNavHistory: boolean
+  multiTabRecording: boolean
 }
 
 const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -65,6 +69,9 @@ const DEFAULT_SETTINGS: ExtensionSettings = {
   formLabels: false,
   formSprint: false,
   formAssignee: false,
+
+  captureNavHistory: true,
+  multiTabRecording: false,
 }
 
 @Injectable()
