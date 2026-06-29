@@ -6,7 +6,8 @@
   "permissions": ["storage", "unlimitedStorage", "activeTab", "scripting", "tabs", "sidePanel"],
   "host_permissions": [
     "http://localhost:4000/*",
-    "https://faasplsazadmtixuwzsn.supabase.co/*"
+    "https://faasplsazadmtixuwzsn.supabase.co/*",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
