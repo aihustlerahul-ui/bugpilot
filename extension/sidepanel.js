@@ -315,18 +315,32 @@ authPassword.addEventListener('keydown', e => { if (e.key === 'Enter') btnSignin
 
 // ── Auth: sign out ────────────────────────────────────────────────────────────
 btnSignout.addEventListener('click', async () => {
-  if (isRecording) {
-    const { qa_recording_tab_id } = await chrome.storage.local.get(['qa_recording_tab_id']);
-    const stopTabId = qa_recording_tab_id;
-    if (stopTabId) {
-      try { await chrome.tabs.sendMessage(stopTabId, { type: 'STOP_REPORTING' }); } catch (_) {}
-    }
+  const { qa_recording_tab_id, qa_screen_recording_tab_id } =
+    await chrome.storage.local.get(['qa_recording_tab_id', 'qa_screen_recording_tab_id']);
+
+  if (isRecording && qa_recording_tab_id) {
+    try { await chrome.tabs.sendMessage(qa_recording_tab_id, { type: 'STOP_REPORTING' }); } catch (_) {}
   }
+  if (isScreenRecording) {
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'STOP_SCREEN_RECORDING',
+        tabId: qa_screen_recording_tab_id || null,
+      });
+    } catch (_) {}
+    stopCountdown();
+  }
+
   await chrome.storage.local.remove([
-    'qa_token', 'qa_refresh_token', 'qa_user_email', 'qa_recording',
-    'qa_recording_tab_id', 'qa_buffered_issues', 'qa_selected_project',
+    'qa_token', 'qa_refresh_token', 'qa_user_email',
+    'qa_recording', 'qa_recording_tab_id',
+    'qa_screen_recording', 'qa_screen_recording_tab_id',
+    'qa_saved_replay', 'qa_replay_status',
+    'qa_buffered_issues', 'qa_selected_project',
   ]);
   applyRecordingState(false);
+  isScreenRecording = false;
+  replayChip.classList.remove('show');
   authError.textContent = '';
   authEmail.value = '';
   authPassword.value = '';
