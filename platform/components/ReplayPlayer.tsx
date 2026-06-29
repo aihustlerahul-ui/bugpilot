@@ -79,6 +79,7 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
   // ─── multi-stream state ──────────────────────────────────────────────────
   const multiContainersRef = useRef<Map<number, HTMLDivElement>>(new Map())
   const multiReplayersRef  = useRef<Map<number, any>>(new Map())
+  const streamOffsetsRef   = useRef<Map<number, number>>(new Map())
   const [streams,          setStreams]          = useState<StreamMeta[]>([])
   const [activeTabId,      setActiveTabId]      = useState<number | null>(null)
   const switchesRef        = useRef<{ at: number; toTabId: number }[]>([])
@@ -255,7 +256,6 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
       setTotalMs(duration)
 
       switchesRef.current = payload.switches ?? []
-      setStreams(payload.streams.map(s => ({ tabId: s.tabId, url: s.url, title: s.title })))
       setActiveTabId(payload.streams[0].tabId)
 
       const { Replayer } = await import('rrweb')
@@ -272,6 +272,10 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
         div.dataset.tabId = String(stream.tabId)
         containerRef.current.appendChild(div)
         multiContainersRef.current.set(stream.tabId, div)
+
+        // Track each stream's start offset relative to the global recording start
+        const streamOffset = stream.events[0].timestamp - minTs
+        streamOffsetsRef.current.set(stream.tabId, streamOffset)
 
         const replayer = new Replayer(stream.events, {
           root: div,
@@ -292,6 +296,9 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
         })
         multiReplayersRef.current.set(stream.tabId, replayer)
       }
+
+      // Finding #7: only expose tabs that actually got a Replayer
+      setStreams(payload.streams.filter(s => multiReplayersRef.current.has(s.tabId)).map(s => ({ tabId: s.tabId, url: s.url, title: s.title })))
 
       // Show first tab
       const firstTabId = payload.streams[0].tabId
@@ -401,6 +408,7 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
       multiReplayersRef.current.forEach(r => { try { r.pause() } catch { /* */ } })
       multiReplayersRef.current.clear()
       multiContainersRef.current.clear()
+      streamOffsetsRef.current.clear()
       try { replayerRef.current?.pause() } catch { /* ignore */ }
       replayerRef.current = null
     }
@@ -476,8 +484,11 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
     setTime(clamped)
 
     if (multiReplayersRef.current.size > 0) {
-      // Multi-stream seek
-      multiReplayersRef.current.forEach(r => r.pause(clamped))
+      // Multi-stream seek — each replayer's play/pause offset is relative to its own stream start
+      multiReplayersRef.current.forEach((r, tabId) => {
+        const streamOffset = streamOffsetsRef.current.get(tabId) ?? 0
+        r.pause(Math.max(0, clamped - streamOffset))
+      })
       updateActiveTabForMs(clamped)
       setPlaying(false)
       return
@@ -502,8 +513,11 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
         stopTimeSync()
         setPlaying(false)
       } else {
-        const offset = currentMsRef.current
-        multiReplayersRef.current.forEach(r => r.play(offset))
+        const globalOffset = currentMsRef.current
+        multiReplayersRef.current.forEach((r, tabId) => {
+          const streamOffset = streamOffsetsRef.current.get(tabId) ?? 0
+          r.play(Math.max(0, globalOffset - streamOffset))
+        })
         startTimeSync()
         setPlaying(true)
       }
