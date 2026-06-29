@@ -53,6 +53,16 @@ const IconExitFullscreen = () => (
   </svg>
 )
 
+// ─── multi-stream types ───────────────────────────────────────────────────────
+interface StreamMeta { tabId: number; url: string; title: string }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+interface StreamPayload extends StreamMeta { events: any[] }
+interface MultiStreamRaw {
+  version: 2
+  streams: StreamPayload[]
+  switches: { at: number; toTabId: number }[]
+}
+
 export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
   const anchorRef      = useRef<HTMLDivElement>(null)
   const wrapperRef     = useRef<HTMLDivElement>(null)
@@ -65,6 +75,15 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
   const currentMsRef = useRef(0)
   const isFullscreenRef = useRef(false)
   const placeholderHRef = useRef(240)
+
+  // ─── multi-stream state ──────────────────────────────────────────────────
+  const multiContainersRef = useRef<Map<number, HTMLDivElement>>(new Map())
+  const multiReplayersRef  = useRef<Map<number, any>>(new Map())
+  const [streams,          setStreams]          = useState<StreamMeta[]>([])
+  const [activeTabId,      setActiveTabId]      = useState<number | null>(null)
+  const switchesRef        = useRef<{ at: number; toTabId: number }[]>([])
+  const globalStartRef     = useRef<number>(0)
+  // ──────────────────────────────────────────────────────────────────────────
 
   const [status,       setStatus]       = useState<PlayerStatus>('loading')
   const [playing,      setPlaying]      = useState(false)
@@ -130,14 +149,46 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
     }
   }, [])
 
+  // updateActiveTabForMs — declared early so startTimeSync can close over it
+  const updateActiveTabForMs = useCallback((ms: number) => {
+    const switches = switchesRef.current
+    const streamsSnap = multiReplayersRef.current
+    if (!streamsSnap.size) return
+    // switches use absolute timestamps; ms is relative to globalStart
+    const absMs = globalStartRef.current + ms
+    let activeId: number | null = null
+    // default to the first tab
+    multiContainersRef.current.forEach((_, tabId) => {
+      if (activeId === null) activeId = tabId
+    })
+    for (const sw of switches) {
+      if (sw.at <= absMs) activeId = sw.toTabId
+    }
+    if (activeId === null) return
+    setActiveTabId(activeId)
+    // Point replayerRef at the active tab's replayer so existing time-sync logic works
+    const activeReplayer = multiReplayersRef.current.get(activeId)
+    if (activeReplayer) replayerRef.current = activeReplayer
+    multiContainersRef.current.forEach((div, tabId) => {
+      div.style.display = tabId === activeId ? 'block' : 'none'
+    })
+  }, [])
+
   const startTimeSync = useCallback(() => {
     stopTimeSync()
     const tick = () => {
-      syncCurrentTime()
+      // Multi-stream: read from active replayer (replayerRef is kept in sync by updateActiveTabForMs)
+      const t = readPlaybackMs(replayerRef.current)
+      if (t != null) {
+        setTime(t)
+        if (multiReplayersRef.current.size > 0) {
+          updateActiveTabForMs(t)
+        }
+      }
       rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
-  }, [stopTimeSync, syncCurrentTime])
+  }, [stopTimeSync, readPlaybackMs, setTime, updateActiveTabForMs])
 
   const recomputeScale = useCallback(function scaleLoop(rw: number, rh: number, attempt = 0) {
     if (!containerRef.current || !rw || !rh) return
@@ -182,6 +233,84 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
   useEffect(() => {
     let cancelled = false
 
+    async function initMultiStream(payload: MultiStreamRaw) {
+      if (!payload.streams.length) {
+        setErrorMsg('No tab streams found in replay.')
+        setStatus('error')
+        return
+      }
+
+      // Global timeline
+      let minTs = Infinity, maxTs = 0
+      for (const s of payload.streams) {
+        if (s.events.length < 2) continue
+        const f = s.events[0].timestamp
+        const l = s.events[s.events.length - 1].timestamp
+        if (f < minTs) minTs = f
+        if (l > maxTs) maxTs = l
+      }
+      globalStartRef.current = minTs
+      const duration = maxTs - minTs
+      totalMsRef.current = duration
+      setTotalMs(duration)
+
+      switchesRef.current = payload.switches ?? []
+      setStreams(payload.streams.map(s => ({ tabId: s.tabId, url: s.url, title: s.title })))
+      setActiveTabId(payload.streams[0].tabId)
+
+      const { Replayer } = await import('rrweb')
+      if (cancelled || !containerRef.current) return
+
+      // Ensure container is relative so absolute children stack
+      containerRef.current.style.position = 'relative'
+
+      for (const stream of payload.streams) {
+        if (stream.events.length < 2) continue
+
+        const div = document.createElement('div')
+        div.style.cssText = 'position:absolute;inset:0;display:none;overflow:hidden;'
+        div.dataset.tabId = String(stream.tabId)
+        containerRef.current.appendChild(div)
+        multiContainersRef.current.set(stream.tabId, div)
+
+        const replayer = new Replayer(stream.events, {
+          root: div,
+          speed: 1,
+          skipInactive: false,
+          triggerFocus: true,
+          pauseAnimation: true,
+          useVirtualDom: true,
+          loadTimeout: 0,
+          showWarning: false,
+          showDebug: false,
+          UNSAFE_replayCanvas: false,
+          mouseTail: { duration: 600, lineCap: 'round', lineWidth: 3, strokeStyle: '#5b5fc7' },
+          insertStyleRules: [
+            '.replayer-mouse-tail { pointer-events: none !important; }',
+            '.replayer-mouse      { z-index: 9999 !important; }',
+          ],
+        })
+        multiReplayersRef.current.set(stream.tabId, replayer)
+      }
+
+      // Show first tab
+      const firstTabId = payload.streams[0].tabId
+      const firstDiv = multiContainersRef.current.get(firstTabId)
+      if (firstDiv) firstDiv.style.display = 'block'
+      const firstReplayer = multiReplayersRef.current.get(firstTabId)
+      if (firstReplayer) replayerRef.current = firstReplayer
+
+      // Try to get recorded dimensions from first stream's meta event
+      const metaEvent = payload.streams[0].events.find((e: any) => e.type === 4)
+      if (metaEvent?.data) {
+        const rw = (metaEvent.data as any).width  || 0
+        const rh = (metaEvent.data as any).height || 0
+        if (rw && rh) { setRecorded({ w: rw, h: rh }); recomputeScale(rw, rh) }
+      }
+
+      setStatus('ready')
+    }
+
     async function load() {
       try {
         const res = await fetch(replayUrl)
@@ -189,7 +318,18 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
         const blob = await res.blob()
         const ds   = new DecompressionStream('gzip')
         const text = await new Response(blob.stream().pipeThrough(ds)).text()
-        const events: any[] = JSON.parse(text)
+        const raw: any = JSON.parse(text)
+
+        // Detect v2 multi-stream format
+        const isMultiStream = raw?.version === 2 && Array.isArray(raw?.streams)
+        if (isMultiStream) {
+          if (cancelled || !containerRef.current) return
+          await initMultiStream(raw as MultiStreamRaw)
+          return
+        }
+
+        // --- existing single-stream path ---
+        const events: any[] = Array.isArray(raw) ? raw : raw.events ?? []
 
         if (cancelled || !containerRef.current) return
         if (events.length < 2) { setErrorMsg('Replay too short.'); setStatus('error'); return }
@@ -258,10 +398,13 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
     return () => {
       cancelled = true
       stopTimeSync()
+      multiReplayersRef.current.forEach(r => { try { r.pause() } catch { /* */ } })
+      multiReplayersRef.current.clear()
+      multiContainersRef.current.clear()
       try { replayerRef.current?.pause() } catch { /* ignore */ }
       replayerRef.current = null
     }
-  }, [replayUrl, stopTimeSync, syncCurrentTime, recomputeScale, setTime])
+  }, [replayUrl, stopTimeSync, syncCurrentTime, recomputeScale, setTime, updateActiveTabForMs])
 
   useEffect(() => {
     if (!recorded.w) return
@@ -328,11 +471,20 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
 
   // ── controls ────────────────────────────────────────────────────────────────
   const seek = useCallback((ms: number, resume = false) => {
-    const r = replayerRef.current
-    if (!r) return
     const clamped = Math.max(0, Math.min(totalMsRef.current, ms))
     stopTimeSync()
     setTime(clamped)
+
+    if (multiReplayersRef.current.size > 0) {
+      // Multi-stream seek
+      multiReplayersRef.current.forEach(r => r.pause(clamped))
+      updateActiveTabForMs(clamped)
+      setPlaying(false)
+      return
+    }
+
+    const r = replayerRef.current
+    if (!r) return
     if (resume && playingRef.current) {
       r.play(clamped)
       startTimeSync()
@@ -340,9 +492,24 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
       setPlaying(false)
       r.pause(clamped)
     }
-  }, [stopTimeSync, startTimeSync, setTime])
+  }, [stopTimeSync, startTimeSync, setTime, updateActiveTabForMs])
 
   const togglePlay = useCallback(() => {
+    if (multiReplayersRef.current.size > 0) {
+      // Multi-stream toggle
+      if (playingRef.current) {
+        multiReplayersRef.current.forEach(r => r.pause())
+        stopTimeSync()
+        setPlaying(false)
+      } else {
+        const offset = currentMsRef.current
+        multiReplayersRef.current.forEach(r => r.play(offset))
+        startTimeSync()
+        setPlaying(true)
+      }
+      return
+    }
+
     const r = replayerRef.current
     if (!r) return
     if (playingRef.current) {
@@ -365,21 +532,34 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
     stopTimeSync()
     setPlaying(false)
     setTime(0)
+    if (multiReplayersRef.current.size > 0) {
+      multiReplayersRef.current.forEach(r => r.pause(0))
+      updateActiveTabForMs(0)
+      return
+    }
     replayerRef.current?.pause(0)
-  }, [stopTimeSync, setTime])
+  }, [stopTimeSync, setTime, updateActiveTabForMs])
 
   const cycleSpeed = useCallback((dir: 1 | -1) => {
     setSpeed(prev => {
       const idx = SPEEDS.indexOf(prev)
       const next = SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, idx + dir))]
-      replayerRef.current?.setConfig?.({ speed: next })
+      if (multiReplayersRef.current.size > 0) {
+        multiReplayersRef.current.forEach(r => r.setConfig?.({ speed: next }))
+      } else {
+        replayerRef.current?.setConfig?.({ speed: next })
+      }
       return next
     })
   }, [])
 
   const handleSpeedChange = useCallback((s: number) => {
     setSpeed(s)
-    replayerRef.current?.setConfig?.({ speed: s })
+    if (multiReplayersRef.current.size > 0) {
+      multiReplayersRef.current.forEach(r => r.setConfig?.({ speed: s }))
+    } else {
+      replayerRef.current?.setConfig?.({ speed: s })
+    }
   }, [])
 
   const toggleFullscreen = useCallback(() => {
@@ -466,6 +646,36 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
         </div>
       )}
 
+      {/* Tab strip — only shown for multi-stream */}
+      {streams.length > 0 && isReady && (
+        <div className="flex items-center gap-1 px-2 py-1.5 bg-[#0a0c1e] overflow-x-auto flex-shrink-0">
+          {streams.map(s => {
+            const isActive = s.tabId === activeTabId
+            let hostname = s.url
+            try { hostname = new URL(s.url).hostname } catch { /* use raw url */ }
+            return (
+              <button
+                key={s.tabId}
+                onClick={() => {
+                  setActiveTabId(s.tabId)
+                  const activeReplayer = multiReplayersRef.current.get(s.tabId)
+                  if (activeReplayer) replayerRef.current = activeReplayer
+                  multiContainersRef.current.forEach((div, id) => {
+                    div.style.display = id === s.tabId ? 'block' : 'none'
+                  })
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs flex-shrink-0 transition-colors ${
+                  isActive ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/70 hover:bg-white/[0.08]'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isActive ? 'bg-indigo-400' : 'bg-white/20'}`} />
+                <span className="max-w-[120px] truncate">{hostname || s.title}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {/* viewport — click to play/pause */}
       <div
         ref={viewportRef}
@@ -506,7 +716,7 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
         <div
           ref={containerRef}
           className={isFullscreen ? 'absolute inset-0' : 'w-full'}
-          style={{ display: isReady ? 'block' : 'none', overflow: 'hidden' }}
+          style={{ display: isReady ? 'block' : 'none', overflow: 'hidden', position: 'relative' }}
         />
       </div>
 
@@ -654,7 +864,7 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
 }
 
 function CtrlBtn({ onClick, label, children }: {
-  onClick: () => void
+  onClick: (e: React.MouseEvent) => void
   label:   string
   children: React.ReactNode
 }) {
