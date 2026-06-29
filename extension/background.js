@@ -24,6 +24,40 @@ async function compressReplayEvents(events) {
   }
 }
 
+// ── Multi-stream compression ──────────────────────────────────────────────────
+async function compressMultiStream(payload) {
+  try {
+    const json = JSON.stringify(payload);
+    const encoded = new TextEncoder().encode(json);
+    const cs = new CompressionStream('gzip');
+    const writer = cs.writable.getWriter();
+    writer.write(encoded);
+    writer.close();
+    const compressed = await new Response(cs.readable).arrayBuffer();
+    const bytes = new Uint8Array(compressed);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  } catch (err) {
+    console.warn('[QA] multistream compress failed:', err.message);
+    return null;
+  }
+}
+
+// ── Inject rrweb recorder into a tab ─────────────────────────────────────────
+async function injectReplayIntoTab(tabId) {
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['rrweb.min.js'] });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['replay-recorder.js'] });
+    await new Promise(r => setTimeout(r, 300));
+    const ping = await chrome.tabs.sendMessage(tabId, { type: 'PING_REPLAY' }).catch(() => null);
+    return ping?.started === true;
+  } catch (err) {
+    console.warn('[QA] injectReplayIntoTab failed for tab', tabId, err?.message);
+    return false;
+  }
+}
+
 // ── Save recording to storage ─────────────────────────────────────────────────
 async function saveRecording(tabId) {
   let saved = false;
@@ -57,6 +91,63 @@ async function saveRecording(tabId) {
     qa_screen_recording_tab_id: null,
   });
   return saved;
+}
+
+// ── Save multi-tab recording ──────────────────────────────────────────────────
+async function saveMultiTabRecording() {
+  const { qa_multitab_recorded_tabs = [], qa_multitab_switches = [] } =
+    await chrome.storage.local.get(['qa_multitab_recorded_tabs', 'qa_multitab_switches']);
+
+  const streams = [];
+  let minTs = Infinity;
+  let maxTs = 0;
+
+  for (const tabId of qa_multitab_recorded_tabs) {
+    let tabInfo = null;
+    try { tabInfo = await chrome.tabs.get(tabId); } catch (_) {}
+    let replayRes = null;
+    try { replayRes = await chrome.tabs.sendMessage(tabId, { type: 'GET_REPLAY_EVENTS' }); } catch (_) {}
+    try { await chrome.tabs.sendMessage(tabId, { type: 'STOP_REPLAY' }); } catch (_) {}
+
+    if (replayRes?.ok && replayRes.events?.length > 0) {
+      const evts = replayRes.events;
+      const first = evts[0].timestamp;
+      const last  = evts[evts.length - 1].timestamp;
+      if (first < minTs) minTs = first;
+      if (last  > maxTs) maxTs = last;
+      streams.push({
+        tabId,
+        url:    tabInfo?.url   || '',
+        title:  tabInfo?.title || `Tab ${tabId}`,
+        events: evts,
+      });
+    }
+  }
+
+  await chrome.storage.local.set({
+    qa_screen_recording: false,
+    qa_screen_recording_tab_id: null,
+    qa_multitab_recorded_tabs: [],
+    qa_multitab_switches: [],
+  });
+
+  if (streams.length === 0) return false;
+
+  const duration = Math.round((maxTs - minTs) / 1000);
+  const payload = { version: 2, streams, switches: qa_multitab_switches };
+  const data = await compressMultiStream(payload);
+  if (!data) return false;
+
+  const urls = streams.map(s => s.url);
+  try {
+    await chrome.storage.local.set({
+      qa_saved_replay: { version: 2, data, urls, duration, recordedAt: Date.now() },
+    });
+    return true;
+  } catch (storageErr) {
+    console.warn('[QA] failed to persist multi-tab replay:', storageErr?.message || storageErr);
+    return false;
+  }
 }
 
 // ── Message router ────────────────────────────────────────────────────────────
@@ -97,6 +188,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (type === 'AUTO_STOP_RECORDING') {
     handleAutoStopRecording(_sender, sendResponse);
+    return true;
+  }
+  if (type === 'START_MULTITAB_RECORDING') {
+    handleStartMultiTabRecording(message, sendResponse);
+    return true;
+  }
+  if (type === 'STOP_MULTITAB_RECORDING') {
+    handleStopMultiTabRecording(sendResponse);
     return true;
   }
   if (type === 'REPLAY_START_FAILED') {
@@ -285,14 +384,43 @@ async function handleStopScreenRecording(message, sendResponse) {
 async function handleAutoStopRecording(sender, sendResponse) {
   const tabId = sender.tab && sender.tab.id;
   if (!tabId) { sendResponse({ ok: true }); return; }
-  const { qa_screen_recording, qa_screen_recording_tab_id } =
-    await chrome.storage.local.get(['qa_screen_recording', 'qa_screen_recording_tab_id']);
+  const { qa_screen_recording, qa_screen_recording_tab_id, qa_multitab_mode } =
+    await chrome.storage.local.get(['qa_screen_recording', 'qa_screen_recording_tab_id', 'qa_multitab_mode']);
   if (!qa_screen_recording || qa_screen_recording_tab_id !== tabId) {
     sendResponse({ ok: true });
     return;
   }
-  await saveRecording(tabId);
+  if (qa_multitab_mode) {
+    await saveMultiTabRecording();
+  } else {
+    await saveRecording(tabId);
+  }
   sendResponse({ ok: true });
+}
+
+// ── START_MULTITAB_RECORDING ──────────────────────────────────────────────────
+async function handleStartMultiTabRecording(message, sendResponse) {
+  const tabId = message.tabId;
+  if (!tabId) { sendResponse({ ok: false, error: 'No tab id' }); return; }
+  const ok = await injectReplayIntoTab(tabId);
+  if (!ok) {
+    await chrome.storage.local.set({ qa_screen_recording: false });
+    sendResponse({ ok: false, error: 'rrweb failed to start on initial tab' });
+    return;
+  }
+  await chrome.storage.local.set({
+    qa_screen_recording:        true,
+    qa_screen_recording_tab_id: tabId,
+    qa_multitab_recorded_tabs:  [tabId],
+    qa_multitab_switches:       [{ at: Date.now(), toTabId: tabId }],
+  });
+  sendResponse({ ok: true });
+}
+
+// ── STOP_MULTITAB_RECORDING ───────────────────────────────────────────────────
+async function handleStopMultiTabRecording(sendResponse) {
+  const saved = await saveMultiTabRecording();
+  sendResponse({ ok: true, saved });
 }
 
 // ── OPEN_ANNOTATOR ────────────────────────────────────────────────────────────
@@ -351,6 +479,37 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
+// ── Multi-tab: auto-inject rrweb when user switches tabs ──────────────────────
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  const {
+    qa_screen_recording,
+    qa_multitab_mode,
+    qa_multitab_recorded_tabs = [],
+    qa_multitab_switches = [],
+  } = await chrome.storage.local.get([
+    'qa_screen_recording', 'qa_multitab_mode',
+    'qa_multitab_recorded_tabs', 'qa_multitab_switches',
+  ]);
+
+  if (!qa_screen_recording || !qa_multitab_mode) return;
+  if (qa_multitab_recorded_tabs.includes(tabId)) {
+    // Already recording this tab — just track the switch
+    await chrome.storage.local.set({
+      qa_multitab_switches: [...qa_multitab_switches, { at: Date.now(), toTabId: tabId }],
+    });
+    return;
+  }
+
+  // New tab — inject rrweb
+  const ok = await injectReplayIntoTab(tabId);
+  if (ok) {
+    await chrome.storage.local.set({
+      qa_multitab_recorded_tabs: [...qa_multitab_recorded_tabs, tabId],
+      qa_multitab_switches: [...qa_multitab_switches, { at: Date.now(), toTabId: tabId }],
+    });
+  }
+});
+
 // ── onInstalled ───────────────────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(function () {
   chrome.storage.local.set({
@@ -402,9 +561,15 @@ async function postIssue(issue) {
   let replayData = null;
   let replayStatus = null;
   const { qa_saved_replay } = await chrome.storage.local.get(['qa_saved_replay']);
-  if (qa_saved_replay?.data && issue?.url && replayUrlMatches(issue.url, qa_saved_replay.url)) {
-    replayData = qa_saved_replay.data;
-    replayStatus = 'attached';
+  if (qa_saved_replay?.data && issue?.url) {
+    const urlsToCheck = qa_saved_replay.version === 2
+      ? (qa_saved_replay.urls || [])
+      : [qa_saved_replay.url || ''];
+    const matches = urlsToCheck.some(u => replayUrlMatches(issue.url, u));
+    if (matches) {
+      replayData  = qa_saved_replay.data;
+      replayStatus = 'attached';
+    }
   }
 
   const { qa_token: token } = await chrome.storage.local.get(['qa_token']);
