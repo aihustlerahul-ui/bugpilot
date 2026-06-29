@@ -21,6 +21,9 @@ interface ExtensionSettings {
   captureCookies: boolean
   captureUserInfo: boolean
   captureNavHistory: boolean
+
+  // Session Replay
+  multiTabRecording: boolean
   formExpectedResult: boolean
   formActualResult: boolean
   formPriority: boolean
@@ -284,6 +287,23 @@ export default function ExtensionPage() {
           <ToggleRow label="Labels"          description="Comma-separated tags (bug, ui, regression…)." enabled={s?.formLabels     ?? false} onChange={v => set('formLabels',         v)} />
           <ToggleRow label="Sprint"          description="Sprint name or number."                   enabled={s?.formSprint         ?? false} onChange={v => set('formSprint',         v)} />
           <ToggleRow label="Assignee"        description="Email or name of the assignee."           enabled={s?.formAssignee       ?? false} onChange={v => set('formAssignee',       v)} />
+        </>}
+      </Section>
+
+      {/* Session Replay */}
+      <Section
+        title="Session Replay"
+        description="Controls for the DOM session recorder. Multi-tab recording captures every tab the tester visits."
+        badge="Beta"
+        badgeColor="bg-purple-50 text-purple-600"
+      >
+        {isLoading ? <div className="py-4 text-sm text-gray-400">Loading…</div> : <>
+          <ToggleRow
+            label="Multi-tab recording"
+            description="When enabled, the extension records every tab the tester visits during a session, not just the starting tab. Replays show a tab-switcher with all captured screens."
+            enabled={s?.multiTabRecording ?? false}
+            onChange={v => set('multiTabRecording', v)}
+          />
         </>}
       </Section>
 
