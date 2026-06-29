@@ -19,7 +19,8 @@
     _windowMs = windowMs || _windowMs;
     _events = [];
 
-    // Guard: rrweb must be available (eval may have failed silently)
+    // Guard: rrweb must be available (the rrweb.min.js file injection must have run
+    // first and must be a UMD/global build that defines window.rrweb).
     if (typeof rrweb === 'undefined' || typeof rrweb.record !== 'function') {
       window.__qaReplayError = 'rrweb not available after injection';
       window.__qaReplayActive = false;
@@ -27,21 +28,42 @@
     }
 
     try {
+      // rrweb EventType: FullSnapshot = 2, Meta = 4.
+      // A rolling window cannot be trimmed by naively dropping the oldest events:
+      // every IncrementalSnapshot references node IDs established by the preceding
+      // FullSnapshot, so if the FullSnapshot is dropped the buffer becomes unplayable.
+      // checkoutEveryNms makes rrweb emit fresh FullSnapshots periodically; trimEvents
+      // then only drops events *before* the most recent FullSnapshot that is already
+      // older than the window, keeping a valid base for everything we retain.
+      var checkoutMs = Math.max(5000, Math.floor(_windowMs / 2));
       _stopFn = rrweb.record({
         emit: function (event) {
           _events.push(event);
-          var cutoff = Date.now() - _windowMs;
-          while (_events.length > 0 && _events[0].timestamp < cutoff) {
-            _events.shift();
-          }
+          trimEvents();
         },
         maskAllInputs: true,
+        checkoutEveryNms: checkoutMs,
       });
       _started = true;
     } catch (err) {
       window.__qaReplayError = err.message || String(err);
       window.__qaReplayActive = false;
     }
+  }
+
+  // Drop events older than the window, but never drop the FullSnapshot (and its
+  // preceding Meta) that the retained events depend on. We keep everything from the
+  // most recent FullSnapshot that is already older than the cutoff onward.
+  function trimEvents() {
+    var cutoff = Date.now() - _windowMs;
+    var keepFrom = 0;
+    for (var i = 0; i < _events.length; i++) {
+      if (_events[i].timestamp > cutoff) break;
+      if (_events[i].type === 2) {
+        keepFrom = (i > 0 && _events[i - 1].type === 4) ? i - 1 : i;
+      }
+    }
+    if (keepFrom > 0) _events.splice(0, keepFrom);
   }
 
   function stopRecording() {

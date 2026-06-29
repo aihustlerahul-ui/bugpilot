@@ -222,8 +222,25 @@ async function populateProjects(projects) {
 
 // ── Active tab helper ─────────────────────────────────────────────────────────
 async function getActiveTab() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  // lastFocusedWindow is more reliable than currentWindow when the side panel has focus
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   return tab || null;
+}
+
+async function ensureCaptureOnTab(tabId, members) {
+  let res;
+  try {
+    res = await chrome.tabs.sendMessage(tabId, { type: 'START_REPORTING', members });
+    if (res?.ok) return res;
+  } catch (_) {}
+
+  // Content script missing or stale (common after extension reload) — inject fresh copy
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+  await chrome.scripting.insertCSS({ target: { tabId }, files: ['content-styles.css'] });
+  await new Promise(r => setTimeout(r, 300));
+  res = await chrome.tabs.sendMessage(tabId, { type: 'START_REPORTING', members });
+  if (!res?.ok) throw new Error('Could not start capture on this page — refresh the tab and try again');
+  return res;
 }
 
 async function sendToActiveTab(message) {
@@ -375,18 +392,17 @@ async function startRecording() {
 
     const tab = await getActiveTab();
     if (!tab) { showToast('No active tab found.', 'error'); return; }
+    if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://'))) {
+      showToast('Capture is not available on browser internal pages.', 'error');
+      return;
+    }
 
+    // Confirm the page accepted capture before flipping storage/UI — avoids showing
+    // "Recording active" when the content script never attached hover listeners.
+    await ensureCaptureOnTab(tab.id, sessionMembers);
     await chrome.storage.local.set({ qa_recording: true, qa_recording_tab_id: tab.id });
     applyRecordingState(true);
-
-    try {
-      await chrome.tabs.sendMessage(tab.id, { type: 'START_REPORTING', members: sessionMembers });
-    } catch (_) {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
-      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ['content-styles.css'] });
-      await new Promise(r => setTimeout(r, 300));
-      await chrome.tabs.sendMessage(tab.id, { type: 'START_REPORTING', members: sessionMembers });
-    }
+    showToast('Hover over any element on the page to capture a bug.', 'success', 3500);
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
     await chrome.storage.local.set({ qa_recording: false, qa_recording_tab_id: null });
@@ -622,6 +638,8 @@ btnScreenRec.addEventListener('click', async function () {
   }
 
   btnScreenRec.disabled = false;
+  // Re-apply chip lock — the handler above re-enables the button unconditionally
+  if (replayChip.classList.contains('show')) btnScreenRec.disabled = true;
 });
 
 replayWindowSel.addEventListener('change', function () {
