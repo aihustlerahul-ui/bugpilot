@@ -264,6 +264,9 @@ async function init() {
   displayEmail.textContent = qa_user_email || 'Signed in';
   showMain();
 
+  // Sync workspace settings so features like multiTabRecording are visible immediately.
+  chrome.runtime.sendMessage({ type: 'SYNC_SETTINGS' }).catch(() => {});
+
   // Verify actual recording state with content script
   let actuallyRecording = false;
   if (qa_recording) {
