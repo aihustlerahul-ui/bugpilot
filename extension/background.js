@@ -29,6 +29,7 @@ async function saveRecording(tabId) {
   let saved = false;
   try {
     const replayRes = await chrome.tabs.sendMessage(tabId, { type: 'GET_REPLAY_EVENTS' });
+    if (replayRes?.error) console.warn('[QA] replay recorder error:', replayRes.error);
     if (replayRes?.ok && replayRes.events?.length > 0) {
       const data = await compressReplayEvents(replayRes.events);
       const tab = await chrome.tabs.get(tabId).catch(() => null);
@@ -95,6 +96,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (type === 'AUTO_STOP_RECORDING') {
     handleAutoStopRecording(_sender, sendResponse);
     return true;
+  }
+  if (type === 'REPLAY_START_FAILED') {
+    // replay-recorder.js couldn't start rrweb — clear recording state
+    chrome.storage.local.set({ qa_screen_recording: false, qa_screen_recording_tab_id: null });
+    return false;
   }
   if (type === 'OPEN_ANNOTATOR') {
     handleOpenAnnotator(message, _sender);
@@ -231,6 +237,28 @@ async function handleStartScreenRecording(message, sendResponse) {
       args: [rrwebCode],
     });
     await chrome.scripting.executeScript({ target: { tabId }, files: ['replay-recorder.js'] });
+
+    // Wait briefly for the async storage callback inside replay-recorder.js to complete,
+    // then ping to confirm rrweb.record actually started (eval may silently fail).
+    await new Promise(r => setTimeout(r, 300));
+    let pingOk = false;
+    try {
+      const ping = await chrome.tabs.sendMessage(tabId, { type: 'PING_REPLAY' });
+      pingOk = ping?.started === true;
+      if (!pingOk) {
+        const err = ping?.error || 'rrweb did not start';
+        console.warn('[QA] replay recorder failed to start:', err);
+        await chrome.storage.local.set({ qa_screen_recording: false });
+        sendResponse({ ok: false, error: err });
+        return;
+      }
+    } catch (_) {
+      // Tab closed between injection and ping — treat as failure
+      await chrome.storage.local.set({ qa_screen_recording: false });
+      sendResponse({ ok: false, error: 'Tab closed after injection' });
+      return;
+    }
+
     await chrome.storage.local.set({
       qa_screen_recording: true,
       qa_screen_recording_tab_id: tabId,
