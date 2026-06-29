@@ -2,7 +2,11 @@
 (function () {
   'use strict';
 
-  if (window.__qaReplayActive) return;
+  // Increment generation on each injection so stale listeners from previous
+  // recordings on the same tab don't respond to GET_REPLAY_EVENTS / STOP_REPLAY.
+  window.__qaReplayGeneration = (window.__qaReplayGeneration || 0) + 1;
+  var myGeneration = window.__qaReplayGeneration;
+
   window.__qaReplayActive = true;
 
   var _events = [];
@@ -32,12 +36,15 @@
 
   // When user switches away from this tab, tell background to save + stop
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden && window.__qaReplayActive) {
+    if (document.hidden && window.__qaReplayActive && window.__qaReplayGeneration === myGeneration) {
       chrome.runtime.sendMessage({ type: 'AUTO_STOP_RECORDING' });
     }
   });
 
   chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
+    // Ignore messages if a newer injection has taken over
+    if (window.__qaReplayGeneration !== myGeneration) return false;
+
     if (message.type === 'GET_REPLAY_EVENTS') {
       sendResponse({ ok: true, events: _events.slice() });
       return true;
