@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common'
 import { SupabaseAuthGuard } from '../common/guards/supabase-auth.guard'
 import { CurrentUser } from '../common/decorators/user.decorator'
 import { IssuesService } from './issues.service'
@@ -28,5 +28,10 @@ export class IssuesController {
   @Post(':id/replay-token')
   createReplayToken(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.issues.createReplayToken(user.id, id);
+  }
+
+  @Delete(':id')
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.issues.remove(user.id, id)
   }
 }

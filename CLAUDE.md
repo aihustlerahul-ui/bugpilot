@@ -163,7 +163,7 @@ cd platform && npm run dev
 
 ## Known Pending Items
 
-- [ ] Run Supabase migration: `ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'::jsonb`
+- [x] Run Supabase migrations (workspaces settings JSONB + session replay — applied manually)
 - [ ] Side panel fully built — test end-to-end in Chrome after reload
 - [ ] `popup.html/js` kept for reference but no longer launched (action has no `default_popup`)
 - [ ] `graphify-out/` — knowledge graph of this codebase (see below)

@@ -249,8 +249,8 @@ export default function IssueDetailPage({ params }: { params: { id: string; issu
 
         {/* Session Replay */}
         {issue.replayUrl && (
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-            <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between px-1">
               <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Session Replay</h2>
               <button
                 onClick={async () => {
@@ -267,9 +267,7 @@ export default function IssueDetailPage({ params }: { params: { id: string; issu
                 Share replay link
               </button>
             </div>
-            <div className="p-4">
-              <ReplayPlayer replayUrl={issue.replayUrl} issueTitle={issue.title ?? undefined} />
-            </div>
+            <ReplayPlayer replayUrl={issue.replayUrl} issueTitle={issue.title ?? undefined} />
           </div>
         )}
 

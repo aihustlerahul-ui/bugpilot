@@ -36,18 +36,20 @@ async function saveRecording(tabId) {
       const firstTs = replayRes.events[0].timestamp;
       const lastTs  = replayRes.events[replayRes.events.length - 1].timestamp;
       const duration = Math.round((lastTs - firstTs) / 1000);
-      await chrome.storage.local.set({
-        qa_saved_replay: {
-          data,
-          url: tab?.url || '',
-          tabId,
-          duration,
-          recordedAt: Date.now(),
-        },
-      });
-      saved = true;
+      // Keep the storage write in its own try so a quota failure is reported as a
+      // failure, not silently swallowed and surfaced as "no events captured".
+      try {
+        await chrome.storage.local.set({
+          qa_saved_replay: { data, url: tab?.url || '', tabId, duration, recordedAt: Date.now() },
+        });
+        saved = true;
+      } catch (storageErr) {
+        console.warn('[QA] failed to persist replay (storage quota?):', storageErr?.message || storageErr);
+      }
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn('[QA] saveRecording could not reach recorder:', err?.message || err);
+  }
   // Always stop the recorder and clear active flag
   try { await chrome.tabs.sendMessage(tabId, { type: 'STOP_REPLAY' }); } catch (_) {}
   await chrome.storage.local.set({
@@ -227,15 +229,11 @@ async function handleStartScreenRecording(message, sendResponse) {
   const tabId = message.tabId;
   if (!tabId) { sendResponse({ ok: false, error: 'No tab id' }); return; }
   try {
-    // Chrome's executeScript({files}) rejects large files as "not UTF-8" even when they are.
-    // Workaround: fetch the source in the service worker and inject it as inline code.
-    const rrwebUrl = chrome.runtime.getURL('rrweb.min.js');
-    const rrwebCode = await fetch(rrwebUrl).then(r => r.text());
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      func: (code) => { (0, eval)(code); },
-      args: [rrwebCode],
-    });
+    // Inject the rrweb UMD bundle as a file (runs in the isolated content-script world,
+    // so it is immune to the page's CSP). The bundle assigns a `rrweb` global via its
+    // UMD wrapper. NOTE: rrweb.min.js MUST be a UMD/global build — the ESM build cannot
+    // be injected this way (top-level `export`/`import` throw a SyntaxError).
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['rrweb.min.js'] });
     await chrome.scripting.executeScript({ target: { tabId }, files: ['replay-recorder.js'] });
 
     // Wait briefly for the async storage callback inside replay-recorder.js to complete,
@@ -384,19 +382,29 @@ async function tryRefreshToken() {
 }
 
 // ── Shared POST helper ────────────────────────────────────────────────────────
+// Two URLs refer to the same page if origin + pathname match (ignore query/hash so a
+// recording survives benign query changes between capture and submit).
+function replayUrlMatches(a, b) {
+  try {
+    const ua = new URL(a);
+    const ub = new URL(b);
+    return ua.origin === ub.origin && ua.pathname === ub.pathname;
+  } catch (_) {
+    return false;
+  }
+}
+
 async function postIssue(issue) {
-  // Attach saved replay if it exists and was recorded on the same tab as this bug
+  // Attach the saved replay only to the specific bug captured on the recorded page.
+  // Matching by issue URL (not the currently-active tab) makes Submit-All deterministic:
+  // the replay lands on its own bug regardless of submit order, instead of whichever
+  // issue happens to be posted first.
   let replayData = null;
   let replayStatus = null;
-  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const { qa_saved_replay } = await chrome.storage.local.get(['qa_saved_replay']);
-  if (qa_saved_replay?.data) {
-    if (activeTab && qa_saved_replay.tabId === activeTab.id) {
-      replayData = qa_saved_replay.data;
-      replayStatus = 'attached';
-    } else {
-      replayStatus = 'skipped';
-    }
+  if (qa_saved_replay?.data && issue?.url && replayUrlMatches(issue.url, qa_saved_replay.url)) {
+    replayData = qa_saved_replay.data;
+    replayStatus = 'attached';
   }
 
   const { qa_token: token } = await chrome.storage.local.get(['qa_token']);

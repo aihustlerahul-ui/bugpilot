@@ -10,17 +10,15 @@
   window.__qaReplayActive = true;
   window.__qaReplayError  = null;
 
-  var _events = [];
+  var _events   = [];
   var _windowMs = 2 * 60 * 1000;
-  var _stopFn = null;
-  var _started = false;
+  var _stopFn   = null;
+  var _started  = false;
 
   function startRecording(windowMs) {
     _windowMs = windowMs || _windowMs;
     _events = [];
 
-    // Guard: rrweb must be available (the rrweb.min.js file injection must have run
-    // first and must be a UMD/global build that defines window.rrweb).
     if (typeof rrweb === 'undefined' || typeof rrweb.record !== 'function') {
       window.__qaReplayError = 'rrweb not available after injection';
       window.__qaReplayActive = false;
@@ -28,20 +26,64 @@
     }
 
     try {
-      // rrweb EventType: FullSnapshot = 2, Meta = 4.
-      // A rolling window cannot be trimmed by naively dropping the oldest events:
-      // every IncrementalSnapshot references node IDs established by the preceding
-      // FullSnapshot, so if the FullSnapshot is dropped the buffer becomes unplayable.
-      // checkoutEveryNms makes rrweb emit fresh FullSnapshots periodically; trimEvents
-      // then only drops events *before* the most recent FullSnapshot that is already
-      // older than the window, keeping a valid base for everything we retain.
+      // checkoutEveryNms: emit periodic FullSnapshots so the rolling-window
+      // trimmer always has a valid anchor. Set to half the window so we always
+      // have at least one FullSnapshot within the kept segment.
       var checkoutMs = Math.max(5000, Math.floor(_windowMs / 2));
+
       _stopFn = rrweb.record({
         emit: function (event) {
           _events.push(event);
           trimEvents();
         },
-        maskAllInputs: true,
+
+        // ── Privacy ──────────────────────────────────────────────────────────
+        maskAllInputs: true,          // mask all <input> values
+        maskInputOptions: {
+          password: true,
+          email:    true,
+          tel:      true,
+          text:     false,            // plain text inputs visible for QA context
+          number:   false,
+          search:   false,
+          textarea: false,
+          select:   false,
+          radio:    false,
+          checkbox: false,
+        },
+        // Mask text inside elements matching this selector (e.g. PII fields)
+        maskTextSelector: '[data-qa-mask], [data-private]',
+        // Block screenshot of elements matching this selector
+        blockSelector: '[data-qa-block]',
+        // Ignore events from elements matching this selector
+        ignoreClass: 'qa-ignore',
+
+        // ── DOM fidelity ─────────────────────────────────────────────────────
+        inlineStylesheet: true,       // inline <link rel="stylesheet"> so replay needs no network
+        collectFonts:     true,       // capture @font-face so custom fonts render in replay
+        inlineImages:     false,      // true = huge events; images load from URL in replay
+        recordCanvas:     false,      // true requires UNSAFE_replayCanvas on player; off for now
+
+        // Remove noisy / irrelevant DOM nodes from the snapshot to reduce size
+        slimDOM: true,
+
+        // ── Sampling (balance fidelity vs event volume) ───────────────────────
+        sampling: {
+          // Capture one mousemove sample per 50 ms (default) — gives smooth replay
+          mousemove:         50,
+          // Batch mousemove events and emit every 500 ms (default)
+          mousemoveCallback: 500,
+          // Capture scroll every 150 ms instead of every scroll event
+          scroll:            150,
+          // Capture all media interactions
+          media:             800,
+          // Capture all input events (no sampling)
+          input:             'last',
+        },
+
+        // ── Rolling window ────────────────────────────────────────────────────
+        // Emit a fresh FullSnapshot periodically so trimEvents can keep only the
+        // tail of the buffer without breaking event references.
         checkoutEveryNms: checkoutMs,
       });
       _started = true;
@@ -52,15 +94,15 @@
   }
 
   // Drop events older than the window, but never drop the FullSnapshot (and its
-  // preceding Meta) that the retained events depend on. We keep everything from the
-  // most recent FullSnapshot that is already older than the cutoff onward.
+  // preceding Meta) that the retained events depend on. We keep everything from
+  // the most recent FullSnapshot that is already outside the cutoff onward.
   function trimEvents() {
-    var cutoff = Date.now() - _windowMs;
-    var keepFrom = 0;
+    var cutoff    = Date.now() - _windowMs;
+    var keepFrom  = 0;
     for (var i = 0; i < _events.length; i++) {
       if (_events[i].timestamp > cutoff) break;
-      if (_events[i].type === 2) {
-        keepFrom = (i > 0 && _events[i - 1].type === 4) ? i - 1 : i;
+      if (_events[i].type === 2 /* FullSnapshot */) {
+        keepFrom = (i > 0 && _events[i - 1].type === 4 /* Meta */) ? i - 1 : i;
       }
     }
     if (keepFrom > 0) _events.splice(0, keepFrom);
@@ -68,12 +110,12 @@
 
   function stopRecording() {
     if (_stopFn) { _stopFn(); _stopFn = null; }
-    _events = [];
+    _events  = [];
     _started = false;
     window.__qaReplayActive = false;
   }
 
-  // When user switches away from this tab, tell background to save + stop
+  // When user navigates away, tell background to save + stop
   document.addEventListener('visibilitychange', function () {
     if (document.hidden && _started && window.__qaReplayGeneration === myGeneration) {
       chrome.runtime.sendMessage({ type: 'AUTO_STOP_RECORDING' });
@@ -81,7 +123,6 @@
   });
 
   chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
-    // Ignore if a newer injection has taken over
     if (window.__qaReplayGeneration !== myGeneration) return false;
 
     if (message.type === 'GET_REPLAY_EVENTS') {
@@ -101,10 +142,9 @@
 
   chrome.storage.local.get(['qa_replay_window_ms'], function (result) {
     startRecording(result.qa_replay_window_ms || 2 * 60 * 1000);
-    // Notify background if recording failed to start
     if (!_started) {
       chrome.runtime.sendMessage({
-        type: 'REPLAY_START_FAILED',
+        type:  'REPLAY_START_FAILED',
         error: window.__qaReplayError || 'unknown error',
       });
     }

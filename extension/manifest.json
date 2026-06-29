@@ -3,7 +3,7 @@
   "name": "QA Reporter",
   "version": "2.1.0",
   "description": "Record and report bugs directly from any web page",
-  "permissions": ["storage", "activeTab", "scripting", "tabs", "sidePanel"],
+  "permissions": ["storage", "unlimitedStorage", "activeTab", "scripting", "tabs", "sidePanel"],
   "host_permissions": [
     "http://localhost:4000/*",
     "https://faasplsazadmtixuwzsn.supabase.co/*"

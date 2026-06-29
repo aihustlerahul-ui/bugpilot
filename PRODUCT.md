@@ -39,6 +39,25 @@ Web Platform      ──►  Same backend
   - `element_context` — crop with 80px padding (default)
   - `full_highlighted` — full page with red highlight rect
   - `both` — context crop + full as backup
+- **Screenshot annotation canvas** — full-screen overlay for drawing on any captured screenshot before submitting:
+  - **7 tools**: Rectangle (R), Arrow (A), Circle (C), Freehand pen (P), Text (T), Blur/Redact (B), Select (V) — keyboard shortcuts in parentheses
+  - **Select tool** — click to select a shape (dashed border + 8 white handle dots appear); drag body to move; drag a handle to resize; Delete/Backspace removes the selected shape; clicking empty canvas deselects
+  - **Resize handles** — 8 handles (4 corners + 4 edge midpoints) per selected shape, each showing a directional resize cursor:
+    - *Rect / Circle / Blur*: drag any handle to move that corner/edge; opposite corner/edge stays anchored
+    - *Arrow*: NW handle moves tail, SE handle moves tip; other handles adjust proportionally
+    - *Pen stroke*: all points scale proportionally relative to the bounding box
+    - *Text*: top/bottom handles scale font size vertically; left/right handles scale horizontally; corner handles scale diagonally; baseline position updates automatically so the text stays inside the dragged bounds
+  - **Stroke width slider** — 1–12px range slider in the toolbar; applies to new shapes and updates live on any selected shape; stored per-shape so undo restores prior width
+  - **Text font size** — derived from the stroke width slider at draw time (`max(10, strokeWidth × 4)px`); resizable after placement via resize handles
+  - **Color picker** — applies to new shapes and updates live on the selected shape; stored per-shape
+  - **Inline text input** — floating `<input>` at the click position (no `window.prompt()` — works in all injection contexts); focused after the originating click settles (setTimeout 0); blur listener added 200ms later to avoid instant dismissal; committed on Enter or blur, cancelled on Escape; `e.stopPropagation()` prevents tool shortcuts from firing while typing
+  - **Undo** — object-model history (`shapes[]` snapshots); each draw / move / resize / color change / delete is a discrete undo step; stack initialised with empty state so undo cannot go past the base screenshot
+  - **Keyboard shortcuts** — V/R/A/C/P/T/B switch tools; Delete or Backspace removes selected shape; Escape closes the annotator without saving
+  - **Done flow** — clears selection handles before capture so they don't appear in the exported image; toolbar hides, footer shows two options:
+    - *Replace original* — overwrites the slider image at the edited index
+    - *Keep both* — inserts the annotated version immediately after the original in the slider
+  - All slider images (original + any annotated versions) are sent as `metadata.screenshots: [{label, url}]` — no 2-image cap; the platform issue detail page and Azure DevOps sync both read this array, falling back to `screenshot_url` / `element_screenshot_url` columns for older issues
+- **Image slider in submit modal** — scrolls through all captured screenshots; each has an Edit button to open the annotation canvas
 - **Bug report form** — Title, Description (primary), Severity collapsible. Draggable modal, positioned near clicked element.
 - **Save & Continue** — buffers issue locally, keeps recording
 - **Save & Submit** — buffers + immediately POSTs to backend
@@ -51,11 +70,17 @@ Web Platform      ──►  Same backend
 - **Keyboard shortcut** — `⌥⇧Q` toggles recording from any page
 - **Session persistence** — auth token + refresh token stored in `chrome.storage.local`; auto-refreshes on expiry (no forced sign-out)
 - **Settings sync** — pulls screenshot mode + data capture toggles from backend on recording start
+- **Session replay (rrweb)** — independent screen recording via "Start Recording Screen":
+  - Rolling buffer (30s–5min window), saved to `qa_saved_replay` on stop (manual, timer, or tab hidden)
+  - Sidepanel chip shows saved replay duration; auto-attaches to next bug on matching URL (origin + pathname)
+  - gzip-compressed payload uploaded with issue; stored in private `qa-replays` bucket
+  - Privacy: `maskAllInputs`, optional `data-qa-mask` / `data-qa-block` selectors
 
 ### Web Platform (Next.js)
 - **Auth** — Supabase email/password, ES256 JWT, token stored in `sessionStorage`
 - **Projects** — list, create, view issues per project
 - **Issues** — per-project issue list with detail view (screenshots via signed URLs)
+- **Session replay player** — rrweb-based `ReplayPlayer` on issue detail: play/pause, scrub, ±10s, speed, fullscreen overlay; shareable public link via replay token (`/replay/:token`)
 - **Connectors hub** — step-by-step setup guides for Azure DevOps, Jira, Trello, Monday
 - **Extension settings page** — screenshot mode selector with SVG previews, data capture toggles, connection status badge, download + install guide
 - **Sticky sidebar** — persistent navigation
@@ -63,7 +88,7 @@ Web Platform      ──►  Same backend
 ### Backend (NestJS)
 - **Auth** — all routes validated via `supabase.auth.getUser(token)`
 - **Projects** CRUD — scoped to workspace owner
-- **Issues** — create with screenshot upload to Supabase Storage (private bucket, signed URLs)
+- **Issues** — create with screenshot + optional replay upload; signed replay URL on GET; `DELETE /api/issues/:id` removes replay file from Storage then row (`replay_tokens` cascade via FK)
 - **Workspaces** — auto-created on first login; `settings` JSONB column for extension config
 - **GET/PATCH /workspaces/settings** — extension pulls/pushes screenshot mode + toggles
 - **Azure DevOps integration** — PAT encrypted at rest (AES-256-GCM), creates work items, syncs issues
@@ -82,13 +107,14 @@ Web Platform      ──►  Same backend
 
 | Priority | Feature |
 |----------|---------|
-| High | Side panel implementation — fully wired (built, pending test in Chrome) |
-| High | Token refresh — store refresh_token, silent re-auth on expiry |
-| Medium | Supabase migration: `ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'::jsonb` |
-| Medium | Video/screen recording of bug reproduction |
-| Medium | Annotation tools (draw on screenshot) |
+| High | GitHub Issues + Linear connectors |
+| High | AI auto-fill (title, steps) from captured context |
+| Medium | Guest / magic-link reporting (no extension) |
+| Medium | Duplicate detection (URL + selector hash) |
+| Medium | Slack / Teams webhook on issue submit |
+| ✅ Done | Session replay — record, buffer, attach, platform player, share links |
+| ✅ Done | Annotation canvas — draw, resize, stroke width, inline text, keep both/replace |
 | Low | Side-by-side diff view (expected vs actual screenshot) |
-| Low | Slack / email notifications on issue submit |
 | Low | Team workspaces (multi-user) |
 
 ---

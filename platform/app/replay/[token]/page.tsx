@@ -75,9 +75,7 @@ export default function PublicReplayPage() {
             </div>
 
             {/* Player */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <ReplayPlayer replayUrl={data.replayUrl} />
-            </div>
+            <ReplayPlayer replayUrl={data.replayUrl} />
           </div>
         )}
 

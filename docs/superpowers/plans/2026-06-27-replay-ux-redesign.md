@@ -1,5 +1,7 @@
 # Replay UX Redesign Implementation Plan
 
+> **Status: ⛔ Superseded** — do not implement. Replaced by [2026-06-28-recording-buffer-flow.md](./2026-06-28-recording-buffer-flow.md), which uses a save-to-buffer model instead of snapshot-on-click (`SNAPSHOT_REPLAY`).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Decouple rrweb screen recording from the bug capture UI — "Start Recording Screen" starts rrweb independently, "Capture Now" activates the hover UI, and a snapshot is taken at click time so the replay ends at the bug moment (not after form interaction).

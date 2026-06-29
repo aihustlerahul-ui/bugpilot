@@ -6,9 +6,6 @@ import { CreateIssueDto } from './dto/create-issue.dto'
 export class IssuesService {
   constructor(private supabase: SupabaseService) {}
 
-  // NOTE: When a DELETE /api/issues/:id endpoint is added, the replay file at
-  // replay_storage_path must be deleted from the 'qa-replays' Storage bucket
-  // before removing the issue row. replay_tokens cascade automatically via FK.
   private async uploadReplay(base64Gzip: string, path: string): Promise<string | null> {
     try {
       const binary = Buffer.from(base64Gzip, 'base64');
@@ -172,5 +169,34 @@ export class IssuesService {
         external_ticket_url: externalTicketUrl ?? null,
       })
       .eq('id', issueId)
+  }
+
+  async remove(userId: string, issueId: string) {
+    const { data: issue, error: fetchError } = await this.supabase.db
+      .from('issues')
+      .select('id, replay_storage_path')
+      .eq('id', issueId)
+      .eq('reporter_id', userId)
+      .single()
+
+    if (fetchError || !issue) throw new NotFoundException('Issue not found')
+
+    if (issue.replay_storage_path) {
+      const { error: storageError } = await this.supabase.db.storage
+        .from('qa-replays')
+        .remove([issue.replay_storage_path])
+      if (storageError) {
+        throw new Error(`Failed to delete replay: ${storageError.message}`)
+      }
+    }
+
+    const { error: deleteError } = await this.supabase.db
+      .from('issues')
+      .delete()
+      .eq('id', issueId)
+      .eq('reporter_id', userId)
+
+    if (deleteError) throw new Error(deleteError.message)
+    return { ok: true }
   }
 }

@@ -2,6 +2,16 @@
 (function () {
   'use strict';
 
+  // One content-script instance per page load. After an extension reload the old
+  // instance is disconnected but this flag persists on `window`; bump generation so
+  // a fresh inject can take over (see replay-recorder.js for the same pattern).
+  window.__qaContentGeneration = (window.__qaContentGeneration || 0) + 1;
+  var myGeneration = window.__qaContentGeneration;
+
+  function isCurrentInstance() {
+    return window.__qaContentGeneration === myGeneration;
+  }
+
   // ── Constants ───────────────────────────────────────────────────────────────
   var API_URL = 'http://localhost:4000';
   var BUFFER_KEY = 'qa_buffered_issues';
@@ -651,12 +661,14 @@
 
   // ── Message listener ─────────────────────────────────────────────────────────
   chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
+    if (!isCurrentInstance()) return false;
+
     if (message.type === MESSAGE_TYPES.START_REPORTING) {
       qaSessionMembers = message.members || [];
       chrome.storage.local.get(['qa_user_email'], function (r) { qaOwnerEmail = r.qa_user_email || null; });
-      startRecording(); sendResponse({ ok: true }); return true;
+      startReporting(); sendResponse({ ok: true, recording: true }); return true;
     }
-    if (message.type === MESSAGE_TYPES.STOP_REPORTING)  { stopRecording();  sendResponse({ ok: true }); return true; }
+    if (message.type === MESSAGE_TYPES.STOP_REPORTING)  { stopReporting();  sendResponse({ ok: true }); return true; }
     if (message.type === 'IS_RECORDING')                { sendResponse({ recording: recording }); return true; }
   });
 
@@ -668,18 +680,21 @@
   });
 
   chrome.storage.local.get(['qa_recording'], function (result) {
-    if (result.qa_recording) startRecording();
+    if (result.qa_recording && isCurrentInstance()) startReporting();
   });
 
-  // ── Start / stop recording ───────────────────────────────────────────────────
-  function startRecording() {
-    if (recording) return;
+  // ── Start / stop capture (hover UI) ─────────────────────────────────────────
+  // Always re-attaches hover listeners — safe to call when already active (e.g.
+  // after extension reload left recording=true but listeners were torn down).
+  function startReporting() {
     recording = true;
+    modalOpen = false;
     enableHover();
+    document.removeEventListener('click', onElementClick, true);
     document.addEventListener('click', onElementClick, true);
   }
 
-  function stopRecording() {
+  function stopReporting() {
     if (!recording) return;
     recording = false;
     disableHover();
@@ -687,8 +702,13 @@
     closeModal();
   }
 
+  // Legacy names used elsewhere in this file
+  function startRecording() { startReporting(); }
+  function stopRecording()  { stopReporting(); }
+
   // ── Hover highlight ──────────────────────────────────────────────────────────
   function enableHover() {
+    disableHover();
     document.addEventListener('mouseover', onMouseOver, true);
     document.addEventListener('mouseout',  onMouseOut,  true);
     document.addEventListener('scroll',    onScroll,    { passive: true, capture: true });
