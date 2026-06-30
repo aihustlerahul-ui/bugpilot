@@ -6,11 +6,17 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: true })
   app.use(require('express').json({ limit: '10mb' }))
   app.use(require('express').urlencoded({ limit: '10mb', extended: true }))
+
+  const corsOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+
   app.enableCors({
     origin: (origin, callback) => {
       if (
         !origin ||
-        origin === 'http://localhost:3000' ||
+        corsOrigins.includes(origin) ||
         /^chrome-extension:\/\//.test(origin)
       ) {
         callback(null, true)

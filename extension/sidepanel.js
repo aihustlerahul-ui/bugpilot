@@ -340,8 +340,8 @@ authPassword.addEventListener('keydown', e => { if (e.key === 'Enter') btnSignin
 
 // ── Auth: sign out ────────────────────────────────────────────────────────────
 btnSignout.addEventListener('click', async () => {
-  const { qa_recording_tab_id, qa_screen_recording_tab_id } =
-    await chrome.storage.local.get(['qa_recording_tab_id', 'qa_screen_recording_tab_id']);
+  const { qa_recording_tab_id, qa_screen_recording_tab_id, qa_multitab_mode } =
+    await chrome.storage.local.get(['qa_recording_tab_id', 'qa_screen_recording_tab_id', 'qa_multitab_mode']);
 
   if (isRecording && qa_recording_tab_id) {
     try { await chrome.tabs.sendMessage(qa_recording_tab_id, { type: 'STOP_REPORTING' }); } catch (_) {}
@@ -349,7 +349,7 @@ btnSignout.addEventListener('click', async () => {
   if (isScreenRecording) {
     try {
       await chrome.runtime.sendMessage({
-        type: 'STOP_SCREEN_RECORDING',
+        type: qa_multitab_mode ? 'STOP_MULTITAB_RECORDING' : 'STOP_SCREEN_RECORDING',
         tabId: qa_screen_recording_tab_id || null,
       });
     } catch (_) {}
@@ -360,11 +360,14 @@ btnSignout.addEventListener('click', async () => {
     'qa_token', 'qa_refresh_token', 'qa_user_email',
     'qa_recording', 'qa_recording_tab_id',
     'qa_screen_recording', 'qa_screen_recording_tab_id',
+    'qa_multitab_mode', 'qa_multitab_recorded_tabs', 'qa_multitab_switches',
     'qa_saved_replay', 'qa_replay_status',
     'qa_buffered_issues', 'qa_selected_project',
   ]);
   applyRecordingState(false);
   isScreenRecording = false;
+  applyMultiTabToggle(false);
+  multitabBadge.style.display = 'none';
   replayChip.classList.remove('show');
   authError.textContent = '';
   authEmail.value = '';
@@ -505,6 +508,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.qa_multitab_recorded_tabs) {
     applyMultiTabBadge(changes.qa_multitab_recorded_tabs.newValue);
   }
+  if (changes.qa_multitab_mode) {
+    applyMultiTabToggle(!!changes.qa_multitab_mode.newValue);
+  }
   if (changes.qa_saved_replay) {
     applyReplayChip(changes.qa_saved_replay.newValue);
     // Show toast when a new recording is saved
@@ -531,6 +537,9 @@ let isMultiTabMode = false;
 function applyMultiTabToggle(on) {
   isMultiTabMode = on;
   btnMultitab.setAttribute('aria-pressed', String(on));
+  btnMultitab.disabled = isScreenRecording;
+  btnMultitab.style.opacity = isScreenRecording ? '0.45' : '';
+  btnMultitab.style.cursor = isScreenRecording ? 'not-allowed' : '';
 }
 
 function applyMultiTabBadge(tabIds) {
@@ -555,6 +564,7 @@ chrome.storage.local.get(['qa_ext_settings', 'qa_multitab_mode', 'qa_multitab_re
 });
 
 btnMultitab.addEventListener('click', async function () {
+  if (isScreenRecording) return;
   const next = !isMultiTabMode;
   applyMultiTabToggle(next);
   await chrome.storage.local.set({ qa_multitab_mode: next });
@@ -581,9 +591,13 @@ function startCountdown(totalSeconds) {
     if (remaining <= 0) {
       clearInterval(_screenRecIntervalId);
       _screenRecIntervalId = null;
+      const { qa_multitab_mode } = await chrome.storage.local.get(['qa_multitab_mode']);
+      const stopType = qa_multitab_mode ? 'STOP_MULTITAB_RECORDING' : 'STOP_SCREEN_RECORDING';
       const { qa_screen_recording_tab_id } = await chrome.storage.local.get(['qa_screen_recording_tab_id']);
-      const targetTabId = qa_screen_recording_tab_id || null;
-      const res = await chrome.runtime.sendMessage({ type: 'STOP_SCREEN_RECORDING', tabId: targetTabId });
+      const res = await chrome.runtime.sendMessage({
+        type: stopType,
+        tabId: qa_screen_recording_tab_id || null,
+      });
       // Show feedback if nothing was saved — success toast comes from storage.onChanged
       if (!res || !res.ok) {
         showToast('Recording ended — page may have navigated, nothing captured', 'error', 5000);
@@ -643,6 +657,7 @@ function applyReplayChip(savedReplay) {
 
 function applyScreenRecordingState(active) {
   isScreenRecording = active;
+  applyMultiTabToggle(isMultiTabMode);
   if (active) {
     btnScreenRec.className = 'btn btn-screen-rec btn-full active';
     btnScreenRec.innerHTML =
@@ -669,11 +684,12 @@ btnScreenRec.addEventListener('click', async function () {
 
   if (next) {
     applyScreenRecordingState(true);
-    const msgType = isMultiTabMode ? 'START_MULTITAB_RECORDING' : 'START_SCREEN_RECORDING';
+    const { qa_multitab_mode } = await chrome.storage.local.get(['qa_multitab_mode']);
+    const msgType = qa_multitab_mode ? 'START_MULTITAB_RECORDING' : 'START_SCREEN_RECORDING';
     const res = await chrome.runtime.sendMessage({ type: msgType, tabId: tab.id });
     if (res && res.ok) {
       showToast(
-        isMultiTabMode
+        qa_multitab_mode
           ? 'Multi-tab recording started — switch tabs freely.'
           : 'Screen recording ready — events are being captured.',
         'success', 3000
@@ -685,7 +701,8 @@ btnScreenRec.addEventListener('click', async function () {
       showToast('Recording failed: ' + (res?.error || 'could not inject on this page'), 'error', 5000);
     }
   } else {
-    const msgType = isMultiTabMode ? 'STOP_MULTITAB_RECORDING' : 'STOP_SCREEN_RECORDING';
+    const { qa_multitab_mode } = await chrome.storage.local.get(['qa_multitab_mode']);
+    const msgType = qa_multitab_mode ? 'STOP_MULTITAB_RECORDING' : 'STOP_SCREEN_RECORDING';
     const res = await chrome.runtime.sendMessage({ type: msgType, tabId: tab.id });
     if (!res || !res.ok) {
       showToast('Could not stop recording — page may have navigated', 'error', 5000);

@@ -2,8 +2,10 @@
 (function () {
   'use strict';
 
-  // Increment generation on each injection so stale listeners from previous
-  // recordings on the same tab don't respond to GET_REPLAY_EVENTS / STOP_REPLAY.
+  if (typeof window.__qaReplayTeardown === 'function') {
+    try { window.__qaReplayTeardown(); } catch (_) {}
+  }
+
   window.__qaReplayGeneration = (window.__qaReplayGeneration || 0) + 1;
   var myGeneration = window.__qaReplayGeneration;
 
@@ -26,9 +28,6 @@
     }
 
     try {
-      // checkoutEveryNms: emit periodic FullSnapshots so the rolling-window
-      // trimmer always has a valid anchor. Set to half the window so we always
-      // have at least one FullSnapshot within the kept segment.
       var checkoutMs = Math.max(5000, Math.floor(_windowMs / 2));
 
       _stopFn = rrweb.record({
@@ -37,13 +36,12 @@
           trimEvents();
         },
 
-        // ── Privacy ──────────────────────────────────────────────────────────
-        maskAllInputs: true,          // mask all <input> values
+        maskAllInputs: true,
         maskInputOptions: {
           password: true,
           email:    true,
           tel:      true,
-          text:     false,            // plain text inputs visible for QA context
+          text:     false,
           number:   false,
           search:   false,
           textarea: false,
@@ -51,39 +49,25 @@
           radio:    false,
           checkbox: false,
         },
-        // Mask text inside elements matching this selector (e.g. PII fields)
         maskTextSelector: '[data-qa-mask], [data-private]',
-        // Block screenshot of elements matching this selector
         blockSelector: '[data-qa-block]',
-        // Ignore events from elements matching this selector
         ignoreClass: 'qa-ignore',
 
-        // ── DOM fidelity ─────────────────────────────────────────────────────
-        inlineStylesheet: true,       // inline <link rel="stylesheet"> so replay needs no network
-        collectFonts:     true,       // capture @font-face so custom fonts render in replay
-        inlineImages:     false,      // true = huge events; images load from URL in replay
-        recordCanvas:     false,      // true requires UNSAFE_replayCanvas on player; off for now
+        inlineStylesheet: true,
+        collectFonts:     true,
+        inlineImages:     false,
+        recordCanvas:     4,
 
-        // Remove noisy / irrelevant DOM nodes from the snapshot to reduce size
         slimDOM: true,
 
-        // ── Sampling (balance fidelity vs event volume) ───────────────────────
         sampling: {
-          // Capture one mousemove sample per 50 ms (default) — gives smooth replay
           mousemove:         50,
-          // Batch mousemove events and emit every 500 ms (default)
           mousemoveCallback: 500,
-          // Capture scroll every 150 ms instead of every scroll event
           scroll:            150,
-          // Capture all media interactions
           media:             800,
-          // Capture all input events (no sampling)
           input:             'last',
         },
 
-        // ── Rolling window ────────────────────────────────────────────────────
-        // Emit a fresh FullSnapshot periodically so trimEvents can keep only the
-        // tail of the buffer without breaking event references.
         checkoutEveryNms: checkoutMs,
       });
       _started = true;
@@ -93,9 +77,6 @@
     }
   }
 
-  // Drop events older than the window, but never drop the FullSnapshot (and its
-  // preceding Meta) that the retained events depend on. We keep everything from
-  // the most recent FullSnapshot that is already outside the cutoff onward.
   function trimEvents() {
     var cutoff    = Date.now() - _windowMs;
     var keepFrom  = 0;
@@ -115,14 +96,7 @@
     window.__qaReplayActive = false;
   }
 
-  // When user navigates away, tell background to save + stop
-  document.addEventListener('visibilitychange', function () {
-    if (document.hidden && _started && window.__qaReplayGeneration === myGeneration) {
-      chrome.runtime.sendMessage({ type: 'AUTO_STOP_RECORDING' });
-    }
-  });
-
-  chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
+  function onReplayMessage(message, _sender, sendResponse) {
     if (window.__qaReplayGeneration !== myGeneration) return false;
 
     if (message.type === 'GET_REPLAY_EVENTS') {
@@ -138,15 +112,50 @@
       sendResponse({ ok: true, started: _started, error: window.__qaReplayError });
       return true;
     }
-  });
+    return false;
+  }
 
-  chrome.storage.local.get(['qa_replay_window_ms'], function (result) {
-    startRecording(result.qa_replay_window_ms || 2 * 60 * 1000);
-    if (!_started) {
+  function teardown() {
+    try {
+      if (window.__qaReplayMessageHandler) {
+        chrome.runtime.onMessage.removeListener(window.__qaReplayMessageHandler);
+      }
+    } catch (_) {}
+    stopRecording();
+  }
+
+  window.__qaReplayTeardown = teardown;
+  window.__qaReplayMessageHandler = onReplayMessage;
+
+  // No visibilitychange / chrome.storage / sendMessage here — those throw when the
+  // extension context is stale. Stop recording from the side panel only.
+
+  var runtimeReady = false;
+  try {
+    runtimeReady = typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id;
+  } catch (_) {
+    runtimeReady = false;
+  }
+
+  if (!runtimeReady) {
+    window.__qaReplayError = 'Extension context invalidated — reload the tab and try again';
+    window.__qaReplayActive = false;
+    return;
+  }
+
+  try { chrome.runtime.onMessage.removeListener(onReplayMessage); } catch (_) {}
+  chrome.runtime.onMessage.addListener(onReplayMessage);
+
+  var windowMs = typeof window.__qaReplayWindowMs === 'number'
+    ? window.__qaReplayWindowMs
+    : 2 * 60 * 1000;
+  startRecording(windowMs);
+  if (!_started) {
+    try {
       chrome.runtime.sendMessage({
-        type:  'REPLAY_START_FAILED',
+        type: 'REPLAY_START_FAILED',
         error: window.__qaReplayError || 'unknown error',
       });
-    }
-  });
+    } catch (_) {}
+  }
 })();
