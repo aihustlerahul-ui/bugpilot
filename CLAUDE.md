@@ -89,9 +89,25 @@ POST /api/issues
 
 ### Workspace Settings
 - `settings` JSONB column on `workspaces` table (migration must be run manually if not present)
-- `GET /api/workspaces/settings` → returns `{ screenshotMode, captureConsole, captureNetwork, ... }`
+- `GET /api/workspaces/settings` → returns `{ screenshotMode, captureConsole, captureNetwork, multiTabRecording, ... }`
 - `PATCH /api/workspaces/settings` → merges patch into existing settings
-- Extension syncs on recording start via `SYNC_SETTINGS` message → caches as `qa_ext_settings`
+- Extension syncs on sidepanel load AND recording start via `SYNC_SETTINGS` → caches as `qa_ext_settings`
+
+### Multi-tab Recording
+- Enabled per workspace via `settings.multiTabRecording`; toggle in Extension Settings page
+- `START_MULTITAB_RECORDING` → injects rrweb into initial tab, sets `qa_multitab_mode: true` in storage
+- `chrome.tabs.onActivated` → auto-injects rrweb into each new tab (requires `<all_urls>` host_permission)
+- `chrome.tabs.onUpdated` (status `'loading'`) → clears `lastRecordedUrlByTab` for recorded tabs so `'complete'` always re-injects — covers refresh and back/forward navigation
+- `handleAutoStopRecording` returns early when `qa_multitab_mode` is true — tab switching must not end the session
+- Multi-stream format: `{ version: 2, streams: [{tabId, url, title, events[]}], switches: [{at, toTabId}] }`
+- Storage keys: `qa_multitab_recorded_tabs`, `qa_multitab_switches`, `qa_multitab_mode`
+
+### Attach Replay to Bug Mid-Recording
+- `CAPTURE_SCREENSHOT` no longer stops the recorder; returns `screenRecordingActive`, `isMultiTab`, `recordingStartedAt`
+- `content.js` modal shows replay section when `screenRecordingActive`:
+  - *Attach clip & continue* → `SNAPSHOT_REPLAY` → `snapshotCurrentRecording()` saves to `qa_saved_replay` without stopping rrweb
+  - *Stop & attach* → `STOP_AND_ATTACH_REPLAY` → calls `saveRecording` / `saveMultiTabRecording` normally
+- `postIssue` reads `qa_saved_replay` and attaches it if URL matches; clears after successful submit
 
 ---
 
@@ -99,14 +115,16 @@ POST /api/issues
 
 | File | Purpose |
 |------|---------|
-| `extension/sidepanel.js` | Primary extension UI logic — auth, recording, buffer |
-| `extension/content.js` | Page injection — hover highlight, modal near element, screenshot capture |
-| `extension/background.js` | Service worker — message routing, API calls, token refresh, keyboard shortcut |
+| `extension/sidepanel.js` | Primary extension UI logic — auth, recording, multi-tab toggle, buffer |
+| `extension/content.js` | Page injection — hover highlight, modal, screenshot, replay attachment section |
+| `extension/background.js` | Service worker — message routing, API calls, multi-tab recording, snapshot, token refresh |
+| `extension/replay-recorder.js` | rrweb recording shim injected per-tab; rolling buffer, GET_REPLAY_EVENTS, STOP_REPLAY |
 | `backend/src/supabase/supabase.service.ts` | Shared Supabase client, `@Global()` module |
-| `backend/src/workspaces/workspaces.service.ts` | `getSettings()` / `updateSettings()` |
+| `backend/src/workspaces/workspaces.service.ts` | `getSettings()` / `updateSettings()` — includes `multiTabRecording` |
 | `backend/src/integrations/encryption.service.ts` | AES-256-GCM encrypt/decrypt for PATs |
 | `platform/lib/api/client.ts` | `get<T>()`, `post<T>()`, `patch<T>()` typed fetch wrappers |
-| `platform/app/(dashboard)/extension/page.tsx` | Extension settings page — screenshot mode + toggles |
+| `platform/app/(dashboard)/extension/page.tsx` | Extension settings page — screenshot mode, toggles, multi-tab recording |
+| `platform/components/ReplayPlayer.tsx` | rrweb replay player — single and multi-stream with tab strip |
 
 ---
 
@@ -164,8 +182,12 @@ cd platform && npm run dev
 ## Known Pending Items
 
 - [x] Run Supabase migrations (workspaces settings JSONB + session replay — applied manually)
-- [ ] Side panel fully built — test end-to-end in Chrome after reload
+- [x] Side panel fully built — multi-tab toggle, badge, branched start/stop
+- [x] Multi-tab recording — inject, track, collect, tab-strip player
+- [x] Attach replay clip to bug mid-recording — snapshot without stopping
+- [x] Re-inject rrweb after refresh and back/forward navigation
 - [ ] `popup.html/js` kept for reference but no longer launched (action has no `default_popup`)
+- [ ] Multi-tab recording: end-to-end test in Chrome with 3+ tabs including refresh mid-session
 - [ ] `graphify-out/` — knowledge graph of this codebase (see below)
 
 ---

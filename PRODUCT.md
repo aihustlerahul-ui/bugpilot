@@ -75,12 +75,23 @@ Web Platform      ──►  Same backend
   - Sidepanel chip shows saved replay duration; auto-attaches to next bug on matching URL (origin + pathname)
   - gzip-compressed payload uploaded with issue; stored in private `qa-replays` bucket
   - Privacy: `maskAllInputs`, optional `data-qa-mask` / `data-qa-block` selectors
+- **Multi-tab recording** — opt-in workspace setting; rrweb auto-injected into each new tab on switch:
+  - Multi-stream format `{ version: 2, streams: [{tabId, url, events[]}], switches: [{at, toTabId}] }`
+  - Tab-count badge in sidepanel; separate start/stop path (`START_MULTITAB_RECORDING`)
+  - `AUTO_STOP_RECORDING` (visibilitychange) suppressed in multi-tab mode — only manual stop ends session
+  - Re-inject on refresh and back/forward navigation: events flushed to buffer before re-inject, merged on save
+  - `<all_urls>` host permission enables non-gesture `executeScript` on tab switch
+- **Attach replay to bug during recording** — when a bug is captured while recording is active, the modal shows a recording indicator with two options:
+  - *Attach clip & continue* — snapshots rrweb events up to that moment, attaches to bug; recording keeps going
+  - *Stop & attach* — stops recorder at that point, saves full clip, attaches to bug; works for both single and multi-tab
+  - Ignoring the section submits the bug without video; recording is never interrupted by default
 
 ### Web Platform (Next.js)
 - **Auth** — Supabase email/password, ES256 JWT, token stored in `sessionStorage`
 - **Projects** — list, create, view issues per project
 - **Issues** — per-project issue list with detail view (screenshots via signed URLs)
 - **Session replay player** — rrweb-based `ReplayPlayer` on issue detail: play/pause, scrub, ±10s, speed, fullscreen overlay; shareable public link via replay token (`/replay/:token`)
+  - Multi-tab replays render a tab strip above the viewport; player auto-switches the visible Replayer instance as playback crosses tab-switch timestamps; per-stream seek offsets keep all streams in sync
 - **Connectors hub** — step-by-step setup guides for Azure DevOps, Jira, Trello, Monday
 - **Extension settings page** — screenshot mode selector with SVG previews, data capture toggles, connection status badge, download + install guide
 - **Sticky sidebar** — persistent navigation
@@ -90,7 +101,8 @@ Web Platform      ──►  Same backend
 - **Projects** CRUD — scoped to workspace owner
 - **Issues** — create with screenshot + optional replay upload; signed replay URL on GET; `DELETE /api/issues/:id` removes replay file from Storage then row (`replay_tokens` cascade via FK)
 - **Workspaces** — auto-created on first login; `settings` JSONB column for extension config
-- **GET/PATCH /workspaces/settings** — extension pulls/pushes screenshot mode + toggles
+- **GET/PATCH /workspaces/settings** — extension pulls/pushes screenshot mode + toggles; `multiTabRecording` boolean in settings schema
+- **CORS** — configurable via `CORS_ORIGINS` env var (comma-separated); `PLATFORM_URL` for replay link generation
 - **Azure DevOps integration** — PAT encrypted at rest (AES-256-GCM), creates work items, syncs issues
 - **Jira integration** — OAuth, create issues
 - **Trello / Monday** — setup guides (connectors page), integration hooks ready
@@ -114,6 +126,9 @@ Web Platform      ──►  Same backend
 | Medium | Slack / Teams webhook on issue submit |
 | ✅ Done | Session replay — record, buffer, attach, platform player, share links |
 | ✅ Done | Annotation canvas — draw, resize, stroke width, inline text, keep both/replace |
+| ✅ Done | Multi-tab recording — auto-inject rrweb on tab switch, tab-strip player, multi-stream format |
+| ✅ Done | Attach replay clip to bug mid-recording — snapshot without stopping, or stop & attach |
+| ✅ Done | Re-inject rrweb after refresh and back/forward navigation during recording |
 | Low | Side-by-side diff view (expected vs actual screenshot) |
 | Low | Team workspaces (multi-user) |
 
