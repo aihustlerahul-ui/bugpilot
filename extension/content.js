@@ -148,6 +148,10 @@
   var capturedCount = 0;
   var highlightEl   = null;
   var hoveredTarget = null;
+  var coordinateCapture = false;
+  var hoveredCoordinate = null;
+  var officeOverlayEl   = null;
+  var officeOverlaySync = null;
   var modalOpen     = false;
 
   // ── Utility ─────────────────────────────────────────────────────────────────
@@ -683,6 +687,15 @@
     if (result.qa_recording && isCurrentInstance()) startReporting();
   });
 
+  // Sync capture mode across all open tabs when sidepanel toggles recording
+  chrome.storage.onChanged.addListener(function (changes, area) {
+    if (area !== 'local' || !isCurrentInstance()) return;
+    if (changes.qa_recording) {
+      if (changes.qa_recording.newValue) startReporting();
+      else stopReporting();
+    }
+  });
+
   // ── Start / stop capture (hover UI) ─────────────────────────────────────────
   // Always re-attaches hover listeners — safe to call when already active (e.g.
   // after extension reload left recording=true but listeners were torn down).
@@ -690,6 +703,7 @@
     recording = true;
     modalOpen = false;
     enableHover();
+    if (isOfficeAppPage()) enableOfficeOverlay();
     document.removeEventListener('click', onElementClick, true);
     document.addEventListener('click', onElementClick, true);
   }
@@ -697,6 +711,9 @@
   function stopReporting() {
     if (!recording) return;
     recording = false;
+    coordinateCapture = false;
+    hoveredCoordinate = null;
+    disableOfficeOverlay();
     disableHover();
     document.removeEventListener('click', onElementClick, true);
     closeModal();
@@ -707,35 +724,247 @@
   function stopRecording()  { stopReporting(); }
 
   // ── Hover highlight ──────────────────────────────────────────────────────────
+  /** Excel/Office draw the grid on <canvas> or cross-origin <iframe> — DOM hover breaks. */
+  function isOfficeAppPage() {
+    return /sharepoint|office\.com|office365|excel|onedrive|officeapps\.live/i.test(location.href);
+  }
+
+  function needsCoordinateCapture(el) {
+    if (!el || !el.tagName) return false;
+    var tag = el.tagName.toUpperCase();
+    if (tag === 'CANVAS' || tag === 'IFRAME') return true;
+    if (el.closest && el.closest('canvas')) return true;
+    if (el.id === 'qa-office-capture-overlay' || el.classList.contains('qa-office-capture-overlay')) return true;
+    return false;
+  }
+
+  /** Excel grid lives in a cross-origin iframe — parent page never receives mouse events over cells. */
+  function findOfficeGridFrame() {
+    var best = null, bestArea = 0;
+    var iframes = document.querySelectorAll('iframe');
+    for (var i = 0; i < iframes.length; i++) {
+      var f = iframes[i];
+      var src = (f.getAttribute('src') || f.src || '').toLowerCase();
+      var id  = (f.id || '').toLowerCase();
+      var name = (f.name || '').toLowerCase();
+      var matched = /officeapps|excel|wopi|collab|outerframe|embed/.test(src) ||
+        id === 'wacframe' || name === 'wacframe';
+      var r = f.getBoundingClientRect();
+      var area = r.width * r.height;
+      if (matched && area > bestArea) { best = f; bestArea = area; }
+      else if (isOfficeAppPage() && area > bestArea && area > 80000) { best = f; bestArea = area; }
+    }
+    return best;
+  }
+
+  function updateOfficeOverlayGeometry() {
+    if (!officeOverlayEl) return;
+    var frame = findOfficeGridFrame();
+    if (frame) {
+      var r = frame.getBoundingClientRect();
+      if (r.width < 40 || r.height < 40) return;
+      officeOverlayEl.style.display = 'block';
+      officeOverlayEl.style.top    = r.top + 'px';
+      officeOverlayEl.style.left   = r.left + 'px';
+      officeOverlayEl.style.width  = r.width + 'px';
+      officeOverlayEl.style.height = r.height + 'px';
+      return;
+    }
+    if (isOfficeAppPage()) {
+      officeOverlayEl.style.display = 'block';
+      officeOverlayEl.style.top    = '148px';
+      officeOverlayEl.style.left   = '0';
+      officeOverlayEl.style.width  = '100%';
+      officeOverlayEl.style.height = 'calc(100vh - 148px)';
+    }
+  }
+
+  function enableOfficeOverlay() {
+    if (window !== window.top) return;
+    if (!officeOverlayEl) {
+      officeOverlayEl = document.createElement('div');
+      officeOverlayEl.id = 'qa-office-capture-overlay';
+      officeOverlayEl.className = 'qa-office-capture-overlay';
+      officeOverlayEl.addEventListener('mousemove', onOfficeOverlayMove, true);
+      officeOverlayEl.addEventListener('click', onOfficeOverlayClick, true);
+      document.documentElement.appendChild(officeOverlayEl);
+      officeOverlaySync = function () { updateOfficeOverlayGeometry(); };
+      window.addEventListener('resize', officeOverlaySync, { passive: true });
+      window.addEventListener('scroll', officeOverlaySync, { passive: true, capture: true });
+    }
+    updateOfficeOverlayGeometry();
+    if (!officeOverlayEl._qaGeoInterval) {
+      officeOverlayEl._qaGeoInterval = setInterval(updateOfficeOverlayGeometry, 800);
+    }
+  }
+
+  function disableOfficeOverlay() {
+    if (officeOverlayEl) {
+      if (officeOverlayEl._qaGeoInterval) {
+        clearInterval(officeOverlayEl._qaGeoInterval);
+        officeOverlayEl._qaGeoInterval = null;
+      }
+      officeOverlayEl.removeEventListener('mousemove', onOfficeOverlayMove, true);
+      officeOverlayEl.removeEventListener('click', onOfficeOverlayClick, true);
+      officeOverlayEl.remove();
+      officeOverlayEl = null;
+    }
+    if (officeOverlaySync) {
+      window.removeEventListener('resize', officeOverlaySync, { passive: true });
+      window.removeEventListener('scroll', officeOverlaySync, { capture: true });
+      officeOverlaySync = null;
+    }
+  }
+
+  function onOfficeOverlayMove(e) {
+    if (!recording || modalOpen) return;
+    coordinateCapture = true;
+    hoveredCoordinate = { x: e.clientX, y: e.clientY };
+    positionHighlightAtPoint(e.clientX, e.clientY, 140, 36);
+  }
+
+  function onOfficeOverlayClick(e) {
+    if (modalOpen || !recording) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openCaptureAtCoordinate(e.clientX, e.clientY, e.target);
+  }
+
+  function openCaptureAtCoordinate(cx, cy, clickedEl) {
+    removeHighlight();
+    hoveredTarget = null;
+    coordinateCapture = false;
+    var pad = 70, padY = 18;
+    var elemRect = {
+      left:   Math.max(0, cx - pad),
+      top:    Math.max(0, cy - padY),
+      width:  Math.min(140, window.innerWidth),
+      height: 36,
+      right:  cx + pad,
+      bottom: cy + padY,
+    };
+    var elemData = buildCoordinateElementData(cx, cy);
+    setTimeout(function () {
+      chrome.runtime.sendMessage({ type: MESSAGE_TYPES.CAPTURE_SCREENSHOT }, function (res) {
+        var fullDataUrl = (res && res.ok) ? res.dataUrl : null;
+        var screenRecordingActive = !!(res && res.screenRecordingActive);
+        var isMultiTab = !!(res && res.isMultiTab);
+        var recordingStartedAt = (res && res.recordingStartedAt) || null;
+        chrome.storage.local.get(['qa_ext_settings'], function (stored) {
+          var settings = stored.qa_ext_settings || {};
+          var mode     = settings.screenshotMode || 'element_context';
+          function openModal(screenshotDataUrl) {
+            showModal({ element: clickedEl || document.body, elemData: elemData, screenshotDataUrl: screenshotDataUrl, fullScreenshotDataUrl: fullDataUrl, settings: settings, screenRecordingActive: screenRecordingActive, isMultiTab: isMultiTab, recordingStartedAt: recordingStartedAt });
+          }
+          if (!fullDataUrl || elemRect.width === 0) return openModal(fullDataUrl);
+          if (mode === 'full')             { openModal(fullDataUrl); }
+          else if (mode === 'element_crop'){ cropToElement(fullDataUrl, elemRect, 0,  openModal); }
+          else if (mode === 'full_highlighted') { drawHighlight(fullDataUrl, elemRect, openModal); }
+          else { cropToElement(fullDataUrl, elemRect, 80, openModal); }
+        });
+      });
+    }, 50);
+  }
+
+  function positionHighlightAtPoint(cx, cy, w, h) {
+    if (!highlightEl) {
+      highlightEl = document.createElement('div');
+      highlightEl.id = OVERLAY_ID;
+      highlightEl.className = 'qa-reporter-highlight-overlay';
+      document.documentElement.appendChild(highlightEl);
+    }
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var left = Math.max(4, Math.min(cx - w / 2, vw - w - 4));
+    var top  = Math.max(4, Math.min(cy - h / 2, vh - h - 4));
+    highlightEl.style.cssText =
+      'position: fixed !important;' +
+      'top: ' + top + 'px !important;' +
+      'left: ' + left + 'px !important;' +
+      'width: ' + w + 'px !important;' +
+      'height: ' + h + 'px !important;' +
+      'display: block !important;';
+  }
+
+  function buildCoordinateElementData(cx, cy) {
+    return {
+      selector:     'coordinate@(' + Math.round(cx) + ',' + Math.round(cy) + ')',
+      tagName:      'region',
+      text:         '',
+      attributes:   { 'data-qa-coordinate': Math.round(cx) + ',' + Math.round(cy) },
+      boundingRect: { x: cx, y: cy, width: 140, height: 36, top: cy - 18, left: cx - 70, right: cx + 70, bottom: cy + 18 },
+      computedStyles: {},
+      semanticContext: { page: 'canvas-or-iframe', note: 'Captured by pointer position — Excel/Office canvas region' },
+      accessibility: {},
+      domBreadcrumb: [{ tag: 'region', selector: 'pointer-capture' }],
+    };
+  }
+
   function enableHover() {
     disableHover();
     document.addEventListener('mouseover', onMouseOver, true);
     document.addEventListener('mouseout',  onMouseOut,  true);
+    document.addEventListener('mousemove', onMouseMove, true);
     document.addEventListener('scroll',    onScroll,    { passive: true, capture: true });
   }
 
   function disableHover() {
     document.removeEventListener('mouseover', onMouseOver, true);
     document.removeEventListener('mouseout',  onMouseOut,  true);
+    document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('scroll',    onScroll,    { capture: true });
     removeHighlight();
+  }
+
+  function onMouseMove(e) {
+    if (!recording || modalOpen) return;
+    if (isQAElement(e.target)) return;
+    if (officeOverlayEl) return; // grid overlay handles Excel iframe area
+    if (coordinateCapture || needsCoordinateCapture(e.target)) {
+      coordinateCapture = true;
+      hoveredCoordinate = { x: e.clientX, y: e.clientY };
+      positionHighlightAtPoint(e.clientX, e.clientY, 140, 36);
+    }
   }
 
   function onMouseOver(e) {
     if (modalOpen) return;
     var target = e.target;
     if (isQAElement(target)) return;
+
+    if (needsCoordinateCapture(target)) {
+      coordinateCapture = true;
+      hoveredTarget = null;
+      hoveredCoordinate = { x: e.clientX, y: e.clientY };
+      positionHighlightAtPoint(e.clientX, e.clientY, 140, 36);
+      return;
+    }
+
+    coordinateCapture = false;
+    hoveredCoordinate = null;
     hoveredTarget = target;
     positionHighlight(target);
   }
 
   function onMouseOut(e) {
     if (modalOpen) return;
+    if (coordinateCapture) {
+      if (needsCoordinateCapture(e.target)) {
+        coordinateCapture = false;
+        hoveredCoordinate = null;
+        removeHighlight();
+      }
+      return;
+    }
     if (e.target === hoveredTarget) { hoveredTarget = null; removeHighlight(); }
   }
 
   function onScroll() {
-    if (hoveredTarget) positionHighlight(hoveredTarget);
+    if (coordinateCapture && hoveredCoordinate) {
+      positionHighlightAtPoint(hoveredCoordinate.x, hoveredCoordinate.y, 140, 36);
+    } else if (hoveredTarget) {
+      positionHighlight(hoveredTarget);
+    }
   }
 
   function positionHighlight(target) {
@@ -760,34 +989,46 @@
 
   function isQAElement(el) {
     if (!el || !el.closest) return false;
-    return !!(el.closest('#' + MODAL_ID) || el.closest('#' + DIM_ID) || el.id === OVERLAY_ID);
+    return !!(el.closest('#' + MODAL_ID) || el.closest('#' + DIM_ID) ||
+      el.closest('#qa-office-capture-overlay') || el.id === OVERLAY_ID);
   }
 
   // ── Click handler ────────────────────────────────────────────────────────────
   function onElementClick(e) {
     if (modalOpen) return;
     if (isQAElement(e.target)) return;
+    if (officeOverlayEl && (e.target === officeOverlayEl || officeOverlayEl.contains(e.target))) return;
 
     e.preventDefault();
     e.stopPropagation();
 
     var clickedEl = e.target;
+    if (needsCoordinateCapture(clickedEl)) {
+      openCaptureAtCoordinate(e.clientX, e.clientY, clickedEl);
+      return;
+    }
+
     removeHighlight();
     hoveredTarget = null;
+    coordinateCapture = false;
 
     var elemRect = clickedEl.getBoundingClientRect();
+    var elemData = null;
 
     setTimeout(function () {
       chrome.runtime.sendMessage({ type: MESSAGE_TYPES.CAPTURE_SCREENSHOT }, function (res) {
         var fullDataUrl = (res && res.ok) ? res.dataUrl : null;
-        var elemData    = captureElementData(clickedEl);
+        var screenRecordingActive = !!(res && res.screenRecordingActive);
+        var isMultiTab = !!(res && res.isMultiTab);
+        var recordingStartedAt = (res && res.recordingStartedAt) || null;
+        elemData = captureElementData(clickedEl);
 
         chrome.storage.local.get(['qa_ext_settings'], function (stored) {
           var settings = stored.qa_ext_settings || {};
           var mode     = settings.screenshotMode || 'element_context';
 
           function openModal(screenshotDataUrl) {
-            showModal({ element: clickedEl, elemData: elemData, screenshotDataUrl: screenshotDataUrl, fullScreenshotDataUrl: fullDataUrl, settings: settings });
+            showModal({ element: clickedEl, elemData: elemData, screenshotDataUrl: screenshotDataUrl, fullScreenshotDataUrl: fullDataUrl, settings: settings, screenRecordingActive: screenRecordingActive, isMultiTab: isMultiTab, recordingStartedAt: recordingStartedAt });
           }
 
           if (!fullDataUrl || elemRect.width === 0) return openModal(fullDataUrl);
@@ -808,6 +1049,9 @@
     var screenshotDataUrl     = opts.screenshotDataUrl;
     var fullScreenshotDataUrl = opts.fullScreenshotDataUrl;
     var settings              = opts.settings || {};
+    var screenRecordingActive = opts.screenRecordingActive || false;
+    var isMultiTab            = opts.isMultiTab || false;
+    var recordingStartedAt    = opts.recordingStartedAt || null;
 
     modalOpen = true;
     disableHover();
@@ -859,6 +1103,24 @@
       '</div>';
     }
     var screenshotHtml = buildSliderHtml();
+
+    // ── Replay attachment section ─────────────────────────────────────────────
+    var replayElapsedSec = recordingStartedAt ? Math.round((Date.now() - recordingStartedAt) / 1000) : 0;
+    var replayElapsedStr = replayElapsedSec > 0
+      ? Math.floor(replayElapsedSec / 60) + ':' + String(replayElapsedSec % 60).padStart(2, '0')
+      : '';
+    var replayHtml = screenRecordingActive
+      ? '<div class="qa-replay-section" id="qa-replay-section">' +
+          '<div class="qa-replay-header">' +
+            '<span class="qa-replay-dot"></span>' +
+            '<span>Screen recording active' + (replayElapsedStr ? ' &middot; ' + replayElapsedStr : '') + '</span>' +
+          '</div>' +
+          '<div class="qa-replay-actions">' +
+            '<button class="qa-btn qa-btn-replay-keep" id="qa-btn-attach-keep">Attach clip &amp; continue</button>' +
+            '<button class="qa-btn qa-btn-replay-stop" id="qa-btn-stop-attach">Stop &amp; attach</button>' +
+          '</div>' +
+        '</div>'
+      : '';
 
     // ── ANNOTATION_DONE handler (closure over slider state) ───────────────────
     function onAnnotationDone(message, _sender, sendResponse) {
@@ -936,6 +1198,7 @@
       '</div>' +
       '<div class="qa-modal-scroll"><div class="qa-modal-body">' +
         screenshotHtml +
+        replayHtml +
         '<div class="qa-modal-element-info">' +
           '<span class="qa-element-tag">&lt;' + escapeHTML(elemData.tag) + '&gt;</span>' +
           '<span class="qa-element-text">' + escapeHTML(elemData.text || elemData.cssSelector) + '</span>' +
@@ -1015,6 +1278,49 @@
           imageIndex: sliderIndex,
         });
       });
+    }
+
+    // ── Replay attachment buttons ─────────────────────────────────────────────
+    if (screenRecordingActive) {
+      var replaySection = modal.querySelector('#qa-replay-section');
+      var attachKeepBtn = modal.querySelector('#qa-btn-attach-keep');
+      var stopAttachBtn = modal.querySelector('#qa-btn-stop-attach');
+
+      function setReplayConfirmed(msg) {
+        if (replaySection) {
+          replaySection.innerHTML = '<span class="qa-replay-confirmed">&#10003; ' + msg + '</span>';
+        }
+      }
+
+      if (attachKeepBtn) {
+        attachKeepBtn.addEventListener('click', function () {
+          attachKeepBtn.disabled = true;
+          if (stopAttachBtn) stopAttachBtn.disabled = true;
+          attachKeepBtn.textContent = 'Attaching…';
+          chrome.runtime.sendMessage({ type: 'SNAPSHOT_REPLAY' }, function (res) {
+            if (res && res.ok) {
+              setReplayConfirmed('Clip attached — recording continues');
+            } else {
+              if (replaySection) replaySection.innerHTML = '<span class="qa-replay-error">Could not attach clip</span>';
+            }
+          });
+        });
+      }
+
+      if (stopAttachBtn) {
+        stopAttachBtn.addEventListener('click', function () {
+          if (attachKeepBtn) attachKeepBtn.disabled = true;
+          stopAttachBtn.disabled = true;
+          stopAttachBtn.textContent = 'Stopping…';
+          chrome.runtime.sendMessage({ type: 'STOP_AND_ATTACH_REPLAY' }, function (res) {
+            if (res && res.ok) {
+              setReplayConfirmed('Recording stopped — clip attached');
+            } else {
+              if (replaySection) replaySection.innerHTML = '<span class="qa-replay-error">Could not stop recording</span>';
+            }
+          });
+        });
+      }
     }
 
     // ── Storage listener: restore modal if annotator dismissed via Escape ─────

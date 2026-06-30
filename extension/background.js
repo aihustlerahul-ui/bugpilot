@@ -44,15 +44,91 @@ async function compressMultiStream(payload) {
   }
 }
 
-// ── Inject rrweb recorder into a tab ─────────────────────────────────────────
-async function injectReplayIntoTab(tabId) {
+// Tracks last injected URL per tab so onUpdated only re-injects after navigation,
+// not on the initial load complete event that follows a fresh inject.
+const lastRecordedUrlByTab = new Map();
+/** Events flushed before same-tab re-inject (SharePoint/Excel sheet switches wipe the live buffer). */
+const tabEventBuffers = new Map();
+const reinjectDebounce  = new Map();
+
+async function rememberRecordedTabUrl(tabId) {
   try {
-    // Wait for the tab to be fully loaded before injecting — executeScript throws
-    // if the document isn't ready (e.g. tab still loading when onActivated fires).
+    const tab = await chrome.tabs.get(tabId);
+    if (tab?.url) lastRecordedUrlByTab.set(tabId, tab.url);
+  } catch (_) {}
+}
+
+// ── Inject rrweb recorder into a tab ─────────────────────────────────────────
+/** Ensure bug-capture hover UI is active on a tab (inject content script if missing). */
+async function ensureBugCaptureOnTab(tabId) {
+  try {
     await waitForTabComplete(tabId);
+    const res = await chrome.tabs.sendMessage(tabId, { type: 'START_REPORTING' });
+    if (res?.ok) return true;
+  } catch (_) {}
+  try {
+    await waitForTabComplete(tabId);
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+    await chrome.scripting.insertCSS({ target: { tabId }, files: ['content-styles.css'] });
+    await new Promise(r => setTimeout(r, 300));
+    const res = await chrome.tabs.sendMessage(tabId, { type: 'START_REPORTING' });
+    return res?.ok === true;
+  } catch (e) {
+    console.warn('[QA] ensureBugCaptureOnTab failed for tab', tabId, e?.message);
+    return false;
+  }
+}
+
+/** Pull live events into tabEventBuffers before a re-inject wipes the content script. */
+async function flushTabEventsToBuffer(tabId) {
+  try {
+    const res = await chrome.tabs.sendMessage(tabId, { type: 'GET_REPLAY_EVENTS' });
+    if (res?.ok && res.events?.length > 0) {
+      const existing = tabEventBuffers.get(tabId) || [];
+      tabEventBuffers.set(tabId, existing.concat(res.events));
+      console.log('[QA] flushTabEvents: tab', tabId, '| +', res.events.length, '| buffer:', tabEventBuffers.get(tabId).length);
+    }
+  } catch (e) {
+    console.warn('[QA] flushTabEvents failed for tab', tabId, e?.message);
+  }
+}
+
+function mergeTabEvents(tabId, liveEvents) {
+  const buffered = tabEventBuffers.get(tabId) || [];
+  const live = liveEvents || [];
+  if (!buffered.length) return live;
+  if (!live.length) return buffered;
+  return buffered.concat(live);
+}
+
+/** Same page, hash/fragment only — SPA docs; rrweb keeps recording without re-inject. */
+function isHashOnlyNavigation(prevUrl, nextUrl) {
+  if (!prevUrl || !nextUrl) return false;
+  try {
+    const a = new URL(prevUrl);
+    const b = new URL(nextUrl);
+    return a.origin === b.origin && a.pathname === b.pathname && a.search === b.search && a.href !== b.href;
+  } catch {
+    return false;
+  }
+}
+
+async function injectReplayIntoTab(tabId, { preserveEvents = false } = {}) {
+  try {
+    if (preserveEvents) await flushTabEventsToBuffer(tabId);
+    await waitForTabComplete(tabId);
+    const { qa_replay_window_ms } = await chrome.storage.local.get(['qa_replay_window_ms']);
+    const windowMs = qa_replay_window_ms || 2 * 60 * 1000;
     console.log('[QA] inject: starting for tab', tabId);
     await chrome.scripting.executeScript({ target: { tabId }, files: ['rrweb.min.js'] });
     console.log('[QA] inject: rrweb.min.js done for tab', tabId);
+    // Pass window size from background — replay-recorder must not call chrome.storage
+    // (storage.local.get uses runtime.sendMessage and throws when context is stale).
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (ms) => { window.__qaReplayWindowMs = ms; },
+      args: [windowMs],
+    });
     await chrome.scripting.executeScript({ target: { tabId }, files: ['replay-recorder.js'] });
     console.log('[QA] inject: replay-recorder.js done for tab', tabId);
     await new Promise(r => setTimeout(r, 500));
@@ -61,6 +137,7 @@ async function injectReplayIntoTab(tabId) {
       return null;
     });
     console.log('[QA] inject: ping result for tab', tabId, ping);
+    if (ping?.started === true) await rememberRecordedTabUrl(tabId);
     return ping?.started === true;
   } catch (err) {
     console.warn('[QA] injectReplayIntoTab FAILED for tab', tabId, err?.message);
@@ -89,19 +166,27 @@ function waitForTabComplete(tabId, timeoutMs = 5000) {
 async function saveRecording(tabId) {
   let saved = false;
   try {
+    const { qa_screen_recording_started_at } =
+      await chrome.storage.local.get(['qa_screen_recording_started_at']);
     const replayRes = await chrome.tabs.sendMessage(tabId, { type: 'GET_REPLAY_EVENTS' });
     if (replayRes?.error) console.warn('[QA] replay recorder error:', replayRes.error);
     if (replayRes?.ok && replayRes.events?.length > 0) {
-      const data = await compressReplayEvents(replayRes.events);
+      const evts = mergeTabEvents(tabId, replayRes.events);
+      tabEventBuffers.delete(tabId);
+      const data = await compressReplayEvents(evts);
       const tab = await chrome.tabs.get(tabId).catch(() => null);
-      const firstTs = replayRes.events[0].timestamp;
-      const lastTs  = replayRes.events[replayRes.events.length - 1].timestamp;
-      const duration = Math.round((lastTs - firstTs) / 1000);
-      // Keep the storage write in its own try so a quota failure is reported as a
-      // failure, not silently swallowed and surfaced as "no events captured".
+      const firstTs = evts[0].timestamp;
+      const lastTs  = evts[evts.length - 1].timestamp;
+      let duration = Math.round((lastTs - firstTs) / 1000);
+      // Canvas-heavy pages (Excel) may emit few timestamped events — use wall clock too
+      if (qa_screen_recording_started_at) {
+        const wallSec = Math.round((Date.now() - qa_screen_recording_started_at) / 1000);
+        duration = Math.max(duration, wallSec);
+      }
+      console.log('[QA] saveRecording: tab', tabId, '| events:', evts.length, '| duration:', duration, 's');
       try {
         await chrome.storage.local.set({
-          qa_saved_replay: { data, url: tab?.url || '', tabId, duration, recordedAt: Date.now() },
+          qa_saved_replay: { data, url: tab?.url || '', tabId, duration, recordedAt: Date.now(), eventCount: evts.length },
         });
         saved = true;
       } catch (storageErr) {
@@ -116,7 +201,9 @@ async function saveRecording(tabId) {
   await chrome.storage.local.set({
     qa_screen_recording: false,
     qa_screen_recording_tab_id: null,
+    qa_screen_recording_started_at: null,
   });
+  tabEventBuffers.delete(tabId);
   return saved;
 }
 
@@ -141,8 +228,11 @@ async function saveMultiTabRecording() {
     console.log('[QA] saveMultiTab: tab', tabId, '| events:', replayRes?.events?.length ?? 'null', '| started:', replayRes?.started, '| error:', replayRes?.error);
     try { await chrome.tabs.sendMessage(tabId, { type: 'STOP_REPLAY' }); } catch (_) {}
 
-    if (replayRes?.ok && replayRes.events?.length > 0) {
-      const evts = replayRes.events;
+    const evts = mergeTabEvents(tabId, replayRes?.ok ? replayRes.events : null);
+    tabEventBuffers.delete(tabId);
+    console.log('[QA] saveMultiTab: tab', tabId, '| merged events:', evts.length);
+
+    if (evts.length > 0) {
       const first = evts[0].timestamp;
       const last  = evts[evts.length - 1].timestamp;
       if (first < minTs) minTs = first;
@@ -152,20 +242,31 @@ async function saveMultiTabRecording() {
         url:    tabInfo?.url   || '',
         title:  tabInfo?.title || `Tab ${tabId}`,
         events: evts,
+        eventCount: evts.length,
       });
     }
   }
 
+  const { qa_screen_recording_started_at } =
+    await chrome.storage.local.get(['qa_screen_recording_started_at']);
+
   await chrome.storage.local.set({
     qa_screen_recording: false,
     qa_screen_recording_tab_id: null,
+    qa_screen_recording_started_at: null,
     qa_multitab_recorded_tabs: [],
     qa_multitab_switches: [],
+    qa_multitab_mode: false,
   });
+  lastRecordedUrlByTab.clear();
+  tabEventBuffers.clear();
 
   if (streams.length === 0) return false;
 
-  const duration = Math.round((maxTs - minTs) / 1000);
+  let duration = Math.round((maxTs - minTs) / 1000);
+  if (qa_screen_recording_started_at) {
+    duration = Math.max(duration, Math.round((Date.now() - qa_screen_recording_started_at) / 1000));
+  }
   const payload = { version: 2, streams, switches: qa_multitab_switches };
   const data = await compressMultiStream(payload);
   if (!data) return false;
@@ -230,6 +331,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     handleStopMultiTabRecording(sendResponse);
     return true;
   }
+  if (type === 'SNAPSHOT_REPLAY') {
+    handleSnapshotReplay(sendResponse);
+    return true;
+  }
+  if (type === 'STOP_AND_ATTACH_REPLAY') {
+    handleStopAndAttachReplay(_sender, sendResponse);
+    return true;
+  }
   if (type === 'REPLAY_START_FAILED') {
     // replay-recorder.js couldn't start rrweb — clear recording state
     chrome.storage.local.set({ qa_screen_recording: false, qa_screen_recording_tab_id: null });
@@ -247,6 +356,59 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 });
 
+// ── Snapshot current recording (without stopping the recorder) ───────────────
+async function snapshotCurrentRecording() {
+  const {
+    qa_multitab_mode,
+    qa_screen_recording_tab_id,
+    qa_multitab_recorded_tabs = [],
+    qa_multitab_switches = [],
+  } = await chrome.storage.local.get([
+    'qa_multitab_mode', 'qa_screen_recording_tab_id',
+    'qa_multitab_recorded_tabs', 'qa_multitab_switches',
+  ]);
+
+  if (qa_multitab_mode) {
+    const streams = [];
+    let minTs = Infinity, maxTs = 0;
+    for (const tabId of qa_multitab_recorded_tabs) {
+      let tabInfo = null;
+      try { tabInfo = await chrome.tabs.get(tabId); } catch (_) {}
+      let replayRes = null;
+      try { replayRes = await chrome.tabs.sendMessage(tabId, { type: 'GET_REPLAY_EVENTS' }); } catch (_) {}
+      const evts = mergeTabEvents(tabId, replayRes?.ok ? replayRes.events : null);
+      if (evts.length > 0) {
+        const first = evts[0].timestamp, last = evts[evts.length - 1].timestamp;
+        if (first < minTs) minTs = first;
+        if (last > maxTs) maxTs = last;
+        streams.push({ tabId, url: tabInfo?.url || '', title: tabInfo?.title || `Tab ${tabId}`, events: evts, eventCount: evts.length });
+      }
+    }
+    if (!streams.length) return false;
+    const duration = Math.round((maxTs - minTs) / 1000);
+    const payload = { version: 2, streams, switches: qa_multitab_switches };
+    const data = await compressMultiStream(payload);
+    if (!data) return false;
+    try {
+      await chrome.storage.local.set({ qa_saved_replay: { version: 2, data, urls: streams.map(s => s.url), duration, recordedAt: Date.now() } });
+      return true;
+    } catch (_) { return false; }
+  } else {
+    const tabId = qa_screen_recording_tab_id;
+    if (!tabId) return false;
+    try {
+      const replayRes = await chrome.tabs.sendMessage(tabId, { type: 'GET_REPLAY_EVENTS' });
+      if (!replayRes?.ok || !replayRes.events?.length) return false;
+      const evts = mergeTabEvents(tabId, replayRes.events);
+      const data = await compressReplayEvents(evts);
+      const tab = await chrome.tabs.get(tabId).catch(() => null);
+      const duration = Math.round((evts[evts.length - 1].timestamp - evts[0].timestamp) / 1000);
+      await chrome.storage.local.set({ qa_saved_replay: { data, url: tab?.url || '', tabId, duration, recordedAt: Date.now(), eventCount: evts.length } });
+      return true;
+    } catch (_) { return false; }
+  }
+}
+
 // ── CAPTURE_SCREENSHOT ────────────────────────────────────────────────────────
 async function handleCaptureScreenshot(sendResponse) {
   try {
@@ -260,14 +422,19 @@ async function handleCaptureScreenshot(sendResponse) {
       quality: 80,
     });
 
-    // If screen recording is active on this same tab, save it now before the modal opens
-    const { qa_screen_recording, qa_screen_recording_tab_id } =
-      await chrome.storage.local.get(['qa_screen_recording', 'qa_screen_recording_tab_id']);
-    if (qa_screen_recording && qa_screen_recording_tab_id === tab.id) {
-      await saveRecording(tab.id);
-    }
+    const { qa_screen_recording, qa_screen_recording_tab_id, qa_multitab_mode, qa_screen_recording_started_at } =
+      await chrome.storage.local.get(['qa_screen_recording', 'qa_screen_recording_tab_id', 'qa_multitab_mode', 'qa_screen_recording_started_at']);
 
-    sendResponse({ ok: true, dataUrl });
+    // Recording is active if this tab is being recorded (single-tab) or any multi-tab session is running
+    const recordingActive = !!(qa_screen_recording && (qa_multitab_mode || qa_screen_recording_tab_id === tab.id));
+
+    sendResponse({
+      ok: true,
+      dataUrl,
+      screenRecordingActive: recordingActive,
+      isMultiTab: !!qa_multitab_mode,
+      recordingStartedAt: qa_screen_recording_started_at || null,
+    });
   } catch (err) {
     sendResponse({ ok: false, error: err.message });
   }
@@ -359,49 +526,33 @@ async function handleSyncSettings(sendResponse) {
 async function handleStartScreenRecording(message, sendResponse) {
   const tabId = message.tabId;
   if (!tabId) { sendResponse({ ok: false, error: 'No tab id' }); return; }
-  try {
-    // Inject the rrweb UMD bundle as a file (runs in the isolated content-script world,
-    // so it is immune to the page's CSP). The bundle assigns a `rrweb` global via its
-    // UMD wrapper. NOTE: rrweb.min.js MUST be a UMD/global build — the ESM build cannot
-    // be injected this way (top-level `export`/`import` throw a SyntaxError).
-    await chrome.scripting.executeScript({ target: { tabId }, files: ['rrweb.min.js'] });
-    await chrome.scripting.executeScript({ target: { tabId }, files: ['replay-recorder.js'] });
-
-    // Wait briefly for the async storage callback inside replay-recorder.js to complete,
-    // then ping to confirm rrweb.record actually started (eval may silently fail).
-    await new Promise(r => setTimeout(r, 300));
-    let pingOk = false;
-    try {
-      const ping = await chrome.tabs.sendMessage(tabId, { type: 'PING_REPLAY' });
-      pingOk = ping?.started === true;
-      if (!pingOk) {
-        const err = ping?.error || 'rrweb did not start';
-        console.warn('[QA] replay recorder failed to start:', err);
-        await chrome.storage.local.set({ qa_screen_recording: false });
-        sendResponse({ ok: false, error: err });
-        return;
-      }
-    } catch (_) {
-      // Tab closed between injection and ping — treat as failure
-      await chrome.storage.local.set({ qa_screen_recording: false });
-      sendResponse({ ok: false, error: 'Tab closed after injection' });
-      return;
-    }
-
-    await chrome.storage.local.set({
-      qa_screen_recording: true,
-      qa_screen_recording_tab_id: tabId,
-    });
-    sendResponse({ ok: true });
-  } catch (err) {
-    console.warn('[QA] screen recording inject failed:', err.message);
+  const ok = await injectReplayIntoTab(tabId);
+  if (!ok) {
     await chrome.storage.local.set({ qa_screen_recording: false });
-    sendResponse({ ok: false, error: err.message });
+    sendResponse({ ok: false, error: 'rrweb failed to start on this tab' });
+    return;
   }
+  await chrome.storage.local.set({
+    qa_screen_recording: true,
+    qa_screen_recording_tab_id: tabId,
+    qa_screen_recording_started_at: Date.now(),
+    qa_multitab_mode: false,
+    qa_multitab_recorded_tabs: [],
+    qa_multitab_switches: [],
+  });
+  lastRecordedUrlByTab.clear();
+  tabEventBuffers.clear();
+  sendResponse({ ok: true });
 }
 
 // ── STOP_SCREEN_RECORDING ─────────────────────────────────────────────────────
 async function handleStopScreenRecording(message, sendResponse) {
+  const { qa_multitab_mode } = await chrome.storage.local.get(['qa_multitab_mode']);
+  if (qa_multitab_mode) {
+    const saved = await saveMultiTabRecording();
+    sendResponse({ ok: true, saved });
+    return;
+  }
   let tabId = message.tabId;
   if (!tabId) {
     const stored = await chrome.storage.local.get(['qa_screen_recording_tab_id']);
@@ -446,10 +597,13 @@ async function handleStartMultiTabRecording(message, sendResponse) {
   await chrome.storage.local.set({
     qa_screen_recording:        true,
     qa_screen_recording_tab_id: tabId,
+    qa_screen_recording_started_at: Date.now(),
     qa_multitab_recorded_tabs:  [tabId],
     qa_multitab_switches:       [{ at: Date.now(), toTabId: tabId }],
     qa_multitab_mode:           true,   // set authoritatively so AUTO_STOP guard is reliable
   });
+  lastRecordedUrlByTab.clear();
+  tabEventBuffers.clear();
   sendResponse({ ok: true });
 }
 
@@ -457,6 +611,27 @@ async function handleStartMultiTabRecording(message, sendResponse) {
 async function handleStopMultiTabRecording(sendResponse) {
   const saved = await saveMultiTabRecording();
   sendResponse({ ok: true, saved });
+}
+
+// ── SNAPSHOT_REPLAY (attach clip without stopping recorder) ──────────────────
+async function handleSnapshotReplay(sendResponse) {
+  const ok = await snapshotCurrentRecording();
+  sendResponse({ ok });
+}
+
+// ── STOP_AND_ATTACH_REPLAY (stop recorder + save as attached clip) ────────────
+async function handleStopAndAttachReplay(sender, sendResponse) {
+  const { qa_multitab_mode, qa_screen_recording_tab_id } =
+    await chrome.storage.local.get(['qa_multitab_mode', 'qa_screen_recording_tab_id']);
+  if (qa_multitab_mode) {
+    const saved = await saveMultiTabRecording();
+    sendResponse({ ok: true, saved });
+  } else {
+    const tabId = qa_screen_recording_tab_id || (sender.tab && sender.tab.id);
+    if (!tabId) { sendResponse({ ok: false }); return; }
+    const saved = await saveRecording(tabId);
+    sendResponse({ ok: true, saved });
+  }
 }
 
 // ── OPEN_ANNOTATOR ────────────────────────────────────────────────────────────
@@ -518,14 +693,21 @@ chrome.commands.onCommand.addListener(async (command) => {
 // ── Multi-tab: auto-inject rrweb when user switches tabs ──────────────────────
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   const {
+    qa_recording,
     qa_screen_recording,
     qa_multitab_mode,
     qa_multitab_recorded_tabs = [],
     qa_multitab_switches = [],
   } = await chrome.storage.local.get([
-    'qa_screen_recording', 'qa_multitab_mode',
+    'qa_recording', 'qa_screen_recording', 'qa_multitab_mode',
     'qa_multitab_recorded_tabs', 'qa_multitab_switches',
   ]);
+
+  // Bug-capture mode: attach hover UI to whichever tab the user is viewing
+  if (qa_recording && !qa_screen_recording) {
+    await ensureBugCaptureOnTab(tabId);
+    await chrome.storage.local.set({ qa_recording_tab_id: tabId });
+  }
 
   console.log('[QA] onActivated: tab', tabId, '| recording:', qa_screen_recording, '| multitab:', qa_multitab_mode, '| tracked tabs:', qa_multitab_recorded_tabs);
   if (!qa_screen_recording || !qa_multitab_mode) return;
@@ -550,6 +732,50 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   } else {
     console.warn('[QA] onActivated: injection FAILED for tab', tabId, '— tab will not be recorded');
   }
+});
+
+// ── Re-inject after same-tab navigation (Excel sheet switches change the URL) ─
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status !== 'complete' || !changeInfo.url) return;
+
+  const {
+    qa_screen_recording,
+    qa_screen_recording_tab_id,
+    qa_multitab_mode,
+    qa_multitab_recorded_tabs = [],
+  } = await chrome.storage.local.get([
+    'qa_screen_recording', 'qa_screen_recording_tab_id',
+    'qa_multitab_mode', 'qa_multitab_recorded_tabs',
+  ]);
+
+  if (!qa_screen_recording) return;
+  if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://')) return;
+
+  const isMultiTab = qa_multitab_mode && qa_multitab_recorded_tabs.includes(tabId);
+  const isSingleTab = !qa_multitab_mode && tabId === qa_screen_recording_tab_id;
+  if (!isMultiTab && !isSingleTab) return;
+
+  const prevUrl = lastRecordedUrlByTab.get(tabId);
+  if (prevUrl === changeInfo.url) return;
+
+  // API docs SPAs (Scalar/Swagger) change #fragment only — do not re-inject per section.
+  if (prevUrl && isHashOnlyNavigation(prevUrl, changeInfo.url)) {
+    lastRecordedUrlByTab.set(tabId, changeInfo.url);
+    return;
+  }
+
+  console.log('[QA] onUpdated: navigation on tab', tabId, prevUrl, '→', changeInfo.url);
+  clearTimeout(reinjectDebounce.get(tabId));
+  reinjectDebounce.set(tabId, setTimeout(async () => {
+    reinjectDebounce.delete(tabId);
+    const ok = await injectReplayIntoTab(tabId, { preserveEvents: true });
+    if (ok) {
+      lastRecordedUrlByTab.set(tabId, changeInfo.url);
+      console.log('[QA] onUpdated: re-injected recorder after navigation on tab', tabId);
+    } else {
+      console.warn('[QA] onUpdated: re-inject failed for tab', tabId);
+    }
+  }, 400));
 });
 
 // ── onInstalled ───────────────────────────────────────────────────────────────

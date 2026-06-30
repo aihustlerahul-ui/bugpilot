@@ -28,6 +28,16 @@
   transition: top 0.04s, left 0.04s, width 0.04s, height 0.04s !important;
 }
 
+/* Transparent hit layer over Excel/Office iframe grid (cross-origin — parent never gets mouse events) */
+.qa-office-capture-overlay {
+  position: fixed !important;
+  z-index: 2147483640 !important;
+  pointer-events: auto !important;
+  cursor: crosshair !important;
+  background: transparent !important;
+  box-sizing: border-box !important;
+}
+
 /* ── Active recording banner ──────────────────────────────────────────────── */
 .qa-reporter-active-indicator {
   position: fixed !important;
@@ -756,4 +766,96 @@
 
 .qa-slider-edit-btn:hover {
   background: #5b5fc7 !important;
+}
+
+/* ── Replay attachment section ──────────────────────────────────────────────── */
+.qa-replay-section {
+  margin: 0 0 10px !important;
+  padding: 10px 12px !important;
+  background: rgba(239,68,68,0.06) !important;
+  border: 1px solid rgba(239,68,68,0.25) !important;
+  border-radius: 8px !important;
+}
+
+.qa-replay-header {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #c53030 !important;
+  margin-bottom: 8px !important;
+}
+
+.qa-replay-dot {
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 50% !important;
+  background: #ef4444 !important;
+  flex-shrink: 0 !important;
+  animation: qa-pulse 1.4s ease-in-out infinite !important;
+}
+
+@keyframes qa-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+.qa-replay-actions {
+  display: flex !important;
+  gap: 8px !important;
+}
+
+.qa-btn-replay-keep {
+  flex: 1 !important;
+  padding: 6px 10px !important;
+  font-size: 11px !important;
+  background: #22c55e !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  font-weight: 600 !important;
+}
+
+.qa-btn-replay-keep:hover {
+  background: #16a34a !important;
+}
+
+.qa-btn-replay-keep:disabled {
+  opacity: 0.6 !important;
+  cursor: default !important;
+}
+
+.qa-btn-replay-stop {
+  flex: 1 !important;
+  padding: 6px 10px !important;
+  font-size: 11px !important;
+  background: #ef4444 !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  font-weight: 600 !important;
+}
+
+.qa-btn-replay-stop:hover {
+  background: #dc2626 !important;
+}
+
+.qa-btn-replay-stop:disabled {
+  opacity: 0.6 !important;
+  cursor: default !important;
+}
+
+.qa-replay-confirmed {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #16a34a !important;
+}
+
+.qa-replay-error {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #ef4444 !important;
 }
