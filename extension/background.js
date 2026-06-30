@@ -47,6 +47,9 @@ async function compressMultiStream(payload) {
 // ── Inject rrweb recorder into a tab ─────────────────────────────────────────
 async function injectReplayIntoTab(tabId) {
   try {
+    // Wait for the tab to be fully loaded before injecting — executeScript throws
+    // if the document isn't ready (e.g. tab still loading when onActivated fires).
+    await waitForTabComplete(tabId);
     console.log('[QA] inject: starting for tab', tabId);
     await chrome.scripting.executeScript({ target: { tabId }, files: ['rrweb.min.js'] });
     console.log('[QA] inject: rrweb.min.js done for tab', tabId);
@@ -63,6 +66,23 @@ async function injectReplayIntoTab(tabId) {
     console.warn('[QA] injectReplayIntoTab FAILED for tab', tabId, err?.message);
     return false;
   }
+}
+
+// Wait up to 5s for a tab to finish loading before we try to inject scripts.
+function waitForTabComplete(tabId, timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    const deadline = Date.now() + timeoutMs;
+
+    function check() {
+      chrome.tabs.get(tabId, tab => {
+        if (chrome.runtime.lastError) { reject(new Error(chrome.runtime.lastError.message)); return; }
+        if (tab.status === 'complete') { resolve(); return; }
+        if (Date.now() >= deadline) { resolve(); return; } // proceed anyway after timeout
+        setTimeout(check, 150);
+      });
+    }
+    check();
+  });
 }
 
 // ── Save recording to storage ─────────────────────────────────────────────────
