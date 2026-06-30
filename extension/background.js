@@ -736,7 +736,33 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 
 // ── Re-inject after same-tab navigation (Excel sheet switches change the URL) ─
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status !== 'complete' || !changeInfo.url) return;
+  // When a recorded tab starts (re)loading, clear its URL cache.
+  // This ensures the 'complete' event re-injects rrweb even on a same-URL
+  // refresh (changeInfo.url absent) or back/forward to a previously visited URL.
+  if (changeInfo.status === 'loading') {
+    const {
+      qa_screen_recording,
+      qa_screen_recording_tab_id,
+      qa_multitab_mode,
+      qa_multitab_recorded_tabs = [],
+    } = await chrome.storage.local.get([
+      'qa_screen_recording', 'qa_screen_recording_tab_id',
+      'qa_multitab_mode', 'qa_multitab_recorded_tabs',
+    ]);
+    if (qa_screen_recording) {
+      const isTracked = qa_multitab_mode
+        ? qa_multitab_recorded_tabs.includes(tabId)
+        : tabId === qa_screen_recording_tab_id;
+      if (isTracked) lastRecordedUrlByTab.delete(tabId);
+    }
+    return;
+  }
+
+  if (changeInfo.status !== 'complete') return;
+
+  // Use tab.url (always present on 'complete') — changeInfo.url is absent on same-URL refreshes.
+  const currentUrl = tab.url;
+  if (!currentUrl) return;
 
   const {
     qa_screen_recording,
@@ -749,28 +775,30 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   ]);
 
   if (!qa_screen_recording) return;
-  if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://')) return;
+  if (currentUrl.startsWith('chrome://') || currentUrl.startsWith('chrome-extension://')) return;
 
   const isMultiTab = qa_multitab_mode && qa_multitab_recorded_tabs.includes(tabId);
   const isSingleTab = !qa_multitab_mode && tabId === qa_screen_recording_tab_id;
   if (!isMultiTab && !isSingleTab) return;
 
   const prevUrl = lastRecordedUrlByTab.get(tabId);
-  if (prevUrl === changeInfo.url) return;
+  // prevUrl is null after a load starts (cleared above) — always proceed.
+  // If somehow still set and matches, it's a spurious complete event after our own inject — skip.
+  if (prevUrl === currentUrl) return;
 
-  // API docs SPAs (Scalar/Swagger) change #fragment only — do not re-inject per section.
-  if (prevUrl && isHashOnlyNavigation(prevUrl, changeInfo.url)) {
-    lastRecordedUrlByTab.set(tabId, changeInfo.url);
+  // SPA hash-only navigation fires onUpdated but rrweb doesn't need re-injection.
+  if (prevUrl && isHashOnlyNavigation(prevUrl, currentUrl)) {
+    lastRecordedUrlByTab.set(tabId, currentUrl);
     return;
   }
 
-  console.log('[QA] onUpdated: navigation on tab', tabId, prevUrl, '→', changeInfo.url);
+  console.log('[QA] onUpdated: navigation on tab', tabId, prevUrl ?? '(reload)', '→', currentUrl);
   clearTimeout(reinjectDebounce.get(tabId));
   reinjectDebounce.set(tabId, setTimeout(async () => {
     reinjectDebounce.delete(tabId);
     const ok = await injectReplayIntoTab(tabId, { preserveEvents: true });
     if (ok) {
-      lastRecordedUrlByTab.set(tabId, changeInfo.url);
+      lastRecordedUrlByTab.set(tabId, currentUrl);
       console.log('[QA] onUpdated: re-injected recorder after navigation on tab', tabId);
     } else {
       console.warn('[QA] onUpdated: re-inject failed for tab', tabId);
