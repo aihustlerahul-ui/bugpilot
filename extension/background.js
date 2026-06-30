@@ -422,6 +422,7 @@ async function handleAutoStopRecording(sender, sendResponse) {
     sendResponse({ ok: true });
     return;
   }
+  console.log('[QA] AUTO_STOP from tab', tabId, '| multitab_mode:', qa_multitab_mode);
   // In multi-tab mode, switching tabs hides the initial tab and fires visibilitychange —
   // that's intentional navigation, not a signal to stop. Only manual stop ends the session.
   if (qa_multitab_mode) {
@@ -447,6 +448,7 @@ async function handleStartMultiTabRecording(message, sendResponse) {
     qa_screen_recording_tab_id: tabId,
     qa_multitab_recorded_tabs:  [tabId],
     qa_multitab_switches:       [{ at: Date.now(), toTabId: tabId }],
+    qa_multitab_mode:           true,   // set authoritatively so AUTO_STOP guard is reliable
   });
   sendResponse({ ok: true });
 }
