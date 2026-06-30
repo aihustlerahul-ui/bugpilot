@@ -47,13 +47,20 @@ async function compressMultiStream(payload) {
 // ── Inject rrweb recorder into a tab ─────────────────────────────────────────
 async function injectReplayIntoTab(tabId) {
   try {
+    console.log('[QA] inject: starting for tab', tabId);
     await chrome.scripting.executeScript({ target: { tabId }, files: ['rrweb.min.js'] });
+    console.log('[QA] inject: rrweb.min.js done for tab', tabId);
     await chrome.scripting.executeScript({ target: { tabId }, files: ['replay-recorder.js'] });
-    await new Promise(r => setTimeout(r, 300));
-    const ping = await chrome.tabs.sendMessage(tabId, { type: 'PING_REPLAY' }).catch(() => null);
+    console.log('[QA] inject: replay-recorder.js done for tab', tabId);
+    await new Promise(r => setTimeout(r, 500));
+    const ping = await chrome.tabs.sendMessage(tabId, { type: 'PING_REPLAY' }).catch(e => {
+      console.warn('[QA] inject: PING_REPLAY failed for tab', tabId, e?.message);
+      return null;
+    });
+    console.log('[QA] inject: ping result for tab', tabId, ping);
     return ping?.started === true;
   } catch (err) {
-    console.warn('[QA] injectReplayIntoTab failed for tab', tabId, err?.message);
+    console.warn('[QA] injectReplayIntoTab FAILED for tab', tabId, err?.message);
     return false;
   }
 }
@@ -98,6 +105,8 @@ async function saveMultiTabRecording() {
   const { qa_multitab_recorded_tabs = [], qa_multitab_switches = [] } =
     await chrome.storage.local.get(['qa_multitab_recorded_tabs', 'qa_multitab_switches']);
 
+  console.log('[QA] saveMultiTab: recorded tabs =', qa_multitab_recorded_tabs, '| switches =', qa_multitab_switches.length);
+
   const streams = [];
   let minTs = Infinity;
   let maxTs = 0;
@@ -106,7 +115,10 @@ async function saveMultiTabRecording() {
     let tabInfo = null;
     try { tabInfo = await chrome.tabs.get(tabId); } catch (_) {}
     let replayRes = null;
-    try { replayRes = await chrome.tabs.sendMessage(tabId, { type: 'GET_REPLAY_EVENTS' }); } catch (_) {}
+    try { replayRes = await chrome.tabs.sendMessage(tabId, { type: 'GET_REPLAY_EVENTS' }); } catch (e) {
+      console.warn('[QA] saveMultiTab: GET_REPLAY_EVENTS failed for tab', tabId, e?.message);
+    }
+    console.log('[QA] saveMultiTab: tab', tabId, '| events:', replayRes?.events?.length ?? 'null', '| started:', replayRes?.started, '| error:', replayRes?.error);
     try { await chrome.tabs.sendMessage(tabId, { type: 'STOP_REPLAY' }); } catch (_) {}
 
     if (replayRes?.ok && replayRes.events?.length > 0) {
@@ -493,9 +505,10 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
     'qa_multitab_recorded_tabs', 'qa_multitab_switches',
   ]);
 
+  console.log('[QA] onActivated: tab', tabId, '| recording:', qa_screen_recording, '| multitab:', qa_multitab_mode, '| tracked tabs:', qa_multitab_recorded_tabs);
   if (!qa_screen_recording || !qa_multitab_mode) return;
   if (qa_multitab_recorded_tabs.includes(tabId)) {
-    // Already recording this tab — just track the switch
+    console.log('[QA] onActivated: tab', tabId, 'already tracked — recording switch only');
     await chrome.storage.local.set({
       qa_multitab_switches: [...qa_multitab_switches, { at: Date.now(), toTabId: tabId }],
     });
@@ -503,12 +516,17 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   }
 
   // New tab — inject rrweb
+  console.log('[QA] onActivated: new tab', tabId, '— injecting rrweb');
   const ok = await injectReplayIntoTab(tabId);
+  console.log('[QA] onActivated: inject result for tab', tabId, '=', ok);
   if (ok) {
     await chrome.storage.local.set({
       qa_multitab_recorded_tabs: [...qa_multitab_recorded_tabs, tabId],
       qa_multitab_switches: [...qa_multitab_switches, { at: Date.now(), toTabId: tabId }],
     });
+    console.log('[QA] onActivated: tab', tabId, 'added to recorded tabs');
+  } else {
+    console.warn('[QA] onActivated: injection FAILED for tab', tabId, '— tab will not be recorded');
   }
 });
 
