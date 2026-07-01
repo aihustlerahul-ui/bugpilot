@@ -40,6 +40,8 @@ export interface ExtensionSettings {
   captureNavHistory: boolean
   multiTabRecording: boolean
   videoRecordingEnabled: boolean
+  captureAudioEnabled: boolean
+  captureWebcamEnabled: boolean
 }
 
 const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -74,6 +76,8 @@ const DEFAULT_SETTINGS: ExtensionSettings = {
   captureNavHistory: true,
   multiTabRecording: false,
   videoRecordingEnabled: false,
+  captureAudioEnabled: false,
+  captureWebcamEnabled: false,
 }
 
 @Injectable()
