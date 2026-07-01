@@ -597,6 +597,10 @@ async function startVideoRecording() {
   webcamBlob = null;
   if (activeAudioCtx) { activeAudioCtx.close().catch(() => {}); activeAudioCtx = null; }
 
+  // Re-sync before reading captureAudioEnabled/captureWebcamEnabled — the sidepanel may
+  // have been open since before the user last changed these in the platform settings page.
+  await chrome.runtime.sendMessage({ type: 'SYNC_SETTINGS' }).catch(() => {});
+
   const { qa_multitab_mode, qa_ext_settings } = await chrome.storage.local.get(['qa_multitab_mode', 'qa_ext_settings']);
   const settings = qa_ext_settings || {};
   let stream;
