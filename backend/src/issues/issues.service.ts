@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { SupabaseService } from '../supabase/supabase.service'
 import { CreateIssueDto } from './dto/create-issue.dto'
+import { AttachVideoDto } from './dto/attach-video.dto'
 
 @Injectable()
 export class IssuesService {
@@ -16,6 +17,19 @@ export class IssuesService {
       return path;
     } catch {
       return null;
+    }
+  }
+
+  private async uploadVideo(base64: string, path: string): Promise<string | null> {
+    try {
+      const buffer = Buffer.from(base64.replace(/^data:video\/\w+;base64,/, ''), 'base64')
+      const { error } = await this.supabase.db.storage
+        .from('videos')
+        .upload(path, buffer, { contentType: 'video/webm', upsert: false })
+      if (error) return null
+      return path
+    } catch {
+      return null
     }
   }
 
@@ -89,6 +103,7 @@ export class IssuesService {
         screenshot_url,
         element_screenshot_url,
         replay_storage_path: replayPath ?? null,
+        video_storage_path: dto.videoStoragePath ?? null,
         metadata: metadataWithExtras,
         sync_status: 'pending',
       })
@@ -126,7 +141,36 @@ export class IssuesService {
       replayUrl = signed?.signedUrl ?? null;
     }
 
-    return { ...data, replayUrl };
+    let videoUrl: string | null = null;
+    if (data.video_storage_path) {
+      const { data: signedVideo } = await this.supabase.db.storage
+        .from('videos')
+        .createSignedUrl(data.video_storage_path, 60 * 60); // 1 hour
+      videoUrl = signedVideo?.signedUrl ?? null;
+    }
+
+    return { ...data, replayUrl, videoUrl };
+  }
+
+  async uploadVideoFile(userId: string, projectId: string, base64: string): Promise<{ storagePath: string }> {
+    const timestamp = Date.now()
+    const path = `${userId}/${projectId}/${timestamp}-video.webm`
+    const storagePath = await this.uploadVideo(base64, path)
+    if (!storagePath) throw new Error('Video upload failed')
+    return { storagePath }
+  }
+
+  async attachVideo(userId: string, issueId: string, dto: AttachVideoDto) {
+    const { data, error } = await this.supabase.db
+      .from('issues')
+      .update({ video_storage_path: dto.videoStoragePath })
+      .eq('id', issueId)
+      .eq('reporter_id', userId)
+      .select()
+      .single()
+
+    if (error || !data) throw new NotFoundException('Issue not found')
+    return data
   }
 
   async createReplayToken(userId: string, issueId: string): Promise<{ token: string; url: string }> {
