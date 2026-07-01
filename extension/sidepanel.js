@@ -589,6 +589,24 @@ function applyVideoRecordingVisibility(settings) {
   videoRecRow.style.display = enabled ? '' : 'none';
 }
 
+// Turns a getUserMedia() rejection into an actionable message. Chrome does NOT show its
+// own permission prompt when a prior decision is already stored for this origin (or when
+// the OS itself blocks the browser from the device) — in both cases the call rejects
+// instantly with no dialog at all, which looks identical to "user clicked Deny" unless we
+// inspect err.name.
+function describeMediaError(err) {
+  switch (err && err.name) {
+    case 'NotAllowedError':
+      return 'blocked — check chrome://settings/content/camera or .../microphone, and your OS privacy settings for Chrome';
+    case 'NotFoundError':
+      return 'no device found';
+    case 'NotReadableError':
+      return 'device already in use by another app';
+    default:
+      return (err && err.message) || 'unknown error';
+  }
+}
+
 async function startVideoRecording() {
   // Clear state from any prior session so a discarded/failed webcam clip never
   // attaches to an unrelated later recording.
@@ -638,7 +656,7 @@ async function startVideoRecording() {
       }
       dest.stream.getAudioTracks().forEach(track => stream.addTrack(track));
     } catch (err) {
-      showToast('Microphone access denied — recording without audio.', 'error', 4000);
+      showToast(`Microphone unavailable (${describeMediaError(err)}) — recording without audio.`, 'error', 6000);
     }
   }
 
@@ -654,7 +672,7 @@ async function startVideoRecording() {
       };
       webcamMediaRecorder.start();
     } catch (err) {
-      showToast('Camera access denied — recording without webcam.', 'error', 4000);
+      showToast(`Webcam unavailable (${describeMediaError(err)}) — recording without webcam.`, 'error', 6000);
     }
   }
 
