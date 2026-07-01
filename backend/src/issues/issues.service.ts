@@ -149,7 +149,15 @@ export class IssuesService {
       videoUrl = signedVideo?.signedUrl ?? null;
     }
 
-    return { ...data, replayUrl, videoUrl };
+    let webcamUrl: string | null = null;
+    if (data.webcam_storage_path) {
+      const { data: signedWebcam } = await this.supabase.db.storage
+        .from('videos')
+        .createSignedUrl(data.webcam_storage_path, 60 * 60); // 1 hour
+      webcamUrl = signedWebcam?.signedUrl ?? null;
+    }
+
+    return { ...data, replayUrl, videoUrl, webcamUrl };
   }
 
   async uploadVideoFile(userId: string, projectId: string, base64: string): Promise<{ storagePath: string }> {
@@ -161,9 +169,14 @@ export class IssuesService {
   }
 
   async attachVideo(userId: string, issueId: string, dto: AttachVideoDto) {
+    const patch: { video_storage_path: string; webcam_storage_path?: string } = {
+      video_storage_path: dto.videoStoragePath,
+    }
+    if (dto.webcamStoragePath) patch.webcam_storage_path = dto.webcamStoragePath
+
     const { data, error } = await this.supabase.db
       .from('issues')
-      .update({ video_storage_path: dto.videoStoragePath })
+      .update(patch)
       .eq('id', issueId)
       .eq('reporter_id', userId)
       .select()
