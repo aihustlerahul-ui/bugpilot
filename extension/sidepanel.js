@@ -729,9 +729,11 @@ videoAttachSelect.addEventListener('change', async () => {
   const projectId = projectSelect.value;
   videoAttachSelect.disabled = true;
   const base64 = await blobToBase64(videoBlob);
+  const webcamBase64 = webcamBlob ? await blobToBase64(webcamBlob) : undefined;
   const res = await chrome.runtime.sendMessage({
     type: 'UPLOAD_AND_ATTACH_VIDEO',
     base64,
+    webcamBase64,
     projectId,
     issueId,
   });
@@ -740,6 +742,8 @@ videoAttachSelect.addEventListener('change', async () => {
     videoAttachRow.style.display = 'none';
     videoBlob = null;
     videoChunks = [];
+    webcamBlob = null;
+    webcamChunks = [];
     chrome.storage.local.set({ qa_video_recording_pending: false });
   } else {
     showToast(`Failed to attach video: ${res?.error || 'unknown error'}`, 'error', 4000);
@@ -757,9 +761,11 @@ chrome.runtime.onMessage.addListener((message) => {
       }
       const projectId = projectSelect.value;
       const base64 = await blobToBase64(videoBlob);
+      const webcamBase64 = webcamBlob ? await blobToBase64(webcamBlob) : undefined;
       const res = await chrome.runtime.sendMessage({
         type: 'UPLOAD_AND_ATTACH_VIDEO',
         base64,
+        webcamBase64,
         projectId,
         issueId: message.issueId,
       });
@@ -769,6 +775,8 @@ chrome.runtime.onMessage.addListener((message) => {
       if (res && res.ok) {
         videoBlob = null;
         videoChunks = [];
+        webcamBlob = null;
+        webcamChunks = [];
         videoAttachRow.style.display = 'none';
         showToast('Recorded video attached to the issue ✓', 'success', 3500);
       } else {

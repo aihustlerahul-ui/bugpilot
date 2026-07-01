@@ -672,7 +672,7 @@ async function handleStartVideoRecording(message, sendResponse) {
 
 // ── UPLOAD_AND_ATTACH_VIDEO ───────────────────────────────────────────────────
 async function handleUploadAndAttachVideo(message, sendResponse) {
-  const { base64, projectId, issueId } = message;
+  const { base64, webcamBase64, projectId, issueId } = message;
   if (!base64 || !projectId) { sendResponse({ ok: false, error: 'Missing base64 or projectId' }); return; }
   try {
     let { qa_token: token } = await chrome.storage.local.get(['qa_token']);
@@ -698,24 +698,47 @@ async function handleUploadAndAttachVideo(message, sendResponse) {
     if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`);
     const { storagePath } = await uploadRes.json();
 
+    let webcamStoragePath;
+    if (webcamBase64) {
+      let webcamUploadRes = await fetch(`${API_URL}/api/issues/upload-video`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ project_id: projectId, video: webcamBase64 }),
+      });
+      if (webcamUploadRes.status === 401) {
+        token = await tryRefreshToken();
+        webcamUploadRes = await fetch(`${API_URL}/api/issues/upload-video`, {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({ project_id: projectId, video: webcamBase64 }),
+        });
+      }
+      if (webcamUploadRes.ok) {
+        webcamStoragePath = (await webcamUploadRes.json()).storagePath;
+      }
+      // Webcam upload failure is non-fatal — the screen video still attaches without it.
+    }
+
     if (issueId) {
+      const patchBody = { videoStoragePath: storagePath };
+      if (webcamStoragePath) patchBody.webcamStoragePath = webcamStoragePath;
       let attachRes = await fetch(`${API_URL}/api/issues/${issueId}/video`, {
         method: 'PATCH',
         headers: headers(),
-        body: JSON.stringify({ videoStoragePath: storagePath }),
+        body: JSON.stringify(patchBody),
       });
       if (attachRes.status === 401) {
         token = await tryRefreshToken();
         attachRes = await fetch(`${API_URL}/api/issues/${issueId}/video`, {
           method: 'PATCH',
           headers: headers(),
-          body: JSON.stringify({ videoStoragePath: storagePath }),
+          body: JSON.stringify(patchBody),
         });
       }
       if (!attachRes.ok) throw new Error(`Attach failed: ${attachRes.status} (video uploaded to ${storagePath} but not linked — retry attach from the sidepanel)`);
     }
 
-    sendResponse({ ok: true, storagePath });
+    sendResponse({ ok: true, storagePath, webcamStoragePath });
   } catch (err) {
     sendResponse({ ok: false, error: err.message || 'Video upload failed' });
   }
