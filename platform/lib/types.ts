@@ -48,4 +48,5 @@ export interface Issue {
   external_ticket_url: string | null; created_at: string
   replayUrl?: string | null
   videoUrl?: string | null
+  webcamUrl?: string | null
 }

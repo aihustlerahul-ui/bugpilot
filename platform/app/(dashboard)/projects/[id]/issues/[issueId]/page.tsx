@@ -277,12 +277,35 @@ export default function IssueDetailPage({ params }: { params: { id: string; issu
             <div className="flex items-center justify-between px-1">
               <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Screen Recording</h2>
             </div>
-            <video
-              controls
-              src={issue.videoUrl}
-              className="w-full rounded-lg ring-1 ring-gray-200 bg-black"
-              style={{ maxHeight: '480px' }}
-            />
+            <div className="relative w-full rounded-lg overflow-hidden ring-1 ring-gray-200 bg-black" style={{ maxHeight: '480px' }}>
+              <video
+                controls
+                src={issue.videoUrl}
+                className="w-full block"
+                style={{ maxHeight: '480px' }}
+                onPlay={e => {
+                  const webcam = (e.currentTarget.parentElement?.querySelector('video[data-webcam]') as HTMLVideoElement | null)
+                  webcam?.play().catch(() => {})
+                }}
+                onPause={e => {
+                  const webcam = (e.currentTarget.parentElement?.querySelector('video[data-webcam]') as HTMLVideoElement | null)
+                  webcam?.pause()
+                }}
+                onSeeked={e => {
+                  const webcam = (e.currentTarget.parentElement?.querySelector('video[data-webcam]') as HTMLVideoElement | null)
+                  if (webcam) webcam.currentTime = e.currentTarget.currentTime
+                }}
+              />
+              {issue.webcamUrl && (
+                <video
+                  data-webcam
+                  src={issue.webcamUrl}
+                  muted
+                  className="absolute bottom-3 right-3 rounded-full ring-2 ring-white shadow-lg"
+                  style={{ width: '120px', height: '120px', objectFit: 'cover' }}
+                />
+              )}
+            </div>
           </div>
         )}
 
