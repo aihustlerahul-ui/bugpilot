@@ -54,6 +54,9 @@ let videoChunks = [];
 let videoBlob = null;
 let videoRecStartedAt = null;
 let videoRecTimerInterval = null;
+let webcamMediaRecorder = null;
+let webcamChunks = [];
+let webcamBlob = null;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let isRecording    = false;
@@ -586,17 +589,21 @@ function applyVideoRecordingVisibility(settings) {
 }
 
 async function startVideoRecording() {
-  const { qa_multitab_mode } = await chrome.storage.local.get(['qa_multitab_mode']);
+  const { qa_multitab_mode, qa_ext_settings } = await chrome.storage.local.get(['qa_multitab_mode', 'qa_ext_settings']);
+  const settings = qa_ext_settings || {};
   let stream;
   try {
     if (qa_multitab_mode) {
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: !!settings.captureAudioEnabled });
     } else {
       const tab = await getActiveTab();
       const res = await chrome.runtime.sendMessage({ type: 'START_VIDEO_RECORDING', tabId: tab.id });
       if (!res || !res.ok) throw new Error(res?.error || 'Failed to start tab capture');
       stream = await navigator.mediaDevices.getUserMedia({
         video: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: res.streamId } },
+        audio: settings.captureAudioEnabled
+          ? { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: res.streamId } }
+          : false,
       });
     }
   } catch (err) {
@@ -604,8 +611,40 @@ async function startVideoRecording() {
     return;
   }
 
+  if (settings.captureAudioEnabled) {
+    try {
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioCtx = new AudioContext();
+      const dest = audioCtx.createMediaStreamDestination();
+      audioCtx.createMediaStreamSource(micStream).connect(dest);
+      const tabAudioTracks = stream.getAudioTracks();
+      if (tabAudioTracks.length > 0) {
+        audioCtx.createMediaStreamSource(new MediaStream([tabAudioTracks[0]])).connect(dest);
+      }
+      dest.stream.getAudioTracks().forEach(track => stream.addTrack(track));
+    } catch (err) {
+      showToast('Microphone access denied — recording without audio.', 'error', 4000);
+    }
+  }
+
+  if (settings.captureWebcamEnabled) {
+    try {
+      const webcamStream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+      webcamChunks = [];
+      webcamMediaRecorder = new MediaRecorder(webcamStream, { mimeType: 'video/webm;codecs=vp9' });
+      webcamMediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) webcamChunks.push(e.data); };
+      webcamMediaRecorder.onstop = () => {
+        webcamBlob = new Blob(webcamChunks, { type: 'video/webm' });
+        webcamStream.getTracks().forEach(t => t.stop());
+      };
+      webcamMediaRecorder.start();
+    } catch (err) {
+      showToast('Camera access denied — recording without webcam.', 'error', 4000);
+    }
+  }
+
   videoChunks = [];
-  videoMediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+  videoMediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9,opus' });
   videoMediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) videoChunks.push(e.data); };
   videoMediaRecorder.onstop = () => {
     videoBlob = new Blob(videoChunks, { type: 'video/webm' });
@@ -629,6 +668,9 @@ function updateVideoTimer() {
 function stopVideoRecording() {
   if (videoMediaRecorder && videoMediaRecorder.state !== 'inactive') {
     videoMediaRecorder.stop();
+  }
+  if (webcamMediaRecorder && webcamMediaRecorder.state !== 'inactive') {
+    webcamMediaRecorder.stop();
   }
   clearInterval(videoRecTimerInterval);
   videoRecTimerRow.style.display = 'none';
