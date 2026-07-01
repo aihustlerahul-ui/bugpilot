@@ -352,8 +352,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (type === 'REQUEST_VIDEO_ATTACH') {
-    chrome.runtime.sendMessage(message).catch(() => {});
-    sendResponse({ ok: true });
+    // Rebroadcast under a distinct type — chrome.runtime.sendMessage from within this
+    // same background script would otherwise re-hit this router and loop forever.
+    chrome.runtime.sendMessage({ type: 'VIDEO_ATTACH_REQUESTED', issueId: message.issueId })
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => {
+        // No sidepanel is open to receive it — the recorded video cannot be attached.
+        chrome.storage.local.set({ qa_video_recording_pending: false });
+        sendResponse({ ok: false, error: 'No side panel open — video was not attached' });
+      });
     return true;
   }
   if (type === 'REPLAY_START_FAILED') {
@@ -668,25 +675,44 @@ async function handleUploadAndAttachVideo(message, sendResponse) {
   const { base64, projectId, issueId } = message;
   if (!base64 || !projectId) { sendResponse({ ok: false, error: 'Missing base64 or projectId' }); return; }
   try {
-    const { qa_token: token } = await chrome.storage.local.get(['qa_token']);
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    let { qa_token: token } = await chrome.storage.local.get(['qa_token']);
+    const headers = () => {
+      const h = { 'Content-Type': 'application/json' };
+      if (token) h['Authorization'] = `Bearer ${token}`;
+      return h;
+    };
 
-    const uploadRes = await fetch(`${API_URL}/api/issues/upload-video`, {
+    let uploadRes = await fetch(`${API_URL}/api/issues/upload-video`, {
       method: 'POST',
-      headers,
+      headers: headers(),
       body: JSON.stringify({ project_id: projectId, video: base64 }),
     });
+    if (uploadRes.status === 401) {
+      token = await tryRefreshToken();
+      uploadRes = await fetch(`${API_URL}/api/issues/upload-video`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ project_id: projectId, video: base64 }),
+      });
+    }
     if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`);
     const { storagePath } = await uploadRes.json();
 
     if (issueId) {
-      const attachRes = await fetch(`${API_URL}/api/issues/${issueId}/video`, {
+      let attachRes = await fetch(`${API_URL}/api/issues/${issueId}/video`, {
         method: 'PATCH',
-        headers,
+        headers: headers(),
         body: JSON.stringify({ videoStoragePath: storagePath }),
       });
-      if (!attachRes.ok) throw new Error(`Attach failed: ${attachRes.status}`);
+      if (attachRes.status === 401) {
+        token = await tryRefreshToken();
+        attachRes = await fetch(`${API_URL}/api/issues/${issueId}/video`, {
+          method: 'PATCH',
+          headers: headers(),
+          body: JSON.stringify({ videoStoragePath: storagePath }),
+        });
+      }
+      if (!attachRes.ok) throw new Error(`Attach failed: ${attachRes.status} (video uploaded to ${storagePath} but not linked — retry attach from the sidepanel)`);
     }
 
     sendResponse({ ok: true, storagePath });

@@ -706,8 +706,13 @@ videoAttachSelect.addEventListener('change', async () => {
 
 // Relayed from content.js via background when a bug is filed while a video is pending attach
 chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === 'REQUEST_VIDEO_ATTACH' && videoBlob) {
+  if (message.type === 'VIDEO_ATTACH_REQUESTED') {
     (async () => {
+      if (!videoBlob) {
+        // MediaRecorder.onstop hasn't assembled the blob yet, or it was already attached/discarded.
+        chrome.storage.local.set({ qa_video_recording_pending: false });
+        return;
+      }
       const projectId = projectSelect.value;
       const base64 = await blobToBase64(videoBlob);
       const res = await chrome.runtime.sendMessage({
@@ -716,11 +721,16 @@ chrome.runtime.onMessage.addListener((message) => {
         projectId,
         issueId: message.issueId,
       });
+      // This one-shot attach-on-create attempt is resolved either way — stop prompting
+      // future bug reports to attach this same video. The dropdown stays available for retry.
+      chrome.storage.local.set({ qa_video_recording_pending: false });
       if (res && res.ok) {
         videoBlob = null;
         videoChunks = [];
         videoAttachRow.style.display = 'none';
-        chrome.storage.local.set({ qa_video_recording_pending: false });
+        showToast('Recorded video attached to the issue ✓', 'success', 3500);
+      } else {
+        showToast(`Video attach failed: ${res?.error || 'unknown error'} — use the Attach dropdown to retry`, 'error', 5000);
       }
     })();
   }
