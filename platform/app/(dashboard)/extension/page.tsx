@@ -25,6 +25,8 @@ interface ExtensionSettings {
   // Session Replay
   multiTabRecording: boolean
   videoRecordingEnabled: boolean
+  captureAudioEnabled: boolean
+  captureWebcamEnabled: boolean
   formExpectedResult: boolean
   formActualResult: boolean
   formPriority: boolean
@@ -310,6 +312,18 @@ export default function ExtensionPage() {
             description="Record actual screen video (WebM) instead of relying only on DOM replay — useful for pages replay can't render faithfully (e.g. spreadsheets, canvas apps)."
             enabled={s?.videoRecordingEnabled ?? false}
             onChange={v => set('videoRecordingEnabled', v)}
+          />
+          <ToggleRow
+            label="Capture Audio"
+            description="Record microphone and tab audio alongside the screen video."
+            enabled={s?.captureAudioEnabled ?? false}
+            onChange={v => set('captureAudioEnabled', v)}
+          />
+          <ToggleRow
+            label="Capture Webcam"
+            description="Record a small webcam video overlay alongside the screen video."
+            enabled={s?.captureWebcamEnabled ?? false}
+            onChange={v => set('captureWebcamEnabled', v)}
           />
         </>}
       </Section>
