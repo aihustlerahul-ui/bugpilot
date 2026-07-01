@@ -550,6 +550,22 @@
       <span class="screen-rec-timer-dot"></span><span id="screen-rec-timer">2:00</span> remaining
     </div>
 
+    <div class="video-rec-row" id="video-rec-row" style="display:none">
+      <button class="btn btn-screen-rec btn-full" id="btn-video-recording">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+        Record Video
+      </button>
+    </div>
+    <div class="video-rec-timer-row" id="video-rec-timer-row" style="display:none">
+      <span class="screen-rec-timer-dot"></span><span id="video-rec-timer">0:00</span> recording
+    </div>
+    <div class="video-attach-row" id="video-attach-row" style="display:none">
+      <select class="replay-window-select" id="video-attach-select">
+        <option value="">Attach to issue…</option>
+      </select>
+      <button class="btn-delete-replay" id="btn-discard-video">Discard</button>
+    </div>
+
     <div class="replay-chip" id="replay-chip">
       <span class="replay-chip-icon">🎬</span>
       <div class="replay-chip-body">

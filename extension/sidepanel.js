@@ -41,6 +41,20 @@ const multitabBadge  = document.getElementById('multitab-badge');
 const multitabCount  = document.getElementById('multitab-tab-count');
 const multitabPlural = document.getElementById('multitab-tab-plural');
 
+const videoRecRow        = document.getElementById('video-rec-row');
+const btnVideoRecording  = document.getElementById('btn-video-recording');
+const videoRecTimerRow   = document.getElementById('video-rec-timer-row');
+const videoRecTimer      = document.getElementById('video-rec-timer');
+const videoAttachRow     = document.getElementById('video-attach-row');
+const videoAttachSelect  = document.getElementById('video-attach-select');
+const btnDiscardVideo    = document.getElementById('btn-discard-video');
+
+let videoMediaRecorder = null;
+let videoChunks = [];
+let videoBlob = null;
+let videoRecStartedAt = null;
+let videoRecTimerInterval = null;
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let isRecording    = false;
 let captureCount   = 0;
@@ -504,6 +518,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (changes.qa_ext_settings) {
     applyMultiTabVisibility(changes.qa_ext_settings.newValue);
+    applyVideoRecordingVisibility(changes.qa_ext_settings.newValue);
   }
   if (changes.qa_multitab_recorded_tabs) {
     applyMultiTabBadge(changes.qa_multitab_recorded_tabs.newValue);
@@ -559,8 +574,156 @@ function applyMultiTabVisibility(settings) {
 
 chrome.storage.local.get(['qa_ext_settings', 'qa_multitab_mode', 'qa_multitab_recorded_tabs'], function (r) {
   applyMultiTabVisibility(r.qa_ext_settings);
+  applyVideoRecordingVisibility(r.qa_ext_settings);
   applyMultiTabToggle(r.qa_multitab_mode ?? false);
   applyMultiTabBadge(r.qa_multitab_recorded_tabs);
+});
+
+// ── Video recording ───────────────────────────────────────────────────────────
+function applyVideoRecordingVisibility(settings) {
+  const enabled = !!(settings && settings.videoRecordingEnabled);
+  videoRecRow.style.display = enabled ? '' : 'none';
+}
+
+async function startVideoRecording() {
+  const { qa_multitab_mode } = await chrome.storage.local.get(['qa_multitab_mode']);
+  let stream;
+  try {
+    if (qa_multitab_mode) {
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    } else {
+      const tab = await getActiveTab();
+      const res = await chrome.runtime.sendMessage({ type: 'START_VIDEO_RECORDING', tabId: tab.id });
+      if (!res || !res.ok) throw new Error(res?.error || 'Failed to start tab capture');
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: res.streamId } },
+      });
+    }
+  } catch (err) {
+    showToast(`Could not start video recording: ${err.message}`, 'error', 4000);
+    return;
+  }
+
+  videoChunks = [];
+  videoMediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+  videoMediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) videoChunks.push(e.data); };
+  videoMediaRecorder.onstop = () => {
+    videoBlob = new Blob(videoChunks, { type: 'video/webm' });
+    stream.getTracks().forEach(t => t.stop());
+    chrome.storage.local.set({ qa_video_recording_pending: true });
+    showVideoAttachRow();
+  };
+  videoMediaRecorder.start();
+  videoRecStartedAt = Date.now();
+  btnVideoRecording.textContent = 'Stop Video';
+  videoRecTimerRow.style.display = '';
+  videoRecTimerInterval = setInterval(updateVideoTimer, 1000);
+}
+
+function updateVideoTimer() {
+  const sec = Math.floor((Date.now() - videoRecStartedAt) / 1000);
+  const m = Math.floor(sec / 60), s = sec % 60;
+  videoRecTimer.textContent = `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function stopVideoRecording() {
+  if (videoMediaRecorder && videoMediaRecorder.state !== 'inactive') {
+    videoMediaRecorder.stop();
+  }
+  clearInterval(videoRecTimerInterval);
+  videoRecTimerRow.style.display = 'none';
+  btnVideoRecording.textContent = 'Record Video';
+}
+
+function showVideoAttachRow() {
+  videoAttachRow.style.display = '';
+  populateVideoAttachDropdown();
+}
+
+async function populateVideoAttachDropdown() {
+  const projectId = projectSelect.value;
+  if (!projectId) return;
+  videoAttachSelect.length = 1; // keep the placeholder "Attach to issue…" option
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'GET_RECENT_ISSUES', projectId });
+    if (res && res.ok) {
+      for (const issue of res.issues) {
+        const opt = document.createElement('option');
+        opt.value = issue.id;
+        opt.textContent = issue.title || issue.description?.slice(0, 40) || issue.id;
+        videoAttachSelect.appendChild(opt);
+      }
+    }
+  } catch (_) {}
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+btnVideoRecording.addEventListener('click', () => {
+  if (videoMediaRecorder && videoMediaRecorder.state === 'recording') {
+    stopVideoRecording();
+  } else {
+    startVideoRecording();
+  }
+});
+
+btnDiscardVideo.addEventListener('click', () => {
+  videoBlob = null;
+  videoChunks = [];
+  videoAttachRow.style.display = 'none';
+  chrome.storage.local.set({ qa_video_recording_pending: false });
+});
+
+videoAttachSelect.addEventListener('change', async () => {
+  const issueId = videoAttachSelect.value;
+  if (!issueId || !videoBlob) return;
+  const projectId = projectSelect.value;
+  videoAttachSelect.disabled = true;
+  const base64 = await blobToBase64(videoBlob);
+  const res = await chrome.runtime.sendMessage({
+    type: 'UPLOAD_AND_ATTACH_VIDEO',
+    base64,
+    projectId,
+    issueId,
+  });
+  videoAttachSelect.disabled = false;
+  if (res && res.ok) {
+    videoAttachRow.style.display = 'none';
+    videoBlob = null;
+    videoChunks = [];
+    chrome.storage.local.set({ qa_video_recording_pending: false });
+  } else {
+    showToast(`Failed to attach video: ${res?.error || 'unknown error'}`, 'error', 4000);
+  }
+});
+
+// Relayed from content.js via background when a bug is filed while a video is pending attach
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 'REQUEST_VIDEO_ATTACH' && videoBlob) {
+    (async () => {
+      const projectId = projectSelect.value;
+      const base64 = await blobToBase64(videoBlob);
+      const res = await chrome.runtime.sendMessage({
+        type: 'UPLOAD_AND_ATTACH_VIDEO',
+        base64,
+        projectId,
+        issueId: message.issueId,
+      });
+      if (res && res.ok) {
+        videoBlob = null;
+        videoChunks = [];
+        videoAttachRow.style.display = 'none';
+        chrome.storage.local.set({ qa_video_recording_pending: false });
+      }
+    })();
+  }
 });
 
 btnMultitab.addEventListener('click', async function () {
