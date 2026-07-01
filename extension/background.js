@@ -339,6 +339,30 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     handleStopAndAttachReplay(_sender, sendResponse);
     return true;
   }
+  if (type === 'START_VIDEO_RECORDING') {
+    handleStartVideoRecording(message, sendResponse);
+    return true;
+  }
+  if (type === 'UPLOAD_AND_ATTACH_VIDEO') {
+    handleUploadAndAttachVideo(message, sendResponse);
+    return true;
+  }
+  if (type === 'GET_RECENT_ISSUES') {
+    handleGetRecentIssues(message, sendResponse);
+    return true;
+  }
+  if (type === 'REQUEST_VIDEO_ATTACH') {
+    // Rebroadcast under a distinct type — chrome.runtime.sendMessage from within this
+    // same background script would otherwise re-hit this router and loop forever.
+    chrome.runtime.sendMessage({ type: 'VIDEO_ATTACH_REQUESTED', issueId: message.issueId })
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => {
+        // No sidepanel is open to receive it — the recorded video cannot be attached.
+        chrome.storage.local.set({ qa_video_recording_pending: false });
+        sendResponse({ ok: false, error: 'No side panel open — video was not attached' });
+      });
+    return true;
+  }
   if (type === 'REPLAY_START_FAILED') {
     // replay-recorder.js couldn't start rrweb — clear recording state
     chrome.storage.local.set({ qa_screen_recording: false, qa_screen_recording_tab_id: null });
@@ -631,6 +655,83 @@ async function handleStopAndAttachReplay(sender, sendResponse) {
     if (!tabId) { sendResponse({ ok: false }); return; }
     const saved = await saveRecording(tabId);
     sendResponse({ ok: true, saved });
+  }
+}
+
+// ── START_VIDEO_RECORDING ─────────────────────────────────────────────────────
+async function handleStartVideoRecording(message, sendResponse) {
+  const tabId = message.tabId;
+  if (!tabId) { sendResponse({ ok: false, error: 'No tab id' }); return; }
+  try {
+    const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
+    sendResponse({ ok: true, streamId });
+  } catch (err) {
+    sendResponse({ ok: false, error: err.message || 'tabCapture failed' });
+  }
+}
+
+// ── UPLOAD_AND_ATTACH_VIDEO ───────────────────────────────────────────────────
+async function handleUploadAndAttachVideo(message, sendResponse) {
+  const { base64, projectId, issueId } = message;
+  if (!base64 || !projectId) { sendResponse({ ok: false, error: 'Missing base64 or projectId' }); return; }
+  try {
+    let { qa_token: token } = await chrome.storage.local.get(['qa_token']);
+    const headers = () => {
+      const h = { 'Content-Type': 'application/json' };
+      if (token) h['Authorization'] = `Bearer ${token}`;
+      return h;
+    };
+
+    let uploadRes = await fetch(`${API_URL}/api/issues/upload-video`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ project_id: projectId, video: base64 }),
+    });
+    if (uploadRes.status === 401) {
+      token = await tryRefreshToken();
+      uploadRes = await fetch(`${API_URL}/api/issues/upload-video`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ project_id: projectId, video: base64 }),
+      });
+    }
+    if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`);
+    const { storagePath } = await uploadRes.json();
+
+    if (issueId) {
+      let attachRes = await fetch(`${API_URL}/api/issues/${issueId}/video`, {
+        method: 'PATCH',
+        headers: headers(),
+        body: JSON.stringify({ videoStoragePath: storagePath }),
+      });
+      if (attachRes.status === 401) {
+        token = await tryRefreshToken();
+        attachRes = await fetch(`${API_URL}/api/issues/${issueId}/video`, {
+          method: 'PATCH',
+          headers: headers(),
+          body: JSON.stringify({ videoStoragePath: storagePath }),
+        });
+      }
+      if (!attachRes.ok) throw new Error(`Attach failed: ${attachRes.status} (video uploaded to ${storagePath} but not linked — retry attach from the sidepanel)`);
+    }
+
+    sendResponse({ ok: true, storagePath });
+  } catch (err) {
+    sendResponse({ ok: false, error: err.message || 'Video upload failed' });
+  }
+}
+
+// ── GET_RECENT_ISSUES ─────────────────────────────────────────────────────────
+async function handleGetRecentIssues(message, sendResponse) {
+  const { qa_token: token } = await chrome.storage.local.get(['qa_token']);
+  try {
+    const res = await fetch(`${API_URL}/api/issues/project/${message.projectId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    const issues = await res.json();
+    sendResponse({ ok: true, issues: issues.slice(0, 10) });
+  } catch (err) {
+    sendResponse({ ok: false, error: err.message });
   }
 }
 

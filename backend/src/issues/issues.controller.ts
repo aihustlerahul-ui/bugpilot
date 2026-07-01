@@ -1,8 +1,10 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common'
 import { SupabaseAuthGuard } from '../common/guards/supabase-auth.guard'
 import { CurrentUser } from '../common/decorators/user.decorator'
 import { IssuesService } from './issues.service'
 import { CreateIssueDto } from './dto/create-issue.dto'
+import { UploadVideoDto } from './dto/upload-video.dto'
+import { AttachVideoDto } from './dto/attach-video.dto'
 import type { AuthUser } from '../common/interfaces/auth-user.interface'
 
 @Controller('issues')
@@ -33,5 +35,15 @@ export class IssuesController {
   @Delete(':id')
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.issues.remove(user.id, id)
+  }
+
+  @Post('upload-video')
+  uploadVideo(@CurrentUser() user: AuthUser, @Body() dto: UploadVideoDto) {
+    return this.issues.uploadVideoFile(user.id, dto.project_id, dto.video)
+  }
+
+  @Patch(':id/video')
+  attachVideo(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AttachVideoDto) {
+    return this.issues.attachVideo(user.id, id, dto)
   }
 }

@@ -24,6 +24,7 @@ interface ExtensionSettings {
 
   // Session Replay
   multiTabRecording: boolean
+  videoRecordingEnabled: boolean
   formExpectedResult: boolean
   formActualResult: boolean
   formPriority: boolean
@@ -303,6 +304,12 @@ export default function ExtensionPage() {
             description="When enabled, the extension records every tab the tester visits during a session, not just the starting tab. Replays show a tab-switcher with all captured screens."
             enabled={s?.multiTabRecording ?? false}
             onChange={v => set('multiTabRecording', v)}
+          />
+          <ToggleRow
+            label="Video Recording"
+            description="Record actual screen video (WebM) instead of relying only on DOM replay — useful for pages replay can't render faithfully (e.g. spreadsheets, canvas apps)."
+            enabled={s?.videoRecordingEnabled ?? false}
+            onChange={v => set('videoRecordingEnabled', v)}
           />
         </>}
       </Section>

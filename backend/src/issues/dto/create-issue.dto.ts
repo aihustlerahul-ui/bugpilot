@@ -48,4 +48,8 @@ export class CreateIssueDto {
   @IsOptional()
   @IsString()
   replay_data?: string
+
+  @IsOptional()
+  @IsString()
+  videoStoragePath?: string
 }

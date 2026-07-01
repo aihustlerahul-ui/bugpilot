@@ -850,11 +850,12 @@
         var screenRecordingActive = !!(res && res.screenRecordingActive);
         var isMultiTab = !!(res && res.isMultiTab);
         var recordingStartedAt = (res && res.recordingStartedAt) || null;
-        chrome.storage.local.get(['qa_ext_settings'], function (stored) {
+        chrome.storage.local.get(['qa_ext_settings', 'qa_video_recording_pending'], function (stored) {
           var settings = stored.qa_ext_settings || {};
           var mode     = settings.screenshotMode || 'element_context';
+          var videoRecordingPending = !!stored.qa_video_recording_pending;
           function openModal(screenshotDataUrl) {
-            showModal({ element: clickedEl || document.body, elemData: elemData, screenshotDataUrl: screenshotDataUrl, fullScreenshotDataUrl: fullDataUrl, settings: settings, screenRecordingActive: screenRecordingActive, isMultiTab: isMultiTab, recordingStartedAt: recordingStartedAt });
+            showModal({ element: clickedEl || document.body, elemData: elemData, screenshotDataUrl: screenshotDataUrl, fullScreenshotDataUrl: fullDataUrl, settings: settings, screenRecordingActive: screenRecordingActive, isMultiTab: isMultiTab, recordingStartedAt: recordingStartedAt, videoRecordingPending: videoRecordingPending });
           }
           if (!fullDataUrl || elemRect.width === 0) return openModal(fullDataUrl);
           if (mode === 'full')             { openModal(fullDataUrl); }
@@ -1023,12 +1024,13 @@
         var recordingStartedAt = (res && res.recordingStartedAt) || null;
         elemData = captureElementData(clickedEl);
 
-        chrome.storage.local.get(['qa_ext_settings'], function (stored) {
+        chrome.storage.local.get(['qa_ext_settings', 'qa_video_recording_pending'], function (stored) {
           var settings = stored.qa_ext_settings || {};
           var mode     = settings.screenshotMode || 'element_context';
+          var videoRecordingPending = !!stored.qa_video_recording_pending;
 
           function openModal(screenshotDataUrl) {
-            showModal({ element: clickedEl, elemData: elemData, screenshotDataUrl: screenshotDataUrl, fullScreenshotDataUrl: fullDataUrl, settings: settings, screenRecordingActive: screenRecordingActive, isMultiTab: isMultiTab, recordingStartedAt: recordingStartedAt });
+            showModal({ element: clickedEl, elemData: elemData, screenshotDataUrl: screenshotDataUrl, fullScreenshotDataUrl: fullDataUrl, settings: settings, screenRecordingActive: screenRecordingActive, isMultiTab: isMultiTab, recordingStartedAt: recordingStartedAt, videoRecordingPending: videoRecordingPending });
           }
 
           if (!fullDataUrl || elemRect.width === 0) return openModal(fullDataUrl);
@@ -1052,6 +1054,7 @@
     var screenRecordingActive = opts.screenRecordingActive || false;
     var isMultiTab            = opts.isMultiTab || false;
     var recordingStartedAt    = opts.recordingStartedAt || null;
+    var videoRecordingPending = opts.videoRecordingPending || false;
 
     modalOpen = true;
     disableHover();
@@ -1119,6 +1122,16 @@
             '<button class="qa-btn qa-btn-replay-keep" id="qa-btn-attach-keep">Attach clip &amp; continue</button>' +
             '<button class="qa-btn qa-btn-replay-stop" id="qa-btn-stop-attach">Stop &amp; attach</button>' +
           '</div>' +
+        '</div>'
+      : '';
+
+    // ── Video attach prompt (recorded video pending in the sidepanel) ─────────
+    var videoAttachHtml = videoRecordingPending
+      ? '<div class="qa-video-attach-prompt">' +
+          '<label class="qa-video-attach-label">' +
+            '<input type="checkbox" id="qa-attach-video-checkbox" checked />' +
+            ' Attach recorded video to this bug' +
+          '</label>' +
         '</div>'
       : '';
 
@@ -1199,6 +1212,7 @@
       '<div class="qa-modal-scroll"><div class="qa-modal-body">' +
         screenshotHtml +
         replayHtml +
+        videoAttachHtml +
         '<div class="qa-modal-element-info">' +
           '<span class="qa-element-tag">&lt;' + escapeHTML(elemData.tag) + '&gt;</span>' +
           '<span class="qa-element-text">' + escapeHTML(elemData.text || elemData.cssSelector) + '</span>' +
@@ -1519,9 +1533,13 @@
         if (storage.qa_selected_project) issue.projectId = storage.qa_selected_project.id;
         bufferIssue(issue, function () {
           capturedCount++;
+          var attachVideoChecked = !!(modal.querySelector('#qa-attach-video-checkbox') && modal.querySelector('#qa-attach-video-checkbox').checked);
           chrome.runtime.sendMessage({ type: MESSAGE_TYPES.SUBMIT_ISSUE, issue: issue }, function (res) {
             if (res && res.ok) {
               removeFromBuffer(issue, function () {});
+              if (attachVideoChecked && res.result && res.result.id) {
+                chrome.runtime.sendMessage({ type: 'REQUEST_VIDEO_ATTACH', issueId: res.result.id });
+              }
               closeModal();
               showNotification('Issue submitted successfully!', 'success');
             } else {

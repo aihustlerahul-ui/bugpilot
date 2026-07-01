@@ -4,8 +4,9 @@ import { ValidationPipe } from '@nestjs/common'
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: true })
-  app.use(require('express').json({ limit: '10mb' }))
-  app.use(require('express').urlencoded({ limit: '10mb', extended: true }))
+  // 220mb accommodates base64-encoded video uploads (see UploadVideoDto.MAX_VIDEO_BASE64_LENGTH)
+  app.use(require('express').json({ limit: '220mb' }))
+  app.use(require('express').urlencoded({ limit: '220mb', extended: true }))
 
   const corsOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
     .split(',')

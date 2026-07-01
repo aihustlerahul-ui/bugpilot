@@ -271,6 +271,21 @@ export default function IssueDetailPage({ params }: { params: { id: string; issu
           </div>
         )}
 
+        {/* Screen Recording (video) */}
+        {issue.videoUrl && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Screen Recording</h2>
+            </div>
+            <video
+              controls
+              src={issue.videoUrl}
+              className="w-full rounded-lg ring-1 ring-gray-200 bg-black"
+              style={{ maxHeight: '480px' }}
+            />
+          </div>
+        )}
+
         {/* Page Context */}
         <SectionCard title="Page Context" defaultOpen>
           <KVRow label="URL"    value={issue.url ?? '—'} />
