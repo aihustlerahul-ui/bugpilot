@@ -39,6 +39,7 @@ export interface ExtensionSettings {
   // Session Replay
   captureNavHistory: boolean
   multiTabRecording: boolean
+  videoRecordingEnabled: boolean
 }
 
 const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -72,6 +73,7 @@ const DEFAULT_SETTINGS: ExtensionSettings = {
 
   captureNavHistory: true,
   multiTabRecording: false,
+  videoRecordingEnabled: false,
 }
 
 @Injectable()
