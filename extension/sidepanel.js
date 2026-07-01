@@ -57,6 +57,7 @@ let videoRecTimerInterval = null;
 let webcamMediaRecorder = null;
 let webcamChunks = [];
 let webcamBlob = null;
+let activeAudioCtx = null;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let isRecording    = false;
@@ -589,6 +590,13 @@ function applyVideoRecordingVisibility(settings) {
 }
 
 async function startVideoRecording() {
+  // Clear state from any prior session so a discarded/failed webcam clip never
+  // attaches to an unrelated later recording.
+  webcamMediaRecorder = null;
+  webcamChunks = [];
+  webcamBlob = null;
+  if (activeAudioCtx) { activeAudioCtx.close().catch(() => {}); activeAudioCtx = null; }
+
   const { qa_multitab_mode, qa_ext_settings } = await chrome.storage.local.get(['qa_multitab_mode', 'qa_ext_settings']);
   const settings = qa_ext_settings || {};
   let stream;
@@ -615,11 +623,14 @@ async function startVideoRecording() {
     try {
       const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const audioCtx = new AudioContext();
+      activeAudioCtx = audioCtx;
       const dest = audioCtx.createMediaStreamDestination();
       audioCtx.createMediaStreamSource(micStream).connect(dest);
       const tabAudioTracks = stream.getAudioTracks();
       if (tabAudioTracks.length > 0) {
         audioCtx.createMediaStreamSource(new MediaStream([tabAudioTracks[0]])).connect(dest);
+        // Remove the raw tab track — only the mixed (mic+tab) track should reach the recorder.
+        tabAudioTracks.forEach(track => stream.removeTrack(track));
       }
       dest.stream.getAudioTracks().forEach(track => stream.addTrack(track));
     } catch (err) {
@@ -672,6 +683,10 @@ function stopVideoRecording() {
   if (webcamMediaRecorder && webcamMediaRecorder.state !== 'inactive') {
     webcamMediaRecorder.stop();
   }
+  if (activeAudioCtx) {
+    activeAudioCtx.close().catch(() => {});
+    activeAudioCtx = null;
+  }
   clearInterval(videoRecTimerInterval);
   videoRecTimerRow.style.display = 'none';
   btnVideoRecording.textContent = 'Record Video';
@@ -719,6 +734,8 @@ btnVideoRecording.addEventListener('click', () => {
 btnDiscardVideo.addEventListener('click', () => {
   videoBlob = null;
   videoChunks = [];
+  webcamBlob = null;
+  webcamChunks = [];
   videoAttachRow.style.display = 'none';
   chrome.storage.local.set({ qa_video_recording_pending: false });
 });

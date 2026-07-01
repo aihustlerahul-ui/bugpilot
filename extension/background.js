@@ -700,23 +700,26 @@ async function handleUploadAndAttachVideo(message, sendResponse) {
 
     let webcamStoragePath;
     if (webcamBase64) {
-      let webcamUploadRes = await fetch(`${API_URL}/api/issues/upload-video`, {
-        method: 'POST',
-        headers: headers(),
-        body: JSON.stringify({ project_id: projectId, video: webcamBase64 }),
-      });
-      if (webcamUploadRes.status === 401) {
-        token = await tryRefreshToken();
-        webcamUploadRes = await fetch(`${API_URL}/api/issues/upload-video`, {
+      // Webcam upload failure (network error or non-OK response) is non-fatal —
+      // the screen video still attaches without it.
+      try {
+        let webcamUploadRes = await fetch(`${API_URL}/api/issues/upload-video`, {
           method: 'POST',
           headers: headers(),
           body: JSON.stringify({ project_id: projectId, video: webcamBase64 }),
         });
-      }
-      if (webcamUploadRes.ok) {
-        webcamStoragePath = (await webcamUploadRes.json()).storagePath;
-      }
-      // Webcam upload failure is non-fatal — the screen video still attaches without it.
+        if (webcamUploadRes.status === 401) {
+          token = await tryRefreshToken();
+          webcamUploadRes = await fetch(`${API_URL}/api/issues/upload-video`, {
+            method: 'POST',
+            headers: headers(),
+            body: JSON.stringify({ project_id: projectId, video: webcamBase64 }),
+          });
+        }
+        if (webcamUploadRes.ok) {
+          webcamStoragePath = (await webcamUploadRes.json()).storagePath;
+        }
+      } catch (_) {}
     }
 
     if (issueId) {
