@@ -58,6 +58,8 @@ let webcamMediaRecorder = null;
 let webcamChunks = [];
 let webcamBlob = null;
 let activeAudioCtx = null;
+let activeMicStream = null;
+let activeWebcamStream = null;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let isRecording    = false;
@@ -644,6 +646,7 @@ async function startVideoRecording() {
   if (settings.captureAudioEnabled) {
     try {
       const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      activeMicStream = micStream;
       const audioCtx = new AudioContext();
       activeAudioCtx = audioCtx;
       const dest = audioCtx.createMediaStreamDestination();
@@ -663,6 +666,7 @@ async function startVideoRecording() {
   if (settings.captureWebcamEnabled) {
     try {
       const webcamStream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+      activeWebcamStream = webcamStream;
       webcamChunks = [];
       webcamMediaRecorder = new MediaRecorder(webcamStream, { mimeType: 'video/webm;codecs=vp9' });
       webcamMediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) webcamChunks.push(e.data); };
@@ -709,6 +713,8 @@ function stopVideoRecording() {
     activeAudioCtx.close().catch(() => {});
     activeAudioCtx = null;
   }
+  activeMicStream = null;
+  activeWebcamStream = null;
   clearInterval(videoRecTimerInterval);
   videoRecTimerRow.style.display = 'none';
   btnVideoRecording.textContent = 'Record Video';
