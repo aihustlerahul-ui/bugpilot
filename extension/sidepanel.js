@@ -76,6 +76,20 @@ function hideMediaPermissionHelp() {
   mediaPermissionHelp.innerHTML = '';
 }
 
+// Chrome's Side Panel surface does not reliably show the native getUserMedia permission
+// popup — the exact same extension page works fine as a normal tab. Since the permission
+// decision is per-origin (same chrome-extension://<id> origin either way), granting it once
+// via a full tab makes it available back in the side panel afterward.
+function showSidePanelPermissionHelp(label) {
+  mediaPermissionHelp.innerHTML =
+    `${label} didn't prompt — Chrome's side panel doesn't reliably support camera/mic permission popups. ` +
+    `<a id="media-permission-help-link">Open this panel in a new tab</a> and grant it there once — it'll then work here too.`;
+  mediaPermissionHelp.style.display = '';
+  document.getElementById('media-permission-help-link').addEventListener('click', () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html') });
+  });
+}
+
 let videoMediaRecorder = null;
 let videoChunks = [];
 let videoBlob = null;
@@ -708,14 +722,14 @@ micStatusChip.addEventListener('click', async () => {
     hideMediaPermissionHelp();
     refreshMicPermissionStatus();
   } catch (err) {
-    // getUserMedia can reject instantly with no native prompt at all (already blocked at the
-    // Chrome content-settings level, or the OS itself blocking Chrome) — without this the
-    // click would look like it did nothing. Chrome's Permissions API can still report
-    // "prompt" here even when an OS-level block is the real cause (macOS gates Chrome's own
-    // permission UI, so Chrome never gets to ask) — so this path, not just the denied-state
-    // branch above, is what actually surfaces OS-level blocks.
+    // getUserMedia can reject instantly with no native prompt at all — without this the click
+    // would look like it did nothing. When state is still "prompt" (not "denied" — that's the
+    // branch above), the confirmed common cause is a Chrome Side Panel limitation: the exact
+    // same extension page reliably shows the native permission popup when opened as a normal
+    // tab, but not inside the side panel surface. Since the permission decision is per-origin,
+    // granting it once via a full tab makes it available back in the side panel afterward.
     if (err && err.name === 'NotAllowedError') {
-      showMediaPermissionHelp('Microphone', 'chrome://settings/content/microphone', 'blocked — this can also mean macOS itself is blocking Chrome under System Settings → Privacy & Security → Microphone');
+      showSidePanelPermissionHelp('Microphone');
     } else {
       showToast(`Microphone unavailable (${describeMediaError(err)})`, 'error', 6000);
     }
@@ -755,7 +769,7 @@ camStatusChip.addEventListener('click', async () => {
     refreshCamPermissionStatus();
   } catch (err) {
     if (err && err.name === 'NotAllowedError') {
-      showMediaPermissionHelp('Camera', 'chrome://settings/content/camera', 'blocked — this can also mean macOS itself is blocking Chrome under System Settings → Privacy & Security → Camera');
+      showSidePanelPermissionHelp('Camera');
     } else {
       showToast(`Camera unavailable (${describeMediaError(err)})`, 'error', 6000);
     }
