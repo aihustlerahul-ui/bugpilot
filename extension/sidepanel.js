@@ -73,7 +73,13 @@ let activeMicStream = null;
 let activeWebcamStream = null;
 let micMuted = false;
 let micAnalyser = null;
-let micLevelRafId = null;
+// Mute is implemented as a GainNode in the recording-mixing path, NOT track.enabled —
+// disabling the track would silence it for every consumer, including the level meter's
+// AnalyserNode below (per the MediaStreamTrack spec, a disabled track outputs silence
+// to all downstream nodes). Routing mute through a gain node lets the meter keep reading
+// real mic input even while the recorded output is silenced, so the user can tell
+// "muted but the mic is live" apart from "nothing is reaching the mic at all."
+let micGainNode = null;
 
 function startMicLevelMeter(stream) {
   const audioCtx = new AudioContext();
@@ -94,7 +100,7 @@ function startMicLevelMeter(stream) {
     micAnalyser.getByteFrequencyData(data);
     const avg = data.reduce((a, b) => a + b, 0) / data.length;
     micLevelBar.style.width = `${Math.min(100, (avg / 255) * 100 * 2)}%`;
-    micLevelRafId = requestAnimationFrame(tick);
+    requestAnimationFrame(tick);
   }
   tick();
 }
@@ -102,9 +108,9 @@ function startMicLevelMeter(stream) {
 micStatusChip.addEventListener('click', () => {
   // Only toggle mute if a recording is active and mic is already granted — otherwise this
   // click falls through to the request/open-settings handler registered in Task 3.
-  if (!activeMicStream) return;
+  if (!activeMicStream || !micGainNode) return;
   micMuted = !micMuted;
-  activeMicStream.getAudioTracks().forEach(track => { track.enabled = !micMuted; });
+  micGainNode.gain.value = micMuted ? 0 : 1;
   micMuteIcon.textContent = micMuted ? '🔇' : '🎤';
 }, { capture: true });
 
@@ -783,7 +789,8 @@ async function startVideoRecording() {
       const audioCtx = new AudioContext();
       activeAudioCtx = audioCtx;
       const dest = audioCtx.createMediaStreamDestination();
-      audioCtx.createMediaStreamSource(micStream).connect(dest);
+      micGainNode = audioCtx.createGain();
+      audioCtx.createMediaStreamSource(micStream).connect(micGainNode).connect(dest);
       const tabAudioTracks = stream.getAudioTracks();
       if (tabAudioTracks.length > 0) {
         audioCtx.createMediaStreamSource(new MediaStream([tabAudioTracks[0]])).connect(dest);
@@ -849,6 +856,7 @@ function stopVideoRecording() {
     activeAudioCtx = null;
   }
   activeMicStream = null;
+  micGainNode = null;
   micMuted = false;
   micMuteIcon.textContent = '🎤';
   activeWebcamStream = null;
