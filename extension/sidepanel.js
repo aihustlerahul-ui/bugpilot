@@ -53,6 +53,7 @@ const micStatusChip   = document.getElementById('mic-status-chip');
 const micStatusDot    = document.getElementById('mic-status-dot');
 const micStatusLabel  = document.getElementById('mic-status-label');
 const camStatusChip   = document.getElementById('cam-status-chip');
+const webcamPreview   = document.getElementById('webcam-preview');
 const camStatusDot    = document.getElementById('cam-status-dot');
 const camStatusLabel  = document.getElementById('cam-status-label');
 const micMuteIcon  = document.getElementById('mic-mute-icon');
@@ -799,6 +800,8 @@ async function startVideoRecording() {
     try {
       const webcamStream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
       activeWebcamStream = webcamStream;
+      webcamPreview.srcObject = webcamStream;
+      webcamPreview.style.display = '';
       webcamChunks = [];
       webcamMediaRecorder = new MediaRecorder(webcamStream, { mimeType: 'video/webm;codecs=vp9' });
       webcamMediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) webcamChunks.push(e.data); };
@@ -849,6 +852,8 @@ function stopVideoRecording() {
   micMuted = false;
   micMuteIcon.textContent = '🎤';
   activeWebcamStream = null;
+  webcamPreview.srcObject = null;
+  webcamPreview.style.display = 'none';
   clearInterval(videoRecTimerInterval);
   videoRecTimerRow.style.display = 'none';
   btnVideoRecording.textContent = 'Record Video';

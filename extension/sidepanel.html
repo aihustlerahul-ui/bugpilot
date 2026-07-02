@@ -439,6 +439,12 @@
     .media-status-dot.granted { background: var(--green); }
     .media-status-dot.denied { background: var(--red); }
     .media-status-icon { font-size: 12px; line-height: 1; }
+    .webcam-preview {
+      width: 60px; height: 60px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--border);
+    }
     .media-level-meter {
       width: 28px; height: 6px;
       background: var(--border);
@@ -618,6 +624,7 @@
         <span class="media-status-icon">📷</span>
         <span id="cam-status-label">Checking…</span>
       </button>
+      <video id="webcam-preview" class="webcam-preview" muted autoplay style="display:none"></video>
     </div>
 
     <div class="replay-chip" id="replay-chip">
