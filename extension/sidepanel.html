@@ -459,6 +459,22 @@
       background: var(--green);
       transition: width 60ms linear;
     }
+    .media-permission-help {
+      margin: 0 14px 8px;
+      padding: 8px 10px;
+      background: var(--red-bg);
+      border: 1px solid var(--red-border);
+      border-radius: 6px;
+      font-size: 11.5px;
+      color: #991b1b;
+      line-height: 1.5;
+    }
+    .media-permission-help a {
+      color: #991b1b;
+      font-weight: 600;
+      text-decoration: underline;
+      cursor: pointer;
+    }
 
     .btn-delete-replay {
       background: none; border: none; cursor: pointer;
@@ -626,6 +642,7 @@
       </button>
       <video id="webcam-preview" class="webcam-preview" muted autoplay style="display:none"></video>
     </div>
+    <div class="media-permission-help" id="media-permission-help" style="display:none"></div>
 
     <div class="replay-chip" id="replay-chip">
       <span class="replay-chip-icon">🎬</span>

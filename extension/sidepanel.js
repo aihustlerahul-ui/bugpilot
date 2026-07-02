@@ -59,6 +59,22 @@ const camStatusLabel  = document.getElementById('cam-status-label');
 const micMuteIcon  = document.getElementById('mic-mute-icon');
 const micLevelMeter = document.getElementById('mic-level-meter');
 const micLevelBar   = document.getElementById('mic-level-bar');
+const mediaPermissionHelp = document.getElementById('media-permission-help');
+
+function showMediaPermissionHelp(label, settingsUrl, reason) {
+  mediaPermissionHelp.innerHTML =
+    `${label} unavailable (${reason}). ` +
+    `<a id="media-permission-help-link">Open Chrome settings</a> and set it to "Ask" or "Allow", then reload the extension.`;
+  mediaPermissionHelp.style.display = '';
+  document.getElementById('media-permission-help-link').addEventListener('click', () => {
+    chrome.tabs.create({ url: settingsUrl });
+  });
+}
+
+function hideMediaPermissionHelp() {
+  mediaPermissionHelp.style.display = 'none';
+  mediaPermissionHelp.innerHTML = '';
+}
 
 let videoMediaRecorder = null;
 let videoChunks = [];
@@ -683,19 +699,26 @@ micStatusChip.addEventListener('click', async () => {
   if (activeMicStream) return; // handled by the mute toggle above during an active recording
   const state = micPermissionStatus ? micPermissionStatus.state : 'prompt';
   if (state === 'denied') {
-    showToast('Microphone is blocked — opening Chrome settings. Set it to "Ask" or "Allow", then reload the extension.', 'error', 6000);
-    chrome.tabs.create({ url: 'chrome://settings/content/microphone' });
+    showMediaPermissionHelp('Microphone', 'chrome://settings/content/microphone', 'blocked');
     return;
   }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach(t => t.stop());
+    hideMediaPermissionHelp();
     refreshMicPermissionStatus();
   } catch (err) {
     // getUserMedia can reject instantly with no native prompt at all (already blocked at the
-    // Chrome content-settings level, or the OS itself blocking Chrome) — without this toast
-    // the click would look like it did nothing.
-    showToast(`Microphone unavailable (${describeMediaError(err)})`, 'error', 6000);
+    // Chrome content-settings level, or the OS itself blocking Chrome) — without this the
+    // click would look like it did nothing. Chrome's Permissions API can still report
+    // "prompt" here even when an OS-level block is the real cause (macOS gates Chrome's own
+    // permission UI, so Chrome never gets to ask) — so this path, not just the denied-state
+    // branch above, is what actually surfaces OS-level blocks.
+    if (err && err.name === 'NotAllowedError') {
+      showMediaPermissionHelp('Microphone', 'chrome://settings/content/microphone', 'blocked — this can also mean macOS itself is blocking Chrome under System Settings → Privacy & Security → Microphone');
+    } else {
+      showToast(`Microphone unavailable (${describeMediaError(err)})`, 'error', 6000);
+    }
     refreshMicPermissionStatus();
   }
 });
@@ -722,16 +745,20 @@ function renderCamPermissionStatus() {
 camStatusChip.addEventListener('click', async () => {
   const state = camPermissionStatus ? camPermissionStatus.state : 'prompt';
   if (state === 'denied') {
-    showToast('Camera is blocked — opening Chrome settings. Set it to "Ask" or "Allow", then reload the extension.', 'error', 6000);
-    chrome.tabs.create({ url: 'chrome://settings/content/camera' });
+    showMediaPermissionHelp('Camera', 'chrome://settings/content/camera', 'blocked');
     return;
   }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     stream.getTracks().forEach(t => t.stop());
+    hideMediaPermissionHelp();
     refreshCamPermissionStatus();
   } catch (err) {
-    showToast(`Camera unavailable (${describeMediaError(err)})`, 'error', 6000);
+    if (err && err.name === 'NotAllowedError') {
+      showMediaPermissionHelp('Camera', 'chrome://settings/content/camera', 'blocked — this can also mean macOS itself is blocking Chrome under System Settings → Privacy & Security → Camera');
+    } else {
+      showToast(`Camera unavailable (${describeMediaError(err)})`, 'error', 6000);
+    }
     refreshCamPermissionStatus();
   }
 });
