@@ -683,6 +683,7 @@ micStatusChip.addEventListener('click', async () => {
   if (activeMicStream) return; // handled by the mute toggle above during an active recording
   const state = micPermissionStatus ? micPermissionStatus.state : 'prompt';
   if (state === 'denied') {
+    showToast('Microphone is blocked — opening Chrome settings. Set it to "Ask" or "Allow", then reload the extension.', 'error', 6000);
     chrome.tabs.create({ url: 'chrome://settings/content/microphone' });
     return;
   }
@@ -690,7 +691,11 @@ micStatusChip.addEventListener('click', async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach(t => t.stop());
     refreshMicPermissionStatus();
-  } catch (_) {
+  } catch (err) {
+    // getUserMedia can reject instantly with no native prompt at all (already blocked at the
+    // Chrome content-settings level, or the OS itself blocking Chrome) — without this toast
+    // the click would look like it did nothing.
+    showToast(`Microphone unavailable (${describeMediaError(err)})`, 'error', 6000);
     refreshMicPermissionStatus();
   }
 });
@@ -717,6 +722,7 @@ function renderCamPermissionStatus() {
 camStatusChip.addEventListener('click', async () => {
   const state = camPermissionStatus ? camPermissionStatus.state : 'prompt';
   if (state === 'denied') {
+    showToast('Camera is blocked — opening Chrome settings. Set it to "Ask" or "Allow", then reload the extension.', 'error', 6000);
     chrome.tabs.create({ url: 'chrome://settings/content/camera' });
     return;
   }
@@ -724,7 +730,8 @@ camStatusChip.addEventListener('click', async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     stream.getTracks().forEach(t => t.stop());
     refreshCamPermissionStatus();
-  } catch (_) {
+  } catch (err) {
+    showToast(`Camera unavailable (${describeMediaError(err)})`, 'error', 6000);
     refreshCamPermissionStatus();
   }
 });
