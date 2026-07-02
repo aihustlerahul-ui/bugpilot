@@ -60,6 +60,15 @@ export function VideoPlayer({ videoUrl, webcamUrl, issueTitle }: VideoPlayerProp
   const [duration, setDuration] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isScrubbing, setIsScrubbing] = useState(false)
+  const [volume, setVolume] = useState(1)
+  const [muted, setMuted] = useState(false)
+  const [speed, setSpeed] = useState(1)
+  const [speedOpen, setSpeedOpen] = useState(false)
+  const speedMenuRef = useRef<HTMLDivElement>(null)
+  // Hover-preview tooltip on the scrub bar: hoverRatio is 0-1 position along the bar,
+  // null when the pointer isn't over it. Separate from the drag/scrub state above —
+  // hovering shows a preview without moving playback position.
+  const [hoverRatio, setHoverRatio] = useState<number | null>(null)
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current
@@ -97,6 +106,40 @@ export function VideoPlayer({ videoUrl, webcamUrl, issueTitle }: VideoPlayerProp
       video.removeEventListener('seeked', onSeeked)
     }
   }, [])
+
+  const handleVolumeChange = useCallback((v: number) => {
+    const video = videoRef.current
+    if (!video) return
+    video.volume = v
+    video.muted = v === 0
+    setVolume(v)
+    setMuted(v === 0)
+  }, [])
+
+  const toggleMute = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+    video.muted = !video.muted
+    setMuted(video.muted)
+  }, [])
+
+  const handleSpeedChange = useCallback((s: number) => {
+    const video = videoRef.current
+    if (video) video.playbackRate = s
+    if (webcamRef.current) webcamRef.current.playbackRate = s
+    setSpeed(s)
+  }, [])
+
+  useEffect(() => {
+    if (!speedOpen) return
+    function close(e: MouseEvent) {
+      if (speedMenuRef.current && !speedMenuRef.current.contains(e.target as Node)) {
+        setSpeedOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [speedOpen])
 
   const toggleFullscreen = useCallback(() => {
     setIsFullscreen(prev => !prev)
@@ -147,6 +190,157 @@ export function VideoPlayer({ videoUrl, webcamUrl, issueTitle }: VideoPlayerProp
             style={{ width: '120px', height: '120px', objectFit: 'cover' }}
           />
         )}
+      </div>
+
+      <div className="bg-black/90 shrink-0">
+        <div className="px-3 pt-3 pb-1">
+          <div
+            className="relative h-2 rounded-full bg-white/15 cursor-pointer group/scrub"
+            onMouseDown={e => {
+              if (e.button !== 0) return
+              setIsScrubbing(true)
+              const bar = e.currentTarget
+              const scrub = (clientX: number) => {
+                const rect = bar.getBoundingClientRect()
+                const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+                setCurrentTime(ratio * duration)
+              }
+              scrub(e.clientX)
+              const onMove = (ev: MouseEvent) => scrub(ev.clientX)
+              const onUp = (ev: MouseEvent) => {
+                setIsScrubbing(false)
+                const rect = bar.getBoundingClientRect()
+                const ratio = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width))
+                seek(ratio * duration)
+                window.removeEventListener('mousemove', onMove)
+                window.removeEventListener('mouseup', onUp)
+              }
+              window.addEventListener('mousemove', onMove)
+              window.addEventListener('mouseup', onUp)
+            }}
+            onMouseMove={e => {
+              const rect = e.currentTarget.getBoundingClientRect()
+              const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+              setHoverRatio(ratio)
+            }}
+            onMouseLeave={() => setHoverRatio(null)}
+          >
+            <div
+              className="absolute left-0 top-0 h-full rounded-full bg-indigo-500 pointer-events-none"
+              style={{ width: `${progress}%` }}
+            />
+            <div
+              className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-white shadow-md pointer-events-none transition-opacity ${
+                playing || isScrubbing ? 'opacity-100' : 'opacity-0 group-hover/scrub:opacity-100'
+              }`}
+              style={{ left: `${progress}%` }}
+            />
+            {hoverRatio !== null && (
+              <div
+                className="absolute bottom-full mb-1.5 -translate-x-1/2 px-1.5 py-0.5 rounded bg-black text-white text-[10px] tabular-nums pointer-events-none whitespace-nowrap"
+                style={{ left: `${hoverRatio * 100}%` }}
+              >
+                {formatTime(hoverRatio * duration)}
+              </div>
+            )}
+            <input
+              type="range"
+              min={0}
+              max={duration || 1}
+              step={0.1}
+              value={currentTime}
+              onChange={e => setCurrentTime(Number(e.target.value))}
+              onMouseUp={e => seek(Number((e.target as HTMLInputElement).value))}
+              onTouchStart={() => setIsScrubbing(true)}
+              onTouchEnd={e => {
+                setIsScrubbing(false)
+                seek(Number((e.target as HTMLInputElement).value))
+              }}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              aria-label="Seek"
+              aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 px-3 py-2">
+          <button
+            onClick={togglePlay}
+            className={`w-8 h-8 flex items-center justify-center rounded-full text-white transition-colors flex-shrink-0 ${
+              playing ? 'bg-indigo-500 hover:bg-indigo-400' : 'bg-indigo-600 hover:bg-indigo-500'
+            }`}
+            aria-label={playing ? 'Pause' : 'Play'}
+            aria-pressed={playing}
+          >
+            {playing ? <IconPause/> : <IconPlay/>}
+          </button>
+
+          <span className="text-xs tabular-nums text-white/80 select-none">
+            {formatTime(currentTime)} <span className="text-white/40">/ {formatTime(duration)}</span>
+          </span>
+
+          <div className="flex-1"/>
+
+          <button
+            onClick={toggleMute}
+            className="w-8 h-8 flex items-center justify-center rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0"
+            aria-label={muted ? 'Unmute' : 'Mute'}
+          >
+            {muted || volume === 0 ? <IconVolumeMuted/> : <IconVolumeOn/>}
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={muted ? 0 : volume}
+            onChange={e => handleVolumeChange(Number(e.target.value))}
+            className="w-16 accent-indigo-500"
+            aria-label="Volume"
+          />
+
+          <div ref={speedMenuRef} className="relative ml-1">
+            <button
+              type="button"
+              onClick={() => setSpeedOpen(o => !o)}
+              className="text-xs bg-white/10 hover:bg-white/20 text-white/70 rounded px-2 py-1 cursor-pointer outline-none min-w-[3rem]"
+              aria-label="Playback speed"
+              aria-expanded={speedOpen}
+              aria-haspopup="listbox"
+            >
+              {speed}×
+            </button>
+            {speedOpen && (
+              <ul
+                role="listbox"
+                aria-label="Playback speed"
+                className="absolute bottom-full right-0 mb-1 py-1 rounded-lg bg-[#1a1c2e] border border-white/10 shadow-xl z-30 min-w-[4rem]"
+              >
+                {SPEEDS.map(s => (
+                  <li key={s} role="option" aria-selected={s === speed}>
+                    <button
+                      type="button"
+                      onClick={() => { handleSpeedChange(s); setSpeedOpen(false) }}
+                      className={`block w-full text-left text-xs px-3 py-1.5 hover:bg-white/10 ${
+                        s === speed ? 'text-indigo-400 font-medium' : 'text-white/70'
+                      }`}
+                    >
+                      {s}×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <button
+            onClick={toggleFullscreen}
+            className="w-8 h-8 flex items-center justify-center rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0 ml-1"
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          >
+            {isFullscreen ? <IconExitFullscreen/> : <IconFullscreen/>}
+          </button>
+        </div>
       </div>
     </div>
   )
