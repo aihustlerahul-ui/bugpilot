@@ -28,6 +28,11 @@ let micStream = null;
 let camStream = null;
 let micAudioCtx = null;
 let micRafId = null;
+// Incremented on every runMicTest()/runCamTest() call so an in-flight getUserMedia() from a
+// superseded call (e.g. two quick device-select changes) can detect it's stale after the
+// await and tear down its own stream instead of overwriting/orphaning the current one.
+let micTestGen = 0;
+let camTestGen = 0;
 
 async function init() {
   const { qa_ext_settings } = await chrome.storage.local.get(['qa_ext_settings']);
@@ -93,15 +98,25 @@ function stopMicTest() {
 async function runMicTest() {
   stopMicTest();
   const deviceId = micDeviceSelect.value;
+  const myGen = ++micTestGen;
+  let stream;
   try {
-    micStream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       audio: deviceId ? { deviceId: { exact: deviceId } } : true,
     });
   } catch (err) {
+    if (myGen !== micTestGen) return; // superseded by a newer call while awaiting
     setMicState('blocked');
     showMicConfirm('blocked', 'Could not access the microphone — check Chrome and OS permission settings.');
     return;
   }
+  if (myGen !== micTestGen) {
+    // A newer runMicTest() started while this one was awaiting getUserMedia — this stream
+    // lost the race, stop it immediately so its device LED doesn't stay lit.
+    stream.getTracks().forEach(t => t.stop());
+    return;
+  }
+  micStream = stream;
 
   micReady = true;
   setMicState('ready');
@@ -111,6 +126,7 @@ async function runMicTest() {
   micTestBtn.textContent = 'Retest microphone';
   micTestBtn.classList.add('retest');
   await populateDeviceList(micDeviceSelect, 'audioinput');
+  if (myGen !== micTestGen) return; // superseded while populating the device list
 
   micAudioCtx = new AudioContext();
   const source = micAudioCtx.createMediaStreamSource(micStream);
@@ -121,7 +137,7 @@ async function runMicTest() {
   const barCount = micLevelBars.length;
 
   function tick() {
-    if (!micStream) return;
+    if (myGen !== micTestGen || !micStream) return;
     analyser.getByteFrequencyData(data);
     const chunk = Math.floor(data.length / barCount);
     for (let i = 0; i < barCount; i++) {
@@ -160,15 +176,25 @@ function stopCamTest() {
 async function runCamTest() {
   stopCamTest();
   const deviceId = camDeviceSelect.value;
+  const myGen = ++camTestGen;
+  let stream;
   try {
-    camStream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       video: deviceId ? { deviceId: { exact: deviceId } } : true,
     });
   } catch (err) {
+    if (myGen !== camTestGen) return; // superseded by a newer call while awaiting
     setCamState('blocked');
     showCamConfirm('blocked', 'Could not access the camera — check Chrome and OS permission settings.');
     return;
   }
+  if (myGen !== camTestGen) {
+    // A newer runCamTest() started while this one was awaiting getUserMedia — this stream
+    // lost the race, stop it immediately so its device LED doesn't stay lit.
+    stream.getTracks().forEach(t => t.stop());
+    return;
+  }
+  camStream = stream;
 
   camReady = true;
   setCamState('ready');
@@ -179,6 +205,7 @@ async function runCamTest() {
   camTestBtn.textContent = 'Retest camera';
   camTestBtn.classList.add('retest');
   await populateDeviceList(camDeviceSelect, 'videoinput');
+  if (myGen !== camTestGen) return; // superseded while populating the device list
 
   checkCompletion();
 }
