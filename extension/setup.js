@@ -20,7 +20,9 @@ const camConfirm       = document.getElementById('cam-confirm');
 const camDeviceSelect  = document.getElementById('cam-device-select');
 const camTestBtn       = document.getElementById('cam-test-btn');
 
-const completionBanner = document.getElementById('completion-banner');
+const returnBtn = document.getElementById('return-btn');
+const countdownBanner = document.getElementById('countdown-banner');
+const countdownSeconds = document.getElementById('countdown-seconds');
 
 let micReady = false;
 let camReady = false;
@@ -216,10 +218,35 @@ camDeviceSelect.addEventListener('change', () => { if (camReady) runCamTest(); }
 function checkCompletion() {
   const micCardVisible = micCard.style.display !== 'none';
   const camCardVisible = camCard.style.display !== 'none';
+  const anyGranted = (micCardVisible && micReady) || (camCardVisible && camReady);
   const micDone = !micCardVisible || micReady;
   const camDone = !camCardVisible || camReady;
-  if (micDone && camDone && (micCardVisible || camCardVisible)) {
-    completionBanner.classList.add('show');
-    setTimeout(() => window.close(), 1500);
+  const allDone = micDone && camDone && (micCardVisible || camCardVisible);
+
+  if (!anyGranted) {
+    returnBtn.classList.remove('show');
+    return;
   }
+  returnBtn.classList.add('show');
+  returnBtn.textContent = allDone ? 'All set — return to side panel' : 'Return to side panel';
+  returnBtn.dataset.allDone = allDone ? '1' : '';
 }
+
+returnBtn.addEventListener('click', () => {
+  if (returnBtn.dataset.allDone === '1') {
+    returnBtn.classList.remove('show');
+    countdownBanner.classList.add('show');
+    let seconds = 5;
+    countdownSeconds.textContent = seconds;
+    const interval = setInterval(() => {
+      seconds -= 1;
+      countdownSeconds.textContent = seconds;
+      if (seconds <= 0) {
+        clearInterval(interval);
+        window.close();
+      }
+    }, 1000);
+  } else {
+    window.close();
+  }
+});

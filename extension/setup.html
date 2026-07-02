@@ -145,7 +145,18 @@
       border: 0.5px solid var(--border);
     }
 
-    .completion-banner {
+    .return-btn {
+      display: none;
+      width: 100%;
+      background: var(--brand); color: #fff;
+      border: none; border-radius: 8px;
+      padding: 12px; font-size: 13px; font-weight: 600;
+      cursor: pointer;
+      margin-top: 16px;
+    }
+    .return-btn.show { display: block; }
+
+    .countdown-banner {
       display: none;
       align-items: center; gap: 8px;
       font-size: 13px; color: #166534;
@@ -154,7 +165,7 @@
       padding: 12px 14px;
       margin-top: 16px;
     }
-    .completion-banner.show { display: flex; }
+    .countdown-banner.show { display: flex; }
   </style>
 </head>
 <body>
@@ -215,9 +226,10 @@
       </div>
     </div>
 
-    <div class="completion-banner" id="completion-banner">
+    <button class="return-btn" id="return-btn" type="button">Return to side panel</button>
+    <div class="countdown-banner" id="countdown-banner">
       <span>✓</span>
-      <div><b>All set!</b> Closing this tab automatically — head back to the side panel.</div>
+      <div><b>Thanks for granting permission!</b> Returning you to the extension in <span id="countdown-seconds">5</span>…</div>
     </div>
   </div>
 

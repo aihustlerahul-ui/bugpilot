@@ -707,6 +707,9 @@ function renderMicPermissionStatus() {
   const state = micPermissionStatus ? micPermissionStatus.state : 'prompt';
   micStatusDot.className = 'media-status-dot' + (state === 'granted' ? ' granted' : state === 'denied' ? ' denied' : '');
   micStatusLabel.textContent = state === 'granted' ? 'Ready' : state === 'denied' ? 'Blocked' : 'Not yet granted';
+  // This also fires via permissions.onchange when granted from the setup page tab —
+  // the persistent help message needs to clear there too, not just on a successful click.
+  if (state === 'granted') hideMediaPermissionHelp();
 }
 
 micStatusChip.addEventListener('click', async () => {
@@ -754,6 +757,7 @@ function renderCamPermissionStatus() {
   const state = camPermissionStatus ? camPermissionStatus.state : 'prompt';
   camStatusDot.className = 'media-status-dot' + (state === 'granted' ? ' granted' : state === 'denied' ? ' denied' : '');
   camStatusLabel.textContent = state === 'granted' ? 'Ready' : state === 'denied' ? 'Blocked' : 'Not yet granted';
+  if (state === 'granted') hideMediaPermissionHelp();
 }
 
 camStatusChip.addEventListener('click', async () => {
