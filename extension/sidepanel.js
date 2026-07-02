@@ -48,6 +48,13 @@ const videoRecTimer      = document.getElementById('video-rec-timer');
 const videoAttachRow     = document.getElementById('video-attach-row');
 const videoAttachSelect  = document.getElementById('video-attach-select');
 const btnDiscardVideo    = document.getElementById('btn-discard-video');
+const mediaStatusRow  = document.getElementById('media-status-row');
+const micStatusChip   = document.getElementById('mic-status-chip');
+const micStatusDot    = document.getElementById('mic-status-dot');
+const micStatusLabel  = document.getElementById('mic-status-label');
+const camStatusChip   = document.getElementById('cam-status-chip');
+const camStatusDot    = document.getElementById('cam-status-dot');
+const camStatusLabel  = document.getElementById('cam-status-label');
 
 let videoMediaRecorder = null;
 let videoChunks = [];
@@ -525,6 +532,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.qa_ext_settings) {
     applyMultiTabVisibility(changes.qa_ext_settings.newValue);
     applyVideoRecordingVisibility(changes.qa_ext_settings.newValue);
+    applyMediaStatusRowVisibility(changes.qa_ext_settings.newValue);
+    refreshMicPermissionStatus();
+    refreshCamPermissionStatus();
   }
   if (changes.qa_multitab_recorded_tabs) {
     applyMultiTabBadge(changes.qa_multitab_recorded_tabs.newValue);
@@ -581,8 +591,11 @@ function applyMultiTabVisibility(settings) {
 chrome.storage.local.get(['qa_ext_settings', 'qa_multitab_mode', 'qa_multitab_recorded_tabs'], function (r) {
   applyMultiTabVisibility(r.qa_ext_settings);
   applyVideoRecordingVisibility(r.qa_ext_settings);
+  applyMediaStatusRowVisibility(r.qa_ext_settings);
   applyMultiTabToggle(r.qa_multitab_mode ?? false);
   applyMultiTabBadge(r.qa_multitab_recorded_tabs);
+  refreshMicPermissionStatus();
+  refreshCamPermissionStatus();
 });
 
 // ── Video recording ───────────────────────────────────────────────────────────
@@ -590,6 +603,50 @@ function applyVideoRecordingVisibility(settings) {
   const enabled = !!(settings && settings.videoRecordingEnabled);
   videoRecRow.style.display = enabled ? '' : 'none';
 }
+
+// ── Media permission status ───────────────────────────────────────────────────
+function applyMediaStatusRowVisibility(settings) {
+  const show = !!(settings && (settings.captureAudioEnabled || settings.captureWebcamEnabled));
+  mediaStatusRow.style.display = show ? 'flex' : 'none';
+  micStatusChip.style.display = settings && settings.captureAudioEnabled ? '' : 'none';
+  camStatusChip.style.display = settings && settings.captureWebcamEnabled ? '' : 'none';
+}
+
+let micPermissionStatus = null;
+
+async function refreshMicPermissionStatus() {
+  try {
+    micPermissionStatus = await navigator.permissions.query({ name: 'microphone' });
+    renderMicPermissionStatus();
+    micPermissionStatus.onchange = renderMicPermissionStatus;
+  } catch (_) {
+    // navigator.permissions.query for 'microphone' is unsupported in some contexts —
+    // fail closed to the "prompt" visual state so the chip still offers a click-to-request.
+    micStatusDot.className = 'media-status-dot';
+    micStatusLabel.textContent = 'Unknown';
+  }
+}
+
+function renderMicPermissionStatus() {
+  const state = micPermissionStatus ? micPermissionStatus.state : 'prompt';
+  micStatusDot.className = 'media-status-dot' + (state === 'granted' ? ' granted' : state === 'denied' ? ' denied' : '');
+  micStatusLabel.textContent = state === 'granted' ? 'Ready' : state === 'denied' ? 'Blocked' : 'Not yet granted';
+}
+
+micStatusChip.addEventListener('click', async () => {
+  const state = micPermissionStatus ? micPermissionStatus.state : 'prompt';
+  if (state === 'denied') {
+    chrome.tabs.create({ url: 'chrome://settings/content/microphone' });
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach(t => t.stop());
+    refreshMicPermissionStatus();
+  } catch (_) {
+    refreshMicPermissionStatus();
+  }
+});
 
 // Turns a getUserMedia() rejection into an actionable message. Chrome does NOT show its
 // own permission prompt when a prior decision is already stored for this origin (or when
