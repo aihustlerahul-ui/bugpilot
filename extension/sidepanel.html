@@ -439,6 +439,20 @@
     .media-status-dot.granted { background: var(--green); }
     .media-status-dot.denied { background: var(--red); }
     .media-status-icon { font-size: 12px; line-height: 1; }
+    .media-level-meter {
+      width: 28px; height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+      display: inline-block;
+    }
+    .media-level-bar {
+      display: block;
+      height: 100%;
+      width: 0%;
+      background: var(--green);
+      transition: width 60ms linear;
+    }
 
     .btn-delete-replay {
       background: none; border: none; cursor: pointer;
@@ -593,8 +607,11 @@
     <div class="media-status-row" id="media-status-row" style="display:none">
       <button class="media-status-chip" id="mic-status-chip" type="button">
         <span class="media-status-dot" id="mic-status-dot"></span>
-        <span class="media-status-icon">🎤</span>
+        <span class="media-status-icon" id="mic-mute-icon">🎤</span>
         <span id="mic-status-label">Checking…</span>
+        <span class="media-level-meter" id="mic-level-meter" style="display:none">
+          <span class="media-level-bar" id="mic-level-bar"></span>
+        </span>
       </button>
       <button class="media-status-chip" id="cam-status-chip" type="button">
         <span class="media-status-dot" id="cam-status-dot"></span>

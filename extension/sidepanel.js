@@ -55,6 +55,9 @@ const micStatusLabel  = document.getElementById('mic-status-label');
 const camStatusChip   = document.getElementById('cam-status-chip');
 const camStatusDot    = document.getElementById('cam-status-dot');
 const camStatusLabel  = document.getElementById('cam-status-label');
+const micMuteIcon  = document.getElementById('mic-mute-icon');
+const micLevelMeter = document.getElementById('mic-level-meter');
+const micLevelBar   = document.getElementById('mic-level-bar');
 
 let videoMediaRecorder = null;
 let videoChunks = [];
@@ -67,6 +70,42 @@ let webcamBlob = null;
 let activeAudioCtx = null;
 let activeMicStream = null;
 let activeWebcamStream = null;
+let micMuted = false;
+let micAnalyser = null;
+let micLevelRafId = null;
+
+function startMicLevelMeter(stream) {
+  const audioCtx = new AudioContext();
+  const source = audioCtx.createMediaStreamSource(stream);
+  micAnalyser = audioCtx.createAnalyser();
+  micAnalyser.fftSize = 256;
+  source.connect(micAnalyser);
+  const data = new Uint8Array(micAnalyser.frequencyBinCount);
+  micLevelMeter.style.display = '';
+
+  function tick() {
+    if (!activeMicStream) {
+      micLevelMeter.style.display = 'none';
+      micLevelBar.style.width = '0%';
+      audioCtx.close().catch(() => {});
+      return;
+    }
+    micAnalyser.getByteFrequencyData(data);
+    const avg = data.reduce((a, b) => a + b, 0) / data.length;
+    micLevelBar.style.width = `${Math.min(100, (avg / 255) * 100 * 2)}%`;
+    micLevelRafId = requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+micStatusChip.addEventListener('click', () => {
+  // Only toggle mute if a recording is active and mic is already granted — otherwise this
+  // click falls through to the request/open-settings handler registered in Task 3.
+  if (!activeMicStream) return;
+  micMuted = !micMuted;
+  activeMicStream.getAudioTracks().forEach(track => { track.enabled = !micMuted; });
+  micMuteIcon.textContent = micMuted ? '🔇' : '🎤';
+}, { capture: true });
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let isRecording    = false;
@@ -634,6 +673,7 @@ function renderMicPermissionStatus() {
 }
 
 micStatusChip.addEventListener('click', async () => {
+  if (activeMicStream) return; // handled by the mute toggle above during an active recording
   const state = micPermissionStatus ? micPermissionStatus.state : 'prompt';
   if (state === 'denied') {
     chrome.tabs.create({ url: 'chrome://settings/content/microphone' });
@@ -738,6 +778,7 @@ async function startVideoRecording() {
     try {
       const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       activeMicStream = micStream;
+      startMicLevelMeter(micStream);
       const audioCtx = new AudioContext();
       activeAudioCtx = audioCtx;
       const dest = audioCtx.createMediaStreamDestination();
@@ -805,6 +846,8 @@ function stopVideoRecording() {
     activeAudioCtx = null;
   }
   activeMicStream = null;
+  micMuted = false;
+  micMuteIcon.textContent = '🎤';
   activeWebcamStream = null;
   clearInterval(videoRecTimerInterval);
   videoRecTimerRow.style.display = 'none';
