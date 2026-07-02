@@ -232,7 +232,6 @@ export function VideoPlayer({ videoUrl, webcamUrl, issueTitle }: VideoPlayerProp
           ? 'fixed inset-0 z-[200] flex flex-col bg-black'
           : 'relative w-full rounded-lg overflow-hidden ring-1 ring-gray-200 bg-black'
       }
-      style={isFullscreen ? undefined : { maxHeight: '480px' }}
       role={isFullscreen ? 'dialog' : undefined}
       aria-modal={isFullscreen ? true : undefined}
       aria-label={isFullscreen ? (issueTitle ?? 'Screen recording') : undefined}
