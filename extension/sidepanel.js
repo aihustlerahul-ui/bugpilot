@@ -83,10 +83,10 @@ function hideMediaPermissionHelp() {
 function showSidePanelPermissionHelp(label) {
   mediaPermissionHelp.innerHTML =
     `${label} didn't prompt — Chrome's side panel doesn't reliably support camera/mic permission popups. ` +
-    `<a id="media-permission-help-link">Open this panel in a new tab</a> and grant it there once — it'll then work here too.`;
+    `<a id="media-permission-help-link">Open the setup page</a> and grant it there once — it'll then work here too.`;
   mediaPermissionHelp.style.display = '';
   document.getElementById('media-permission-help-link').addEventListener('click', () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html') });
+    chrome.tabs.create({ url: chrome.runtime.getURL('setup.html') });
   });
 }
 
