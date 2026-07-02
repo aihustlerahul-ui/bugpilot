@@ -9,6 +9,23 @@ interface VideoPlayerProps {
 
 const SPEEDS = [0.5, 1, 1.5, 2, 4]
 
+type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+const WEBCAM_CORNER_KEY = 'qa-video-webcam-corner'
+const VALID_CORNERS: Corner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
+
+function loadSavedCorner(): Corner {
+  if (typeof window === 'undefined') return 'bottom-right'
+  const saved = window.localStorage.getItem(WEBCAM_CORNER_KEY)
+  return (VALID_CORNERS as string[]).includes(saved ?? '') ? (saved as Corner) : 'bottom-right'
+}
+
+const CORNER_CLASSES: Record<Corner, string> = {
+  'top-left': 'top-3 left-3',
+  'top-right': 'top-3 right-3',
+  'bottom-left': 'bottom-3 left-3',
+  'bottom-right': 'bottom-3 right-3',
+}
+
 const IconPlay = () => (
   <svg width="12" height="14" viewBox="0 0 12 14" fill="currentColor">
     <polygon points="2,1 11,7 2,13"/>
@@ -69,6 +86,10 @@ export function VideoPlayer({ videoUrl, webcamUrl, issueTitle }: VideoPlayerProp
   // null when the pointer isn't over it. Separate from the drag/scrub state above —
   // hovering shows a preview without moving playback position.
   const [hoverRatio, setHoverRatio] = useState<number | null>(null)
+
+  const [corner, setCorner] = useState<Corner>(() => loadSavedCorner())
+  const [dragging, setDragging] = useState(false)
+  const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null)
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current
@@ -141,6 +162,49 @@ export function VideoPlayer({ videoUrl, webcamUrl, issueTitle }: VideoPlayerProp
     return () => document.removeEventListener('mousedown', close)
   }, [speedOpen])
 
+  const handleWebcamPointerDown = useCallback((e: React.PointerEvent<HTMLVideoElement>) => {
+    e.preventDefault()
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+    ;(e.target as HTMLVideoElement).setPointerCapture(e.pointerId)
+    setDragging(true)
+
+    const rect = wrapper.getBoundingClientRect()
+    const webcamSize = 120
+
+    const onMove = (ev: PointerEvent) => {
+      const x = Math.max(0, Math.min(rect.width - webcamSize, ev.clientX - rect.left - webcamSize / 2))
+      const y = Math.max(0, Math.min(rect.height - webcamSize, ev.clientY - rect.top - webcamSize / 2))
+      setDragPosition({ x, y })
+    }
+
+    const onUp = (ev: PointerEvent) => {
+      const x = ev.clientX - rect.left
+      const y = ev.clientY - rect.top
+      const corners: { key: Corner; cx: number; cy: number }[] = [
+        { key: 'top-left', cx: 0, cy: 0 },
+        { key: 'top-right', cx: rect.width, cy: 0 },
+        { key: 'bottom-left', cx: 0, cy: rect.height },
+        { key: 'bottom-right', cx: rect.width, cy: rect.height },
+      ]
+      let nearest = corners[0]
+      let nearestDist = Infinity
+      for (const c of corners) {
+        const dist = Math.hypot(x - c.cx, y - c.cy)
+        if (dist < nearestDist) { nearestDist = dist; nearest = c }
+      }
+      setCorner(nearest.key)
+      window.localStorage.setItem(WEBCAM_CORNER_KEY, nearest.key)
+      setDragging(false)
+      setDragPosition(null)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [])
+
   const toggleFullscreen = useCallback(() => {
     setIsFullscreen(prev => !prev)
   }, [])
@@ -186,8 +250,15 @@ export function VideoPlayer({ videoUrl, webcamUrl, issueTitle }: VideoPlayerProp
             ref={webcamRef}
             src={webcamUrl}
             muted
-            className="absolute bottom-3 right-3 rounded-full ring-2 ring-white shadow-lg pointer-events-none"
-            style={{ width: '120px', height: '120px', objectFit: 'cover' }}
+            onPointerDown={handleWebcamPointerDown}
+            className={`absolute rounded-full ring-2 ring-white shadow-lg cursor-grab active:cursor-grabbing ${
+              dragPosition ? '' : CORNER_CLASSES[corner]
+            } ${dragging ? 'transition-none' : 'transition-[top,left,right,bottom] duration-150'}`}
+            style={
+              dragPosition
+                ? { width: '120px', height: '120px', objectFit: 'cover', left: dragPosition.x, top: dragPosition.y }
+                : { width: '120px', height: '120px', objectFit: 'cover' }
+            }
           />
         )}
       </div>
