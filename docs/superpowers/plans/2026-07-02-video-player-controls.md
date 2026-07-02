@@ -15,6 +15,7 @@
 - Playback speed options are `[0.5, 1, 1.5, 2, 4]` — the exact same `SPEEDS` array already used in `ReplayPlayer.tsx`, for visual/behavioral consistency between the two player types.
 - No test framework exists for `platform/` components (`ReplayPlayer.tsx` itself has no unit tests) — verification is TypeScript compilation (`npx tsc --noEmit`, baseline is `17` pre-existing errors, confirmed via `git stash` comparison — this feature must not change that count) plus a manual test checklist, matching how prior platform-touching tasks in this project were verified.
 - `Issue.videoUrl` and `Issue.webcamUrl` are both `string | null | undefined` per the existing `platform/lib/types.ts` `Issue` interface — do not change that interface.
+- The webcam overlay is draggable within the player and snaps to one of 4 corners (`top-left`, `top-right`, `bottom-left`, `bottom-right`) on release — computed by nearest-corner distance from the release point, not free-form positioning. The chosen corner persists to `localStorage` under the key `qa-video-webcam-corner` as one global preference shared across every video viewed in this browser (not per-issue). Dragging works identically in both inline and fullscreen layouts, since corner position is always computed relative to the player's own bounding box via `getBoundingClientRect()`.
 
 ---
 
@@ -534,7 +535,143 @@ git commit -m "feat(platform): use VideoPlayer component on the issue detail pag
 
 ---
 
-### Task 4: End-to-end verification
+### Task 4: Draggable, corner-snapping webcam overlay
+
+**Files:**
+- Modify: `platform/components/VideoPlayer.tsx`
+
+**Interfaces:**
+- Consumes: `webcamRef`, `wrapperRef` (from Task 1), the webcam `<video>` JSX block (from Task 1, modified here).
+- Produces: no new exports — this is an internal interaction addition to the existing `VideoPlayer` component.
+
+- [ ] **Step 1: Add corner state, initialized from `localStorage`**
+
+```tsx
+// platform/components/VideoPlayer.tsx — add this type alongside the other top-level
+// declarations (near SPEEDS):
+type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+const WEBCAM_CORNER_KEY = 'qa-video-webcam-corner'
+const VALID_CORNERS: Corner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
+
+function loadSavedCorner(): Corner {
+  if (typeof window === 'undefined') return 'bottom-right'
+  const saved = window.localStorage.getItem(WEBCAM_CORNER_KEY)
+  return (VALID_CORNERS as string[]).includes(saved ?? '') ? (saved as Corner) : 'bottom-right'
+}
+
+const CORNER_CLASSES: Record<Corner, string> = {
+  'top-left': 'top-3 left-3',
+  'top-right': 'top-3 right-3',
+  'bottom-left': 'bottom-3 left-3',
+  'bottom-right': 'bottom-3 right-3',
+}
+```
+
+```tsx
+// platform/components/VideoPlayer.tsx — inside the VideoPlayer component, add alongside
+// the other useState calls from Tasks 1-2:
+  const [corner, setCorner] = useState<Corner>(() => loadSavedCorner())
+  const [dragging, setDragging] = useState(false)
+  const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null)
+```
+
+- [ ] **Step 2: Add the drag handlers**
+
+```tsx
+// platform/components/VideoPlayer.tsx — add alongside the other handlers from Tasks 1-2:
+  const handleWebcamPointerDown = useCallback((e: React.PointerEvent<HTMLVideoElement>) => {
+    e.preventDefault()
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+    ;(e.target as HTMLVideoElement).setPointerCapture(e.pointerId)
+    setDragging(true)
+
+    const rect = wrapper.getBoundingClientRect()
+    const webcamSize = 120
+
+    const onMove = (ev: PointerEvent) => {
+      const x = Math.max(0, Math.min(rect.width - webcamSize, ev.clientX - rect.left - webcamSize / 2))
+      const y = Math.max(0, Math.min(rect.height - webcamSize, ev.clientY - rect.top - webcamSize / 2))
+      setDragPosition({ x, y })
+    }
+
+    const onUp = (ev: PointerEvent) => {
+      const x = ev.clientX - rect.left
+      const y = ev.clientY - rect.top
+      const corners: { key: Corner; cx: number; cy: number }[] = [
+        { key: 'top-left', cx: 0, cy: 0 },
+        { key: 'top-right', cx: rect.width, cy: 0 },
+        { key: 'bottom-left', cx: 0, cy: rect.height },
+        { key: 'bottom-right', cx: rect.width, cy: rect.height },
+      ]
+      let nearest = corners[0]
+      let nearestDist = Infinity
+      for (const c of corners) {
+        const dist = Math.hypot(x - c.cx, y - c.cy)
+        if (dist < nearestDist) { nearestDist = dist; nearest = c }
+      }
+      setCorner(nearest.key)
+      window.localStorage.setItem(WEBCAM_CORNER_KEY, nearest.key)
+      setDragging(false)
+      setDragPosition(null)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [])
+```
+
+- [ ] **Step 3: Wire the drag handler and live position into the webcam `<video>` element**
+
+```tsx
+// platform/components/VideoPlayer.tsx — replace the existing webcam video block from Task 1:
+//         {webcamUrl && (
+//           <video
+//             ref={webcamRef}
+//             src={webcamUrl}
+//             muted
+//             className="absolute bottom-3 right-3 rounded-full ring-2 ring-white shadow-lg pointer-events-none"
+//             style={{ width: '120px', height: '120px', objectFit: 'cover' }}
+//           />
+//         )}
+// with:
+        {webcamUrl && (
+          <video
+            ref={webcamRef}
+            src={webcamUrl}
+            muted
+            onPointerDown={handleWebcamPointerDown}
+            className={`absolute rounded-full ring-2 ring-white shadow-lg cursor-grab active:cursor-grabbing ${
+              dragPosition ? '' : CORNER_CLASSES[corner]
+            } ${dragging ? 'transition-none' : 'transition-[top,left,right,bottom] duration-150'}`}
+            style={
+              dragPosition
+                ? { width: '120px', height: '120px', objectFit: 'cover', left: dragPosition.x, top: dragPosition.y }
+                : { width: '120px', height: '120px', objectFit: 'cover' }
+            }
+          />
+        )}
+```
+
+Note: this removes the `pointer-events-none` class the webcam video had in Task 1 — it needs to receive pointer events now to be draggable. This is intentional; the circle no longer needs to be click-through since dragging is now its primary interaction.
+
+- [ ] **Step 4: Verify TypeScript compiles with no new errors**
+
+Run: `cd platform && npx tsc --noEmit 2>&1 | grep -c "error TS"`
+Expected: `17` (unchanged baseline).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add platform/components/VideoPlayer.tsx
+git commit -m "feat(platform): make webcam overlay draggable with corner-snapping and persisted position"
+```
+
+---
+
+### Task 5: End-to-end verification
 
 **Files:** none (verification only)
 
@@ -558,7 +695,11 @@ On an issue that has both `videoUrl` and `webcamUrl` (recorded with Capture Webc
 
 On an issue with only `videoUrl` (no webcam recorded), confirm the player renders and functions identically minus the webcam circle — no broken layout or console errors from the absent `webcamUrl`.
 
-- [ ] **Step 6: Final regression check**
+- [ ] **Step 6: Manual test — draggable webcam corner-snapping and persistence**
+
+Drag the webcam circle to each of the 4 corners in turn (inline layout) — confirm it follows the cursor while dragging and snaps cleanly to the nearest corner on release. Reload the page — confirm the circle reopens at the last-snapped corner (persisted via `localStorage`). Repeat the drag test in fullscreen mode — confirm the same drag/snap behavior works identically there. Open a different issue with its own video — confirm it also opens at the same globally-persisted corner (not reset to bottom-right), matching the spec's "one global preference" requirement.
+
+- [ ] **Step 7: Final regression check**
 
 Run: `cd platform && npx tsc --noEmit 2>&1 | grep -c "error TS"`
 Expected: `17` (unchanged from the pre-feature baseline established at plan-writing time).
@@ -566,6 +707,6 @@ Expected: `17` (unchanged from the pre-feature baseline established at plan-writ
 Run: `cd backend && npx jest`
 Expected: all existing tests still pass (10/10) — this feature touches no backend files, so this is a regression check, not new coverage.
 
-- [ ] **Step 7: Commit final verification notes (if any fixes were needed)**
+- [ ] **Step 8: Commit final verification notes (if any fixes were needed)**
 
 If any bugs were found and fixed during manual verification, commit those fixes with descriptive messages before considering the feature complete. If no fixes were needed, this task requires no commit.
