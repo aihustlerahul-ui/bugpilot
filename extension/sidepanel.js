@@ -648,6 +648,40 @@ micStatusChip.addEventListener('click', async () => {
   }
 });
 
+let camPermissionStatus = null;
+
+async function refreshCamPermissionStatus() {
+  try {
+    camPermissionStatus = await navigator.permissions.query({ name: 'camera' });
+    renderCamPermissionStatus();
+    camPermissionStatus.onchange = renderCamPermissionStatus;
+  } catch (_) {
+    camStatusDot.className = 'media-status-dot';
+    camStatusLabel.textContent = 'Unknown';
+  }
+}
+
+function renderCamPermissionStatus() {
+  const state = camPermissionStatus ? camPermissionStatus.state : 'prompt';
+  camStatusDot.className = 'media-status-dot' + (state === 'granted' ? ' granted' : state === 'denied' ? ' denied' : '');
+  camStatusLabel.textContent = state === 'granted' ? 'Ready' : state === 'denied' ? 'Blocked' : 'Not yet granted';
+}
+
+camStatusChip.addEventListener('click', async () => {
+  const state = camPermissionStatus ? camPermissionStatus.state : 'prompt';
+  if (state === 'denied') {
+    chrome.tabs.create({ url: 'chrome://settings/content/camera' });
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    stream.getTracks().forEach(t => t.stop());
+    refreshCamPermissionStatus();
+  } catch (_) {
+    refreshCamPermissionStatus();
+  }
+});
+
 // Turns a getUserMedia() rejection into an actionable message. Chrome does NOT show its
 // own permission prompt when a prior decision is already stored for this origin (or when
 // the OS itself blocks the browser from the device) — in both cases the call rejects
