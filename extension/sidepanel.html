@@ -415,6 +415,31 @@
       font-size: 10.5px; color: #a16207;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    /* ── MEDIA STATUS ROW ── */
+    .media-status-row {
+      display: flex; gap: 8px;
+      padding: 0 14px 8px;
+    }
+    .media-status-chip {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 11px; font-weight: 500;
+      color: var(--text-mid);
+      cursor: pointer;
+    }
+    .media-status-chip:disabled { cursor: default; }
+    .media-status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%; flex-shrink: 0;
+      background: var(--text-lo);
+    }
+    .media-status-dot.granted { background: var(--green); }
+    .media-status-dot.denied { background: var(--red); }
+    .media-status-icon { font-size: 12px; line-height: 1; }
+
     .btn-delete-replay {
       background: none; border: none; cursor: pointer;
       font-size: 11px; color: #b45309; font-weight: 600;
@@ -564,6 +589,18 @@
         <option value="">Attach to issue…</option>
       </select>
       <button class="btn-delete-replay" id="btn-discard-video">Discard</button>
+    </div>
+    <div class="media-status-row" id="media-status-row" style="display:none">
+      <button class="media-status-chip" id="mic-status-chip" type="button">
+        <span class="media-status-dot" id="mic-status-dot"></span>
+        <span class="media-status-icon">🎤</span>
+        <span id="mic-status-label">Checking…</span>
+      </button>
+      <button class="media-status-chip" id="cam-status-chip" type="button">
+        <span class="media-status-dot" id="cam-status-dot"></span>
+        <span class="media-status-icon">📷</span>
+        <span id="cam-status-label">Checking…</span>
+      </button>
     </div>
 
     <div class="replay-chip" id="replay-chip">
