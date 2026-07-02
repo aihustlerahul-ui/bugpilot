@@ -85,6 +85,15 @@ Web Platform      ──►  Same backend
   - *Attach clip & continue* — snapshots rrweb events up to that moment, attaches to bug; recording keeps going
   - *Stop & attach* — stops recorder at that point, saves full clip, attaches to bug; works for both single and multi-tab
   - Ignoring the section submits the bug without video; recording is never interrupted by default
+- **Real video screen recording** — opt-in workspace setting (`videoRecordingEnabled`), independent of rrweb replay; captures actual pixels for pages replay can't render faithfully (spreadsheets, canvas apps):
+  - Single-tab: `chrome.tabCapture` (seamless, no picker) · Multi-tab mode: `getDisplayMedia` (native screen/window/tab picker, follows tab switches)
+  - Attach at issue creation (checkbox in the bug modal when a recording is pending) or to an existing issue via a dropdown of the 10 most recent issues in the project
+  - Uploaded as WebM, stored in the private `videos` Storage bucket, signed URL on read
+- **Mic + tab audio capture** — opt-in (`captureAudioEnabled`); mic and tab audio mixed into the video's single audio track via a Web Audio `AudioContext` graph
+- **Webcam capture** — opt-in (`captureWebcamEnabled`); records a separate silent 320×240 WebM clip in lockstep with the screen recording, uploaded and attached alongside it (`webcam_storage_path` column)
+- **Mic mute + live level meter, webcam live preview** — while video recording is active, the sidepanel shows a mute toggle (routed through a Web Audio `GainNode`, not `track.enabled`, so the level meter keeps reading real input even while muted) and an animated 8-bar level meter, plus a small live camera preview thumbnail
+- **Media permission status row** — mic/camera chips (grey "Not yet granted" / green "Ready" / red "Blocked") shown next to Record Video whenever audio or webcam capture is enabled; clicking a chip re-triggers the browser permission prompt or opens `chrome://settings/content/...` when blocked; live-updates via `navigator.permissions.query(...).onchange`, no manual refresh needed
+- **Media setup page** (`setup.html`) — Chrome's side panel does not reliably show native `getUserMedia` permission prompts (a confirmed Side Panel API limitation — the identical page works fine as a normal tab). When a permission request fails from the side panel, a persistent inline banner links to this dedicated setup tab: mic and camera test cards with device pickers, a live level meter / camera preview to confirm each device actually works, then a "Return to side panel" button — becomes "All set" with a 5-second countdown once everything needed is granted. Granting here works because it's a real tab, and the permission decision is per-origin so it carries back to the side panel automatically.
 
 ### Web Platform (Next.js)
 - **Auth** — Supabase email/password, ES256 JWT, token stored in `sessionStorage`
@@ -92,6 +101,8 @@ Web Platform      ──►  Same backend
 - **Issues** — per-project issue list with detail view (screenshots via signed URLs)
 - **Session replay player** — rrweb-based `ReplayPlayer` on issue detail: play/pause, scrub, ±10s, speed, fullscreen overlay; shareable public link via replay token (`/replay/:token`)
   - Multi-tab replays render a tab strip above the viewport; player auto-switches the visible Replayer instance as playback crosses tab-switch timestamps; per-stream seek offsets keep all streams in sync
+- **Video player** — custom `VideoPlayer` component for real screen recordings on issue detail (replaces the native `<video controls>`): play/pause, scrub bar with hover-preview timestamp tooltip, volume + mute, playback speed (0.5×–4×), CSS-overlay fullscreen (not the native Fullscreen API, so the synced webcam circle stays visible while fullscreen)
+  - Webcam overlay is draggable — snaps to the nearest of 4 corners on release, position persisted to `localStorage` across every video viewed in the browser
 - **Connectors hub** — step-by-step setup guides for Azure DevOps, Jira, Trello, Monday
 - **Extension settings page** — screenshot mode selector with SVG previews, data capture toggles, connection status badge, download + install guide
 - **Sticky sidebar** — persistent navigation
@@ -100,8 +111,9 @@ Web Platform      ──►  Same backend
 - **Auth** — all routes validated via `supabase.auth.getUser(token)`
 - **Projects** CRUD — scoped to workspace owner
 - **Issues** — create with screenshot + optional replay upload; signed replay URL on GET; `DELETE /api/issues/:id` removes replay file from Storage then row (`replay_tokens` cascade via FK)
+- **Video/webcam uploads** — `POST /api/issues/upload-video` uploads a WebM blob to the private `videos` bucket, returns its storage path; `PATCH /api/issues/:id/video` links a `videoStoragePath`/`webcamStoragePath` to an issue; both signed into `videoUrl`/`webcamUrl` on `GET /api/issues/:id`
 - **Workspaces** — auto-created on first login; `settings` JSONB column for extension config
-- **GET/PATCH /workspaces/settings** — extension pulls/pushes screenshot mode + toggles; `multiTabRecording` boolean in settings schema
+- **GET/PATCH /workspaces/settings** — extension pulls/pushes screenshot mode + toggles; `multiTabRecording`, `videoRecordingEnabled`, `captureAudioEnabled`, `captureWebcamEnabled` booleans in settings schema
 - **CORS** — configurable via `CORS_ORIGINS` env var (comma-separated); `PLATFORM_URL` for replay link generation
 - **Azure DevOps integration** — PAT encrypted at rest (AES-256-GCM), creates work items, syncs issues
 - **Jira integration** — OAuth, create issues
@@ -129,6 +141,10 @@ Web Platform      ──►  Same backend
 | ✅ Done | Multi-tab recording — auto-inject rrweb on tab switch, tab-strip player, multi-stream format |
 | ✅ Done | Attach replay clip to bug mid-recording — snapshot without stopping, or stop & attach |
 | ✅ Done | Re-inject rrweb after refresh and back/forward navigation during recording |
+| ✅ Done | Real video screen recording — single/multi-tab capture, attach at creation or after |
+| ✅ Done | Mic + tab audio capture, webcam capture, mute + live level meter, webcam live preview |
+| ✅ Done | Media permission status row + dedicated setup page (Side Panel getUserMedia workaround) |
+| ✅ Done | Enhanced video player — scrub/volume/speed/fullscreen, draggable corner-snapping webcam overlay |
 | Low | Side-by-side diff view (expected vs actual screenshot) |
 | Low | Team workspaces (multi-user) |
 
@@ -158,3 +174,6 @@ The file path and line are shown as a clickable-style chip in the issue detail v
 | No banner / no page DOM pollution | Banner blocked navbar; side panel shows recording status |
 | 5 screenshot modes | Different teams need different fidelity; configurable per workspace |
 | Refresh token storage | Supabase JWTs expire in 1h; refresh tokens last 60 days |
+| Separate setup tab for mic/camera permission | Chrome's Side Panel API doesn't reliably show native `getUserMedia` prompts — confirmed via live testing (identical page works fine as a normal tab); granting once in a tab carries back to the side panel since the permission is per-origin |
+| Webcam mute via Web Audio `GainNode`, not `track.enabled` | `track.enabled = false` silences the track for every consumer, including the level meter's `AnalyserNode` — would make "muted" indistinguishable from "mic not working" |
+| CSS-overlay fullscreen, not the native Fullscreen API | Native fullscreen only fullscreens the `<video>` element itself; the webcam overlay (a DOM sibling) would disappear. A `fixed inset-0` state-driven overlay keeps everything in the DOM and visible |
