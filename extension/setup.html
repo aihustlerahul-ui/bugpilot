@@ -1,0 +1,226 @@
+<!-- extension/setup.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>QA Reporter — Media Setup</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --brand:       #5b5fc7;
+      --surface:     #ffffff;
+      --bg:          #f4f5fb;
+      --border:      #e2e4f0;
+      --text-hi:     #0f1124;
+      --text-mid:    #4b5066;
+      --text-lo:     #9097b3;
+      --green:       #22c55e;
+      --green-bg:    #f0fdf4;
+      --green-border:#bbf7d0;
+      --red:         #ef4444;
+      --red-bg:      #fef2f2;
+      --red-border:  #fecaca;
+      --radius:      8px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      min-height: 100vh;
+      padding: 48px 24px;
+    }
+
+    .page {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    .page-header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .page-brand {
+      display: inline-flex; align-items: center; gap: 8px;
+      margin-bottom: 10px;
+    }
+    .page-brand-icon {
+      width: 26px; height: 26px; border-radius: 7px;
+      background: var(--brand);
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 13px; font-weight: 600;
+    }
+    .page-brand-label { font-size: 13px; font-weight: 600; color: var(--text-mid); }
+    .page-title { font-size: 20px; font-weight: 600; color: var(--text-hi); margin: 0 0 6px; }
+    .page-subtitle { font-size: 13px; color: var(--text-lo); margin: 0; }
+
+    .cards { display: flex; gap: 16px; }
+
+    .card {
+      flex: 1;
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+    }
+    .card.ready { border-color: var(--green); }
+    .card.blocked { border-color: var(--red); }
+
+    .card-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .card-header-left { display: flex; align-items: center; gap: 8px; }
+    .card-icon { font-size: 17px; }
+    .card-label { font-size: 14px; font-weight: 600; color: var(--text-hi); }
+    .card-status {
+      font-size: 11px; font-weight: 600;
+      padding: 2px 8px; border-radius: 999px;
+      background: var(--bg); color: var(--text-lo);
+    }
+    .card-status.ready { background: var(--green-bg); color: #166534; }
+    .card-status.blocked { background: var(--red-bg); color: #991b1b; }
+
+    .test-area {
+      height: 96px;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 12px;
+      background: var(--bg);
+      overflow: hidden;
+      position: relative;
+    }
+    .test-area.ready { border: none; }
+
+    .level-meter {
+      display: flex; align-items: center; justify-content: center; gap: 3px;
+      width: 100%; height: 100%;
+    }
+    .level-bar {
+      width: 5px; height: 8%;
+      background: var(--green);
+      border-radius: 2px;
+      transition: height 80ms linear;
+    }
+
+    .cam-video {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      background: var(--text-hi);
+    }
+
+    .confirm-box {
+      display: none;
+      gap: 6px;
+      font-size: 11.5px; line-height: 1.4;
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin-bottom: 14px;
+    }
+    .confirm-box.show { display: flex; }
+    .confirm-box.ready { background: var(--green-bg); border: 1px solid var(--green-border); color: #166534; }
+    .confirm-box.blocked { background: var(--red-bg); border: 1px solid var(--red-border); color: #991b1b; }
+
+    .device-label {
+      font-size: 11px; color: var(--text-mid); font-weight: 600;
+      display: block; margin-bottom: 6px;
+    }
+    .device-select {
+      width: 100%; font-size: 12.5px; color: var(--text-hi);
+      border: 0.5px solid var(--border); border-radius: 8px;
+      padding: 8px 10px; background: var(--surface);
+      margin-bottom: 12px;
+    }
+
+    .test-btn {
+      width: 100%;
+      background: var(--brand); color: #fff;
+      border: none; border-radius: 8px;
+      padding: 10px; font-size: 13px; font-weight: 600;
+      cursor: pointer;
+    }
+    .test-btn.retest {
+      background: var(--bg); color: var(--text-mid);
+      border: 0.5px solid var(--border);
+    }
+
+    .completion-banner {
+      display: none;
+      align-items: center; gap: 8px;
+      font-size: 13px; color: #166534;
+      background: var(--green-bg); border: 1px solid var(--green-border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-top: 16px;
+    }
+    .completion-banner.show { display: flex; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="page-header">
+      <div class="page-brand">
+        <span class="page-brand-icon">Q</span>
+        <span class="page-brand-label">QA Reporter setup</span>
+      </div>
+      <h1 class="page-title">Enable mic &amp; camera</h1>
+      <p class="page-subtitle">This only works from a regular tab — that's why we brought you here.</p>
+    </div>
+
+    <div class="cards">
+      <div class="card" id="mic-card" style="display:none">
+        <div class="card-header">
+          <div class="card-header-left">
+            <span class="card-icon">🎤</span>
+            <span class="card-label">Microphone</span>
+          </div>
+          <span class="card-status" id="mic-card-status">Not started</span>
+        </div>
+        <div class="test-area" id="mic-test-area">
+          <div class="level-meter" id="mic-level-meter" style="display:none">
+            <span class="level-bar" id="mic-level-bar-0"></span>
+            <span class="level-bar" id="mic-level-bar-1"></span>
+            <span class="level-bar" id="mic-level-bar-2"></span>
+            <span class="level-bar" id="mic-level-bar-3"></span>
+            <span class="level-bar" id="mic-level-bar-4"></span>
+            <span class="level-bar" id="mic-level-bar-5"></span>
+            <span class="level-bar" id="mic-level-bar-6"></span>
+            <span class="level-bar" id="mic-level-bar-7"></span>
+          </div>
+          <span id="mic-test-area-icon" style="font-size:24px">🎤</span>
+        </div>
+        <div class="confirm-box" id="mic-confirm"></div>
+        <label class="device-label" for="mic-device-select">Microphone</label>
+        <select class="device-select" id="mic-device-select"></select>
+        <button class="test-btn" id="mic-test-btn" type="button">Test microphone</button>
+      </div>
+
+      <div class="card" id="cam-card" style="display:none">
+        <div class="card-header">
+          <div class="card-header-left">
+            <span class="card-icon">📷</span>
+            <span class="card-label">Camera</span>
+          </div>
+          <span class="card-status" id="cam-card-status">Not started</span>
+        </div>
+        <div class="test-area" id="cam-test-area">
+          <video class="cam-video" id="cam-preview" muted autoplay style="display:none"></video>
+          <span id="cam-test-area-icon" style="font-size:24px">📷</span>
+        </div>
+        <div class="confirm-box" id="cam-confirm"></div>
+        <label class="device-label" for="cam-device-select">Camera</label>
+        <select class="device-select" id="cam-device-select"></select>
+        <button class="test-btn" id="cam-test-btn" type="button">Test camera</button>
+      </div>
+    </div>
+
+    <div class="completion-banner" id="completion-banner">
+      <span>✓</span>
+      <div><b>All set!</b> Closing this tab automatically — head back to the side panel.</div>
+    </div>
+  </div>
+
+  <script src="setup.js"></script>
+</body>
+</html>
