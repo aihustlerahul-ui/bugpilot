@@ -1106,10 +1106,12 @@ chrome.runtime.onMessage.addListener((message) => {
       const projectId = projectSelect.value;
       const base64 = await blobToBase64(videoBlob);
       const webcamBase64 = webcamBlob ? await blobToBase64(webcamBlob) : undefined;
+      const thumbnailBase64 = thumbnailBlob ? await blobToBase64(thumbnailBlob) : undefined;
       const res = await chrome.runtime.sendMessage({
         type: 'UPLOAD_AND_ATTACH_VIDEO',
         base64,
         webcamBase64,
+        thumbnailBase64,
         projectId,
         issueId: message.issueId,
       });
@@ -1121,6 +1123,7 @@ chrome.runtime.onMessage.addListener((message) => {
         videoChunks = [];
         webcamBlob = null;
         webcamChunks = [];
+        thumbnailBlob = null;
         videoAttachRow.style.display = 'none';
         showToast('Recorded video attached to the issue ✓', 'success', 3500);
       } else {
