@@ -216,7 +216,7 @@ export function VideoPlayer({ videoUrl, webcamUrl, issueTitle }: VideoPlayerProp
 
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
-  }, [])
+  }, [webcamSize])
 
   const handleResizeHandlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault()
