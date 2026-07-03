@@ -60,6 +60,10 @@ const micMuteIcon  = document.getElementById('mic-mute-icon');
 const micLevelMeter = document.getElementById('mic-level-meter');
 const micLevelBar   = document.getElementById('mic-level-bar');
 const mediaPermissionHelp = document.getElementById('media-permission-help');
+const captureAudioToggle = document.getElementById('capture-audio-toggle');
+const captureAudioCheckbox = document.getElementById('capture-audio-checkbox');
+const captureWebcamToggle = document.getElementById('capture-webcam-toggle');
+const captureWebcamCheckbox = document.getElementById('capture-webcam-checkbox');
 
 function showMediaPermissionHelp(label, settingsUrl, reason) {
   mediaPermissionHelp.innerHTML =
@@ -686,6 +690,18 @@ function applyMediaStatusRowVisibility(settings) {
   mediaStatusRow.style.display = show ? 'flex' : 'none';
   micStatusChip.style.display = settings && settings.captureAudioEnabled ? '' : 'none';
   camStatusChip.style.display = settings && settings.captureWebcamEnabled ? '' : 'none';
+  captureAudioToggle.style.display = settings && settings.captureAudioEnabled ? 'flex' : 'none';
+  captureWebcamToggle.style.display = settings && settings.captureWebcamEnabled ? 'flex' : 'none';
+}
+
+function shouldCaptureAudio(settings) {
+  if (!settings || !settings.captureAudioEnabled) return false;
+  return captureAudioCheckbox.checked;
+}
+
+function shouldCaptureWebcam(settings) {
+  if (!settings || !settings.captureWebcamEnabled) return false;
+  return captureWebcamCheckbox.checked;
 }
 
 let micPermissionStatus = null;

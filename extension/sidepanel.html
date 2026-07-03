@@ -439,6 +439,12 @@
     .media-status-dot.granted { background: var(--green); }
     .media-status-dot.denied { background: var(--red); }
     .media-status-icon { font-size: 12px; line-height: 1; }
+    .capture-toggle {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 11px; color: var(--text-mid);
+      cursor: pointer; user-select: none;
+    }
+    .capture-toggle input { cursor: pointer; }
     .webcam-preview {
       width: 60px; height: 60px;
       border-radius: 50%;
@@ -640,6 +646,14 @@
         <span class="media-status-icon">📷</span>
         <span id="cam-status-label">Checking…</span>
       </button>
+      <label class="capture-toggle" id="capture-audio-toggle" style="display:none">
+        <input type="checkbox" id="capture-audio-checkbox" checked />
+        Audio
+      </label>
+      <label class="capture-toggle" id="capture-webcam-toggle" style="display:none">
+        <input type="checkbox" id="capture-webcam-checkbox" checked />
+        Webcam
+      </label>
       <video id="webcam-preview" class="webcam-preview" muted autoplay style="display:none"></video>
     </div>
     <div class="media-permission-help" id="media-permission-help" style="display:none"></div>
