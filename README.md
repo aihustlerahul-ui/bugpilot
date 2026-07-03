@@ -8,12 +8,12 @@ Click any element on any web page → instant bug report with screenshot, consol
 
 ## Stack
 
-| Layer | Tech | Port |
-|-------|------|------|
-| Chrome Extension | MV3, vanilla JS | — |
-| Web Platform | Next.js 14, TypeScript, Tailwind | 3000 |
-| Backend API | NestJS, TypeScript | 4000 (`/api` prefix) |
-| Database / Auth | Supabase (PostgreSQL + Auth + Storage) | — |
+| Layer            | Tech                                   | Port                 |
+| ---------------- | -------------------------------------- | -------------------- |
+| Chrome Extension | MV3, vanilla JS                        | —                    |
+| Web Platform     | Next.js 14, TypeScript, Tailwind       | 3000                 |
+| Backend API      | NestJS, TypeScript                     | 4000 (`/api` prefix) |
+| Database / Auth  | Supabase (PostgreSQL + Auth + Storage) | —                    |
 
 ## Getting started
 
@@ -51,6 +51,7 @@ npm run dev
 ## Key features
 
 ### Chrome Extension (v2.1)
+
 - **Side panel** — stays open while navigating; hover highlight + click to capture
 - **5 screenshot modes** — full, element crop, element context (default), full highlighted, both
 - **Annotation canvas** — 7 tools (rect, arrow, circle, freehand, text, blur, select); resize handles; undo; keep both/replace
@@ -61,6 +62,7 @@ npm run dev
 - **Buffer-first** — capture many issues, submit in batch; Save & Continue / Save & Submit / Submit All
 
 ### Web Platform
+
 - Projects + issue list with detail view
 - Session replay player — play/pause, scrub, speed, fullscreen; tab strip for multi-tab replays
 - Shareable public replay links (`/replay/:token`)
@@ -68,6 +70,7 @@ npm run dev
 - Connectors hub — Azure DevOps, Jira, Trello, Monday setup guides
 
 ### Backend
+
 - JWT auth via Supabase on every route
 - Screenshots + replays in private Supabase Storage (signed URLs)
 - Azure DevOps PAT encrypted at rest (AES-256-GCM)
