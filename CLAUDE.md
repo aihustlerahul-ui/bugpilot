@@ -28,7 +28,6 @@ project-3/
 │   ├── content.js      # injected into pages: hover highlight, in-page modal
 │   ├── content-styles.css  # all qa- prefixed, !important, design tokens as :root vars
 │   ├── sidepanel.html/js   # THE main UI: auth, recording controls, buffer list
-│   ├── popup.html/js   # legacy — no longer used (action has no default_popup)
 │   └── sidepanel.html  # side panel UI
 ├── platform/           # Next.js web app
 │   ├── app/(dashboard)/
@@ -186,7 +185,7 @@ cd platform && npm run dev
 - [x] Multi-tab recording — inject, track, collect, tab-strip player
 - [x] Attach replay clip to bug mid-recording — snapshot without stopping
 - [x] Re-inject rrweb after refresh and back/forward navigation
-- [ ] `popup.html/js` kept for reference but no longer launched (action has no `default_popup`)
+- [x] `popup.html/js` removed — was unreferenced dead code (action has no `default_popup`)
 - [ ] Multi-tab recording: end-to-end test in Chrome with 3+ tabs including refresh mid-session
 - [ ] `graphify-out/` — knowledge graph of this codebase (see below)
 
