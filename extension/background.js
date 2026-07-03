@@ -672,7 +672,7 @@ async function handleStartVideoRecording(message, sendResponse) {
 
 // ── UPLOAD_AND_ATTACH_VIDEO ───────────────────────────────────────────────────
 async function handleUploadAndAttachVideo(message, sendResponse) {
-  const { base64, webcamBase64, projectId, issueId } = message;
+  const { base64, webcamBase64, thumbnailBase64, projectId, issueId } = message;
   if (!base64 || !projectId) { sendResponse({ ok: false, error: 'Missing base64 or projectId' }); return; }
   try {
     let { qa_token: token } = await chrome.storage.local.get(['qa_token']);
@@ -722,9 +722,33 @@ async function handleUploadAndAttachVideo(message, sendResponse) {
       } catch (_) {}
     }
 
+    let thumbnailStoragePath;
+    if (thumbnailBase64) {
+      // Thumbnail upload failure is non-fatal — the video still attaches without a preview.
+      try {
+        let thumbnailUploadRes = await fetch(`${API_URL}/api/issues/upload-thumbnail`, {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({ project_id: projectId, thumbnail: thumbnailBase64 }),
+        });
+        if (thumbnailUploadRes.status === 401) {
+          token = await tryRefreshToken();
+          thumbnailUploadRes = await fetch(`${API_URL}/api/issues/upload-thumbnail`, {
+            method: 'POST',
+            headers: headers(),
+            body: JSON.stringify({ project_id: projectId, thumbnail: thumbnailBase64 }),
+          });
+        }
+        if (thumbnailUploadRes.ok) {
+          thumbnailStoragePath = (await thumbnailUploadRes.json()).storagePath;
+        }
+      } catch (_) {}
+    }
+
     if (issueId) {
       const patchBody = { videoStoragePath: storagePath };
       if (webcamStoragePath) patchBody.webcamStoragePath = webcamStoragePath;
+      if (thumbnailStoragePath) patchBody.thumbnailStoragePath = thumbnailStoragePath;
       let attachRes = await fetch(`${API_URL}/api/issues/${issueId}/video`, {
         method: 'PATCH',
         headers: headers(),
@@ -741,7 +765,7 @@ async function handleUploadAndAttachVideo(message, sendResponse) {
       if (!attachRes.ok) throw new Error(`Attach failed: ${attachRes.status} (video uploaded to ${storagePath} but not linked — retry attach from the sidepanel)`);
     }
 
-    sendResponse({ ok: true, storagePath, webcamStoragePath });
+    sendResponse({ ok: true, storagePath, webcamStoragePath, thumbnailStoragePath });
   } catch (err) {
     sendResponse({ ok: false, error: err.message || 'Video upload failed' });
   }

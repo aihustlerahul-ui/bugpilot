@@ -33,6 +33,27 @@ export class IssuesService {
     }
   }
 
+  private async uploadThumbnail(base64: string, path: string): Promise<string | null> {
+    try {
+      const buffer = Buffer.from(base64.replace(/^data:image\/\w+;base64,/, ''), 'base64')
+      const { error } = await this.supabase.db.storage
+        .from('videos')
+        .upload(path, buffer, { contentType: 'image/jpeg', upsert: false })
+      if (error) return null
+      return path
+    } catch {
+      return null
+    }
+  }
+
+  async uploadThumbnailFile(userId: string, projectId: string, base64: string): Promise<{ storagePath: string }> {
+    const timestamp = Date.now()
+    const path = `${userId}/${projectId}/${timestamp}-thumb.jpg`
+    const storagePath = await this.uploadThumbnail(base64, path)
+    if (!storagePath) throw new Error('Thumbnail upload failed')
+    return { storagePath }
+  }
+
   private async uploadScreenshot(base64: string, path: string): Promise<string | null> {
     try {
       const buffer = Buffer.from(

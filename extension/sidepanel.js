@@ -103,6 +103,7 @@ let videoRecTimerInterval = null;
 let webcamMediaRecorder = null;
 let webcamChunks = [];
 let webcamBlob = null;
+let thumbnailBlob = null;
 let activeAudioCtx = null;
 let activeMicStream = null;
 let activeWebcamStream = null;
@@ -929,8 +930,13 @@ async function startVideoRecording() {
   videoMediaRecorder.onstop = () => {
     videoBlob = new Blob(videoChunks, { type: 'video/webm' });
     stream.getTracks().forEach(t => t.stop());
-    chrome.storage.local.set({ qa_video_recording_pending: true });
-    showVideoAttachRow();
+    captureVideoThumbnail(videoBlob)
+      .then((blob) => { thumbnailBlob = blob; })
+      .catch(() => { thumbnailBlob = null; })
+      .finally(() => {
+        chrome.storage.local.set({ qa_video_recording_pending: true });
+        showVideoAttachRow();
+      });
   };
   videoMediaRecorder.start();
   videoRecStartedAt = Date.now();
@@ -992,6 +998,45 @@ async function populateVideoAttachDropdown() {
   } catch (_) {}
 }
 
+function captureVideoThumbnail(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const video = document.createElement('video');
+    video.muted = true;
+    video.src = url;
+
+    const cleanup = () => URL.revokeObjectURL(url);
+
+    video.onloadedmetadata = () => {
+      const seekTime = video.duration >= 2 ? 1 : video.duration / 2;
+      video.currentTime = seekTime;
+    };
+
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((thumbBlob) => {
+          cleanup();
+          if (thumbBlob) resolve(thumbBlob);
+          else reject(new Error('canvas.toBlob returned null'));
+        }, 'image/jpeg', 0.8);
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
+    };
+
+    video.onerror = () => {
+      cleanup();
+      reject(new Error('Thumbnail source video failed to load'));
+    };
+  });
+}
+
 function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1014,6 +1059,7 @@ btnDiscardVideo.addEventListener('click', () => {
   videoChunks = [];
   webcamBlob = null;
   webcamChunks = [];
+  thumbnailBlob = null;
   videoAttachRow.style.display = 'none';
   chrome.storage.local.set({ qa_video_recording_pending: false });
 });
@@ -1025,10 +1071,12 @@ videoAttachSelect.addEventListener('change', async () => {
   videoAttachSelect.disabled = true;
   const base64 = await blobToBase64(videoBlob);
   const webcamBase64 = webcamBlob ? await blobToBase64(webcamBlob) : undefined;
+  const thumbnailBase64 = thumbnailBlob ? await blobToBase64(thumbnailBlob) : undefined;
   const res = await chrome.runtime.sendMessage({
     type: 'UPLOAD_AND_ATTACH_VIDEO',
     base64,
     webcamBase64,
+    thumbnailBase64,
     projectId,
     issueId,
   });
@@ -1039,6 +1087,7 @@ videoAttachSelect.addEventListener('change', async () => {
     videoChunks = [];
     webcamBlob = null;
     webcamChunks = [];
+    thumbnailBlob = null;
     chrome.storage.local.set({ qa_video_recording_pending: false });
   } else {
     showToast(`Failed to attach video: ${res?.error || 'unknown error'}`, 'error', 4000);

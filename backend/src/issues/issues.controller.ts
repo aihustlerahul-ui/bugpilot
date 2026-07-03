@@ -5,6 +5,7 @@ import { IssuesService } from './issues.service'
 import { CreateIssueDto } from './dto/create-issue.dto'
 import { UploadVideoDto } from './dto/upload-video.dto'
 import { AttachVideoDto } from './dto/attach-video.dto'
+import { UploadThumbnailDto } from './dto/upload-thumbnail.dto'
 import type { AuthUser } from '../common/interfaces/auth-user.interface'
 
 @Controller('issues')
@@ -40,6 +41,11 @@ export class IssuesController {
   @Post('upload-video')
   uploadVideo(@CurrentUser() user: AuthUser, @Body() dto: UploadVideoDto) {
     return this.issues.uploadVideoFile(user.id, dto.project_id, dto.video)
+  }
+
+  @Post('upload-thumbnail')
+  uploadThumbnail(@CurrentUser() user: AuthUser, @Body() dto: UploadThumbnailDto) {
+    return this.issues.uploadThumbnailFile(user.id, dto.project_id, dto.thumbnail)
   }
 
   @Patch(':id/video')
