@@ -832,14 +832,14 @@ async function startVideoRecording() {
   let stream;
   try {
     if (qa_multitab_mode) {
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: !!settings.captureAudioEnabled });
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: shouldCaptureAudio(settings) });
     } else {
       const tab = await getActiveTab();
       const res = await chrome.runtime.sendMessage({ type: 'START_VIDEO_RECORDING', tabId: tab.id });
       if (!res || !res.ok) throw new Error(res?.error || 'Failed to start tab capture');
       stream = await navigator.mediaDevices.getUserMedia({
         video: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: res.streamId } },
-        audio: settings.captureAudioEnabled
+        audio: shouldCaptureAudio(settings)
           ? { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: res.streamId } }
           : false,
       });
@@ -849,7 +849,7 @@ async function startVideoRecording() {
     return;
   }
 
-  if (settings.captureAudioEnabled) {
+  if (shouldCaptureAudio(settings)) {
     try {
       const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       activeMicStream = micStream;
@@ -871,7 +871,7 @@ async function startVideoRecording() {
     }
   }
 
-  if (settings.captureWebcamEnabled) {
+  if (shouldCaptureWebcam(settings)) {
     try {
       const webcamStream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
       activeWebcamStream = webcamStream;
