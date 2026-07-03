@@ -19,6 +19,18 @@ function loadSavedCorner(): Corner {
   return (VALID_CORNERS as string[]).includes(saved ?? '') ? (saved as Corner) : 'bottom-right'
 }
 
+const WEBCAM_SIZE_KEY = 'qa-video-webcam-size'
+const MIN_WEBCAM_SIZE = 80
+const MAX_WEBCAM_SIZE = 200
+const DEFAULT_WEBCAM_SIZE = 120
+
+function loadSavedWebcamSize(): number {
+  if (typeof window === 'undefined') return DEFAULT_WEBCAM_SIZE
+  const saved = Number(window.localStorage.getItem(WEBCAM_SIZE_KEY))
+  if (!saved || Number.isNaN(saved)) return DEFAULT_WEBCAM_SIZE
+  return Math.max(MIN_WEBCAM_SIZE, Math.min(MAX_WEBCAM_SIZE, saved))
+}
+
 const CORNER_CLASSES: Record<Corner, string> = {
   'top-left': 'top-3 left-3',
   'top-right': 'top-3 right-3',
@@ -90,6 +102,8 @@ export function VideoPlayer({ videoUrl, webcamUrl, issueTitle }: VideoPlayerProp
   const [corner, setCorner] = useState<Corner>(() => loadSavedCorner())
   const [dragging, setDragging] = useState(false)
   const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null)
+  const [webcamSize, setWebcamSize] = useState<number>(() => loadSavedWebcamSize())
+  const [resizing, setResizing] = useState(false)
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current
@@ -170,7 +184,6 @@ export function VideoPlayer({ videoUrl, webcamUrl, issueTitle }: VideoPlayerProp
     setDragging(true)
 
     const rect = wrapper.getBoundingClientRect()
-    const webcamSize = 120
 
     const onMove = (ev: PointerEvent) => {
       const x = Math.max(0, Math.min(rect.width - webcamSize, ev.clientX - rect.left - webcamSize / 2))
@@ -204,6 +217,39 @@ export function VideoPlayer({ videoUrl, webcamUrl, issueTitle }: VideoPlayerProp
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
   }, [])
+
+  const handleResizeHandlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+    ;(e.target as HTMLDivElement).setPointerCapture(e.pointerId)
+    setResizing(true)
+
+    const rect = wrapper.getBoundingClientRect()
+    const startSize = webcamSize
+
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - (rect.left + rect.width)
+      const dy = ev.clientY - (rect.top + rect.height)
+      const delta = Math.max(dx, dy)
+      const next = Math.max(MIN_WEBCAM_SIZE, Math.min(MAX_WEBCAM_SIZE, startSize + delta))
+      setWebcamSize(next)
+    }
+
+    const onUp = () => {
+      setResizing(false)
+      setWebcamSize((current) => {
+        window.localStorage.setItem(WEBCAM_SIZE_KEY, String(current))
+        return current
+      })
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [webcamSize])
 
   const toggleFullscreen = useCallback(() => {
     setIsFullscreen(prev => !prev)
@@ -245,20 +291,29 @@ export function VideoPlayer({ videoUrl, webcamUrl, issueTitle }: VideoPlayerProp
           onClick={togglePlay}
         />
         {webcamUrl && (
-          <video
-            ref={webcamRef}
-            src={webcamUrl}
-            muted
-            onPointerDown={handleWebcamPointerDown}
-            className={`absolute rounded-full ring-2 ring-white shadow-lg cursor-grab active:cursor-grabbing ${
+          <div
+            className={`absolute group/webcam ${
               dragPosition ? '' : CORNER_CLASSES[corner]
-            } ${dragging ? 'transition-none' : 'transition-[top,left,right,bottom] duration-150'}`}
+            } ${dragging || resizing ? 'transition-none' : 'transition-[top,left,right,bottom] duration-150'}`}
             style={
               dragPosition
-                ? { width: '120px', height: '120px', objectFit: 'cover', left: dragPosition.x, top: dragPosition.y }
-                : { width: '120px', height: '120px', objectFit: 'cover' }
+                ? { width: `${webcamSize}px`, height: `${webcamSize}px`, left: dragPosition.x, top: dragPosition.y }
+                : { width: `${webcamSize}px`, height: `${webcamSize}px` }
             }
-          />
+          >
+            <video
+              ref={webcamRef}
+              src={webcamUrl}
+              muted
+              onPointerDown={handleWebcamPointerDown}
+              className="w-full h-full rounded-full ring-2 ring-white shadow-lg cursor-grab active:cursor-grabbing object-cover"
+            />
+            <div
+              onPointerDown={handleResizeHandlePointerDown}
+              className="absolute bottom-0 right-0 w-4 h-4 rounded-full bg-white ring-1 ring-gray-300 shadow cursor-nwse-resize opacity-0 group-hover/webcam:opacity-100 transition-opacity"
+              title="Drag to resize"
+            />
+          </div>
         )}
       </div>
 
