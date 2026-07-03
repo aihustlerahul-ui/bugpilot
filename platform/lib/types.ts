@@ -49,4 +49,5 @@ export interface Issue {
   replayUrl?: string | null
   videoUrl?: string | null
   webcamUrl?: string | null
+  thumbnailUrl?: string | null
 }

@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { api } from '@/lib/api/client'
 import type { Issue, Project, TeamMember, MemberConflict } from '@/lib/types'
+import { VideoBadge } from '@/components/VideoBadge'
 
 const STATUS_CONFIG = {
   pending: { label: 'Pending', cls: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200' },
@@ -153,6 +154,7 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                         <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Description</th>
                         <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider hidden md:table-cell">Route</th>
                         <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th>
+                        <th className="w-8" />
                         <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider hidden lg:table-cell">Created</th>
                         <th className="w-10" />
                       </tr>
@@ -186,6 +188,9 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${st.cls}`}>
                                 {st.label}
                               </span>
+                            </td>
+                            <td className="px-1 py-4">
+                              {issue.videoUrl && <VideoBadge thumbnailUrl={issue.thumbnailUrl} />}
                             </td>
                             <td className="px-5 py-4 hidden lg:table-cell text-xs text-gray-400 whitespace-nowrap">
                               {formatDate(issue.created_at)}
