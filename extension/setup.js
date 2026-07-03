@@ -119,6 +119,7 @@ async function runMicTest() {
     return;
   }
   micStream = stream;
+  if (deviceId) window.localStorage.setItem('qa-video-mic-device', deviceId);
 
   micReady = true;
   setMicState('ready');
@@ -155,7 +156,10 @@ async function runMicTest() {
 }
 
 micTestBtn.addEventListener('click', runMicTest);
-micDeviceSelect.addEventListener('change', () => { if (micReady) runMicTest(); });
+micDeviceSelect.addEventListener('change', () => {
+  if (micDeviceSelect.value) window.localStorage.setItem('qa-video-mic-device', micDeviceSelect.value);
+  if (micReady) runMicTest();
+});
 
 function setCamState(status) {
   camCardStatus.textContent = status === 'ready' ? 'Ready' : status === 'blocked' ? 'Blocked' : 'Not started';
@@ -197,6 +201,7 @@ async function runCamTest() {
     return;
   }
   camStream = stream;
+  if (deviceId) window.localStorage.setItem('qa-video-cam-device', deviceId);
 
   camReady = true;
   setCamState('ready');
@@ -213,7 +218,10 @@ async function runCamTest() {
 }
 
 camTestBtn.addEventListener('click', runCamTest);
-camDeviceSelect.addEventListener('change', () => { if (camReady) runCamTest(); });
+camDeviceSelect.addEventListener('change', () => {
+  if (camDeviceSelect.value) window.localStorage.setItem('qa-video-cam-device', camDeviceSelect.value);
+  if (camReady) runCamTest();
+});
 
 function checkCompletion() {
   const micCardVisible = micCard.style.display !== 'none';
