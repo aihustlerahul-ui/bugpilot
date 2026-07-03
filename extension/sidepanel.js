@@ -827,6 +827,21 @@ function describeMediaError(err) {
   }
 }
 
+// Validates a saved device ID (from the setup page) against currently available devices —
+// a stale/disconnected saved ID must never block a recording, so any failure here just
+// falls back to undefined (unconstrained default device).
+async function resolveDeviceConstraint(kind, storageKey) {
+  const savedId = window.localStorage.getItem(storageKey);
+  if (!savedId) return undefined;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const stillPresent = devices.some(d => d.kind === kind && d.deviceId === savedId);
+    return stillPresent ? savedId : undefined;
+  } catch (_) {
+    return undefined;
+  }
+}
+
 async function startVideoRecording() {
   // Clear state from any prior session so a discarded/failed webcam clip never
   // attaches to an unrelated later recording.
@@ -863,7 +878,10 @@ async function startVideoRecording() {
 
   if (shouldCaptureAudio(settings)) {
     try {
-      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const savedMicId = await resolveDeviceConstraint('audioinput', 'qa-video-mic-device');
+      const micStream = await navigator.mediaDevices.getUserMedia({
+        audio: savedMicId ? { deviceId: { exact: savedMicId } } : true,
+      });
       activeMicStream = micStream;
       startMicLevelMeter(micStream);
       const audioCtx = new AudioContext();
@@ -885,7 +903,10 @@ async function startVideoRecording() {
 
   if (shouldCaptureWebcam(settings)) {
     try {
-      const webcamStream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+      const savedCamId = await resolveDeviceConstraint('videoinput', 'qa-video-cam-device');
+      const webcamStream = await navigator.mediaDevices.getUserMedia({
+        video: savedCamId ? { deviceId: { exact: savedCamId }, width: 320, height: 240 } : { width: 320, height: 240 },
+      });
       activeWebcamStream = webcamStream;
       webcamPreview.srcObject = webcamStream;
       webcamPreview.style.display = '';
