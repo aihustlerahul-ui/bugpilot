@@ -57,6 +57,7 @@ const webcamPreview   = document.getElementById('webcam-preview');
 const camStatusDot    = document.getElementById('cam-status-dot');
 const camStatusLabel  = document.getElementById('cam-status-label');
 const micMuteIcon  = document.getElementById('mic-mute-icon');
+const camPauseIcon = document.getElementById('cam-pause-icon');
 const micLevelMeter = document.getElementById('mic-level-meter');
 const micLevelBar   = document.getElementById('mic-level-bar');
 const mediaPermissionHelp = document.getElementById('media-permission-help');
@@ -106,6 +107,7 @@ let activeAudioCtx = null;
 let activeMicStream = null;
 let activeWebcamStream = null;
 let micMuted = false;
+let webcamPaused = false;
 let micAnalyser = null;
 // Mute is implemented as a GainNode in the recording-mixing path, NOT track.enabled —
 // disabling the track would silence it for every consumer, including the level meter's
@@ -146,6 +148,15 @@ micStatusChip.addEventListener('click', () => {
   micMuted = !micMuted;
   micGainNode.gain.value = micMuted ? 0 : 1;
   micMuteIcon.textContent = micMuted ? '🔇' : '🎤';
+}, { capture: true });
+
+camStatusChip.addEventListener('click', () => {
+  // Only toggle pause if a recording is active and webcam is already granted — otherwise
+  // this click falls through to the request/open-settings handler registered further down.
+  if (!activeWebcamStream) return;
+  webcamPaused = !webcamPaused;
+  activeWebcamStream.getVideoTracks().forEach(track => { track.enabled = !webcamPaused; });
+  camPauseIcon.textContent = webcamPaused ? '⏸️' : '📷';
 }, { capture: true });
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -777,6 +788,7 @@ function renderCamPermissionStatus() {
 }
 
 camStatusChip.addEventListener('click', async () => {
+  if (activeWebcamStream) return; // handled by the pause toggle above during an active recording
   const state = camPermissionStatus ? camPermissionStatus.state : 'prompt';
   if (state === 'denied') {
     showMediaPermissionHelp('Camera', 'chrome://settings/content/camera', 'blocked');
@@ -928,6 +940,8 @@ function stopVideoRecording() {
   micMuted = false;
   micMuteIcon.textContent = '🎤';
   activeWebcamStream = null;
+  webcamPaused = false;
+  camPauseIcon.textContent = '📷';
   webcamPreview.srcObject = null;
   webcamPreview.style.display = 'none';
   clearInterval(videoRecTimerInterval);
