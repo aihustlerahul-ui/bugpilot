@@ -7,4 +7,8 @@ export class AttachVideoDto {
   @IsOptional()
   @IsString()
   webcamStoragePath?: string
+
+  @IsOptional()
+  @IsString()
+  thumbnailStoragePath?: string
 }
