@@ -6,3 +6,4 @@ backend/.env
 .supabase-credentials
 .superpowers/
 .worktrees/
+graphify-out/
