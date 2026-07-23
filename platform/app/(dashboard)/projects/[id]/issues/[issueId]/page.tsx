@@ -156,8 +156,10 @@ export default function IssueDetailPage({ params }: { params: { id: string; issu
 
   const st  = STATUS_CONFIG[issue.sync_status] ?? STATUS_CONFIG.pending
   const sev = issue.severity ?? 'Medium'
-  const el   = (issue.element_info ?? {}) as Record<string, unknown>
-  const env  = (issue.browser_info ?? {}) as Record<string, unknown>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const el   = (issue.element_info ?? {}) as Record<string, any>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const env  = (issue.browser_info ?? {}) as Record<string, any>
 
   // Derive title and body — handle both old single-field and new split format
   const displayTitle = issue.title || issue.description.split('\n')[0]
@@ -326,7 +328,7 @@ export default function IssueDetailPage({ params }: { params: { id: string; issu
             {el.xpath       && <KVRow label="XPath"      value={<CodeBlock>{String(el.xpath)}</CodeBlock>} />}
             {el.classList && Array.isArray(el.classList) && el.classList.length > 0 && (
               <KVRow label="Classes" value={
-                <div className="flex flex-wrap gap-1">{(el.classList as string[]).map(c => <CodeBlock key={c}>.{c}</CodeBlock>)}</div>
+                <div className="flex flex-wrap gap-1">{(el.classList as string[]).map(c => <CodeBlock key={c}>{`.${c}`}</CodeBlock>)}</div>
               } />
             )}
             {el.accessibility && typeof el.accessibility === 'object' && (
@@ -371,7 +373,7 @@ export default function IssueDetailPage({ params }: { params: { id: string; issu
                           {display}
                         </a>
                         <p className="text-xs text-gray-400">
-                          Opens in VS Code · replace <code className="bg-gray-100 px-1 rounded">vscode://</code> with your editor's protocol (e.g. <code className="bg-gray-100 px-1 rounded">cursor://</code>, <code className="bg-gray-100 px-1 rounded">webstorm://</code>)
+                          Opens in VS Code · replace <code className="bg-gray-100 px-1 rounded">vscode://</code> with your editor&apos;s protocol (e.g. <code className="bg-gray-100 px-1 rounded">cursor://</code>, <code className="bg-gray-100 px-1 rounded">webstorm://</code>)
                         </p>
                       </div>
                     )

@@ -888,12 +888,21 @@
   }
 
   function buildCoordinateElementData(cx, cy) {
+    var selector = 'coordinate@(' + Math.round(cx) + ',' + Math.round(cy) + ')';
     return {
-      selector:     'coordinate@(' + Math.round(cx) + ',' + Math.round(cy) + ')',
+      tag:          'region',
       tagName:      'region',
+      id:           null,
+      classList:    [],
+      selector:     selector,
+      cssSelector:  selector,
+      xpath:        null,
       text:         '',
+      textContent:  '',
       attributes:   { 'data-qa-coordinate': Math.round(cx) + ',' + Math.round(cy) },
+      dataAttributes: {},
       boundingRect: { x: cx, y: cy, width: 140, height: 36, top: cy - 18, left: cx - 70, right: cx + 70, bottom: cy + 18 },
+      dimensions:   { x: cx, y: cy, width: 140, height: 36, top: cy - 18, left: cx - 70, right: cx + 70, bottom: cy + 18 },
       computedStyles: {},
       semanticContext: { page: 'canvas-or-iframe', note: 'Captured by pointer position — Excel/Office canvas region' },
       accessibility: {},

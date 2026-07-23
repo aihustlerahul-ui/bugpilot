@@ -3,6 +3,29 @@
 
 const API_URL = 'http://localhost:4000';
 
+// Override fetch to omit credentials/cookies for local API requests to avoid HTTP 431 (Request Header Fields Too Large)
+const _originalFetch = fetch;
+globalThis.fetch = function (input, init) {
+  let url = '';
+  if (typeof input === 'string') {
+    url = input;
+  } else if (input instanceof URL) {
+    url = input.href;
+  } else if (input && typeof input === 'object' && 'url' in input) {
+    url = input.url;
+  }
+
+  if (url.startsWith(API_URL)) {
+    if (input && typeof input === 'object' && !(input instanceof URL) && 'clone' in input) {
+      const clonedInput = new Request(input, { credentials: 'omit' });
+      return _originalFetch(clonedInput, init);
+    }
+    init = { ...init, credentials: 'omit' };
+  }
+  return _originalFetch(input, init);
+};
+
+
 // ── Replay compression ────────────────────────────────────────────────────────
 async function compressReplayEvents(events) {
   try {
@@ -445,7 +468,6 @@ async function handleCaptureScreenshot(sendResponse) {
       format: 'jpeg',
       quality: 80,
     });
-
     const { qa_screen_recording, qa_screen_recording_tab_id, qa_multitab_mode, qa_screen_recording_started_at } =
       await chrome.storage.local.get(['qa_screen_recording', 'qa_screen_recording_tab_id', 'qa_multitab_mode', 'qa_screen_recording_started_at']);
 
