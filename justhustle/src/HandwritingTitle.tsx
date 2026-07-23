@@ -32,17 +32,9 @@ export function HandwritingTitle({ text }: HandwritingTitleProps) {
           </defs>
           <g transform={`translate(0, ${JUST_HUSTLE_HEIGHT}) scale(1, -1)`}>
             {/* Glow layer — draws same path with blur */}
-            <path
-              d={JUST_HUSTLE_PATH}
-              className="hello-glow-path"
-              pathLength="1"
-            />
+            <path d={JUST_HUSTLE_PATH} className="hello-glow-path" pathLength="1" />
             {/* Main stroke-draw path */}
-            <path
-              d={JUST_HUSTLE_PATH}
-              className="hello-text-path"
-              pathLength="1"
-            />
+            <path d={JUST_HUSTLE_PATH} className="hello-text-path" pathLength="1" />
           </g>
         </svg>
       </div>

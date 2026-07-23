@@ -1,16 +1,32 @@
 import { useEffect, useState, useRef } from 'react';
+import { motion, AnimatePresence, useMotionValue } from 'framer-motion';
 import { HandwritingTitle } from './HandwritingTitle';
+
+const containerVariants = {
+  hidden: {},
+  show: {
+    transition: { staggerChildren: 0.2, delayChildren: 0.1 },
+  },
+};
+
+const fadeUpVariants = {
+  hidden: { opacity: 0, y: 18 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.9, ease: [0.22, 1, 0.36, 1] as const },
+  },
+};
 
 function App() {
   const [currentQuoteIndex, setCurrentQuoteIndex] = useState(0);
   const [displayedText, setDisplayedText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
-  const [trails, setTrails] = useState<{ id: number; x: number; y: number; opacity: number }[]>([]);
+  const [trails, setTrails] = useState<{ id: number; x: number; y: number }[]>([]);
   const trailIdRef = useRef(0);
 
   const [buttonText, setButtonText] = useState('Know More');
-  const buttonRef = useRef<HTMLButtonElement>(null);
   const buttonContainerRef = useRef<HTMLDivElement>(null);
   const buttonPositionRef = useRef({ x: 0, y: 0 });
   const buttonTargetRef = useRef({ x: 0, y: 0 });
@@ -23,6 +39,9 @@ function App() {
     harder?: ReturnType<typeof setTimeout>;
   }>({});
 
+  const buttonX = useMotionValue(0);
+  const buttonY = useMotionValue(0);
+
   const mainText = 'justhustle.in';
 
   const quotes = [
@@ -32,6 +51,11 @@ function App() {
     '"Winners don\'t make excuses."',
     '"It\'s not about how bad you want it. It\'s about how hard you\'re willing to work for it."',
     '"Success is not final, failure is not fatal: it is the courage to continue that counts."',
+    '"I don\'t have dreams, I have goals."',
+    '"Sometimes good enough isn\'t good enough."',
+    '"That\'s the difference between winners and losers — winners make the extra effort."',
+    '"I don\'t play the odds, I play the man across from me."',
+    '"Loyalty\'s a two-way street."',
   ];
 
   const authors = [
@@ -41,11 +65,16 @@ function App() {
     '— Harvey Specter',
     '— Harvey Specter',
     '— Winston Churchill',
+    '— Harvey Specter',
+    '— Harvey Specter',
+    '— Harvey Specter',
+    '— Harvey Specter',
+    '— Harvey Specter',
   ];
 
   useEffect(() => {
     const currentQuote = quotes[currentQuoteIndex];
-    let timeout: NodeJS.Timeout;
+    let timeout: ReturnType<typeof setTimeout>;
 
     if (!isDeleting) {
       if (displayedText.length < currentQuote.length) {
@@ -69,6 +98,7 @@ function App() {
     }
 
     return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayedText, isDeleting, currentQuoteIndex]);
 
   useEffect(() => {
@@ -85,13 +115,8 @@ function App() {
     window.addEventListener('resize', updateHomeCenter);
 
     const handleMouseMove = (e: MouseEvent) => {
-      const newTrail = {
-        id: trailIdRef.current++,
-        x: e.clientX,
-        y: e.clientY,
-        opacity: 1,
-      };
-      setTrails(prev => [...prev.slice(-18), newTrail]);
+      const newTrail = { id: trailIdRef.current++, x: e.clientX, y: e.clientY };
+      setTrails((prev) => [...prev.slice(-14), newTrail]);
       setCursorPos({ x: e.clientX, y: e.clientY });
       mouseRef.current = { x: e.clientX, y: e.clientY };
     };
@@ -143,12 +168,6 @@ function App() {
       };
     };
 
-    const applyTransform = (x: number, y: number) => {
-      if (buttonRef.current) {
-        buttonRef.current.style.transform = `translate(${x}px, ${y}px)`;
-      }
-    };
-
     const animateButton = () => {
       const mouse = mouseRef.current;
       const pos = buttonPositionRef.current;
@@ -175,10 +194,7 @@ function App() {
         const nx = -dx / dist;
         const ny = -dy / dist;
 
-        target = clampPosition(
-          pos.x + nx * fleeSpeed,
-          pos.y + ny * fleeSpeed,
-        );
+        target = clampPosition(pos.x + nx * fleeSpeed, pos.y + ny * fleeSpeed);
       }
 
       buttonTargetRef.current = target;
@@ -202,7 +218,8 @@ function App() {
       }
 
       buttonPositionRef.current = { x: newX, y: newY };
-      applyTransform(newX, newY);
+      buttonX.set(newX);
+      buttonY.set(newY);
 
       requestAnimationFrame(animateButton);
     };
@@ -212,52 +229,48 @@ function App() {
       cancelAnimationFrame(animationId);
       clearTextTimers();
     };
-  }, []);
-
-  useEffect(() => {
-    const animateTrails = () => {
-      setTrails(prev => prev.map(t => ({ ...t, opacity: t.opacity * 0.82 })).filter(t => t.opacity > 0.04));
-      requestAnimationFrame(animateTrails);
-    };
-    const animationId = requestAnimationFrame(animateTrails);
-    return () => cancelAnimationFrame(animationId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center overflow-hidden relative" style={{ backgroundColor: '#080a0f' }}>
-
-      {/* Grain overlay */}
+    <div
+      className="min-h-screen flex flex-col items-center justify-center overflow-hidden relative"
+      style={{ backgroundColor: '#080a0f' }}
+    >
       <div className="grain-overlay" />
 
       {/* Ambient orbs */}
-      <div
+      <motion.div
         className="absolute pointer-events-none"
         style={{
           width: '600px',
           height: '600px',
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(245,158,11,0.12) 0%, rgba(180,83,9,0.06) 40%, transparent 70%)',
+          background:
+            'radial-gradient(circle, rgba(245,158,11,0.12) 0%, rgba(180,83,9,0.06) 40%, transparent 70%)',
           top: '10%',
           left: '15%',
           filter: 'blur(40px)',
-          animation: 'float 8s ease-in-out infinite',
         }}
+        animate={{ y: [0, -20, 0] }}
+        transition={{ duration: 8, ease: 'easeInOut', repeat: Infinity }}
       />
-      <div
+      <motion.div
         className="absolute pointer-events-none"
         style={{
           width: '500px',
           height: '500px',
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(59,130,246,0.10) 0%, rgba(37,99,235,0.05) 40%, transparent 70%)',
+          background:
+            'radial-gradient(circle, rgba(59,130,246,0.10) 0%, rgba(37,99,235,0.05) 40%, transparent 70%)',
           bottom: '10%',
           right: '10%',
           filter: 'blur(50px)',
-          animation: 'float 10s ease-in-out infinite',
-          animationDelay: '3s',
         }}
+        animate={{ y: [0, -20, 0] }}
+        transition={{ duration: 10, ease: 'easeInOut', repeat: Infinity, delay: 3 }}
       />
-      <div
+      <motion.div
         className="absolute pointer-events-none"
         style={{
           width: '300px',
@@ -267,25 +280,31 @@ function App() {
           top: '55%',
           left: '5%',
           filter: 'blur(30px)',
-          animation: 'float 12s ease-in-out infinite',
-          animationDelay: '1.5s',
         }}
+        animate={{ y: [0, -20, 0] }}
+        transition={{ duration: 12, ease: 'easeInOut', repeat: Infinity, delay: 1.5 }}
       />
 
       {/* Cursor trail — amber */}
       <div className="hidden md:block">
-        {trails.map(trail => (
-          <div
-            key={trail.id}
-            className="fixed w-5 h-5 rounded-full pointer-events-none z-50"
-            style={{
-              left: trail.x - 10,
-              top: trail.y - 10,
-              background: `radial-gradient(circle, rgba(245, 158, 11, ${trail.opacity * 0.55}) 0%, rgba(180, 83, 9, ${trail.opacity * 0.25}) 50%, transparent 70%)`,
-              filter: 'blur(2px)',
-            }}
-          />
-        ))}
+        <AnimatePresence>
+          {trails.map((trail) => (
+            <motion.div
+              key={trail.id}
+              className="fixed w-5 h-5 rounded-full pointer-events-none z-50"
+              style={{
+                left: trail.x - 10,
+                top: trail.y - 10,
+                background:
+                  'radial-gradient(circle, rgba(245,158,11,0.55) 0%, rgba(180,83,9,0.25) 50%, transparent 70%)',
+                filter: 'blur(2px)',
+              }}
+              initial={{ opacity: 1, scale: 1 }}
+              animate={{ opacity: 0, scale: 0.3 }}
+              transition={{ duration: 0.6, ease: 'easeOut' }}
+            />
+          ))}
+        </AnimatePresence>
       </div>
 
       {/* Custom cursor */}
@@ -294,34 +313,52 @@ function App() {
         style={{
           left: cursorPos.x - 14,
           top: cursorPos.y - 14,
-          background: 'radial-gradient(circle, rgba(245,158,11,0.95) 0%, rgba(180,83,9,0.6) 50%, transparent 70%)',
+          background:
+            'radial-gradient(circle, rgba(245,158,11,0.95) 0%, rgba(180,83,9,0.6) 50%, transparent 70%)',
           boxShadow: '0 0 18px rgba(245,158,11,0.6), 0 0 36px rgba(245,158,11,0.25)',
           transition: 'transform 0.08s ease-out',
         }}
       />
 
-      {/* Top accent line */}
-      <div className="absolute top-0 left-0 w-full h-px" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(245,158,11,0.4) 50%, transparent 100%)' }} />
+      <div
+        className="absolute top-0 left-0 w-full h-px"
+        style={{
+          background:
+            'linear-gradient(90deg, transparent 0%, rgba(245,158,11,0.4) 50%, transparent 100%)',
+        }}
+      />
 
-      {/* Main content */}
-      <div className="relative z-10 flex flex-col items-center px-6 w-full">
-
-        {/* Eyebrow */}
-        <div className="flex items-center gap-4 mb-10 animate-fade-in-up">
+      <motion.div
+        className="relative z-10 flex flex-col items-center px-6 w-full"
+        variants={containerVariants}
+        initial="hidden"
+        animate="show"
+      >
+        <motion.div className="flex items-center gap-4 mb-10" variants={fadeUpVariants}>
           <div className="divider-line" />
-          <span style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontStyle: 'italic', color: '#ffffff', fontSize: '1rem', fontWeight: 500, fontStyle: 'normal', letterSpacing: '0.18em' }}>
+          <span
+            style={{
+              fontFamily: "'Cormorant Garamond', Georgia, serif",
+              color: '#ffffff',
+              fontSize: '1rem',
+              fontWeight: 500,
+              fontStyle: 'normal',
+              letterSpacing: '0.18em',
+            }}
+          >
             hustle. build. repeat.
           </span>
           <div className="divider-line" />
-        </div>
+        </motion.div>
 
-        {/* Handwriting title */}
-        <div className="animate-fade-in-up animate-delay-200">
+        <motion.div variants={fadeUpVariants}>
           <HandwritingTitle text={mainText} />
-        </div>
+        </motion.div>
 
-        {/* Quote */}
-        <div className="h-28 flex flex-col items-center justify-center mt-6 animate-fade-in-up animate-delay-400">
+        <motion.div
+          className="h-28 flex flex-col items-center justify-center mt-6"
+          variants={fadeUpVariants}
+        >
           <p
             className="quote-text text-xl md:text-2xl max-w-xl text-center leading-relaxed"
             style={{ color: '#ffffff', fontStyle: 'italic', fontWeight: 600 }}
@@ -340,30 +377,34 @@ function App() {
               {authors[currentQuoteIndex]}
             </p>
           )}
-        </div>
+        </motion.div>
 
-        {/* Fleeing button */}
-        <div
+        <motion.div
           ref={buttonContainerRef}
-          className="h-20 mt-8 flex items-center justify-center w-full max-w-md animate-fade-in-up animate-delay-600"
+          className="h-20 mt-8 flex items-center justify-center w-full max-w-md"
+          variants={fadeUpVariants}
         >
-          <button
-            ref={buttonRef}
+          <motion.button
             type="button"
             tabIndex={-1}
             aria-hidden="true"
             className="hustle-btn relative px-10 py-3.5 rounded-full font-semibold text-sm text-amber-950 overflow-hidden select-none will-change-transform pointer-events-none tracking-wider uppercase"
-            style={{ transform: 'translate(0px, 0px)', letterSpacing: '0.1em' }}
+            style={{ x: buttonX, y: buttonY, letterSpacing: '0.1em' }}
             onClick={(e) => e.preventDefault()}
             onMouseDown={(e) => e.preventDefault()}
           >
             {buttonText}
-          </button>
-        </div>
-      </div>
+          </motion.button>
+        </motion.div>
+      </motion.div>
 
-      {/* Bottom accent line */}
-      <div className="absolute bottom-0 left-0 w-full h-px" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(59,130,246,0.3) 50%, transparent 100%)' }} />
+      <div
+        className="absolute bottom-0 left-0 w-full h-px"
+        style={{
+          background:
+            'linear-gradient(90deg, transparent 0%, rgba(59,130,246,0.3) 50%, transparent 100%)',
+        }}
+      />
     </div>
   );
 }

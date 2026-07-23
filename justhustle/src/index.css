@@ -60,9 +60,15 @@
   fill: rgba(245, 158, 11, 0.35);
   filter: blur(6px);
   stroke: none;
-  /* mirrors the draw timing but slightly ahead */
   clip-path: inset(0 100% 0 0);
-  animation: hello-wipe 3.2s cubic-bezier(0.4, 0, 0.2, 1) 0.3s both;
+  animation: hello-glow-cycle 7s linear 0.3s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hello-glow-path {
+    animation: none;
+    clip-path: inset(0 0% 0 0);
+  }
 }
 
 /* ─── Main text path ─── */
@@ -75,34 +81,86 @@
   stroke-linejoin: round;
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation:
-    hello-draw   3s   cubic-bezier(0.4, 0, 0.2, 1) 0.2s both,
-    hello-fill   0.8s ease-out                      3s   both,
-    hello-loop   11s  ease-in-out                   6s   infinite;
+  animation: hello-stroke-cycle 7s linear 0.3s infinite;
 }
 
-/* stroke traces the path left→right */
-@keyframes hello-draw {
-  from { stroke-dashoffset: 1; }
-  to   { stroke-dashoffset: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .hello-text-path {
+    animation: none;
+    fill: rgba(254, 243, 199, 0.95);
+    stroke: none;
+    stroke-dashoffset: 0;
+  }
 }
 
-/* fill blooms in, stroke fades — just like Apple */
-@keyframes hello-fill {
-  0%   { fill: transparent;       stroke-opacity: 1; }
-  100% { fill: rgba(254,243,199,0.95); stroke-opacity: 0; }
+/* Full loop: fade in → draw on (slow) → bloom to ink, stroke fades →
+   hold with a soft breath → fade out → reset invisibly → repeat */
+@keyframes hello-stroke-cycle {
+  0% {
+    opacity: 0;
+    stroke-dashoffset: 1;
+    fill: transparent;
+    stroke-opacity: 1;
+  }
+  3% {
+    opacity: 1;
+    stroke-dashoffset: 1;
+    fill: transparent;
+    stroke-opacity: 1;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  60% {
+    stroke-dashoffset: 0;
+    fill: transparent;
+    stroke-opacity: 1;
+  }
+  70% {
+    stroke-dashoffset: 0;
+    fill: rgba(254, 243, 199, 0.95);
+    stroke-opacity: 0;
+  }
+  82% {
+    opacity: 0.85;
+    stroke-dashoffset: 0;
+    fill: rgba(254, 243, 199, 0.95);
+    stroke-opacity: 0;
+  }
+  95% {
+    opacity: 1;
+    stroke-dashoffset: 0;
+    fill: rgba(254, 243, 199, 0.95);
+    stroke-opacity: 0;
+  }
+  100% {
+    opacity: 0;
+    stroke-dashoffset: 0;
+    fill: rgba(254, 243, 199, 0.95);
+    stroke-opacity: 0;
+  }
 }
 
-/* subtle breath after fully rendered */
-@keyframes hello-loop {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.82; }
-}
-
-/* glow clip wipe — same timing as the draw */
-@keyframes hello-wipe {
-  from { clip-path: inset(0 100% 0 0); }
-  to   { clip-path: inset(0 0% 0 0); }
+/* Glow mirrors the same timeline: wipes in behind the draw, holds, fades out */
+@keyframes hello-glow-cycle {
+  0% {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  3% {
+    opacity: 1;
+    clip-path: inset(0 100% 0 0);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  62% {
+    clip-path: inset(0 0% 0 0);
+  }
+  95% {
+    opacity: 1;
+    clip-path: inset(0 0% 0 0);
+  }
+  100% {
+    opacity: 0;
+    clip-path: inset(0 0% 0 0);
+  }
 }
 
 /* Decorative divider lines */
@@ -122,19 +180,3 @@
 .hustle-btn:hover {
   box-shadow: 0 0 40px rgba(245, 158, 11, 0.5), 0 0 80px rgba(245, 158, 11, 0.2);
 }
-
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50%       { transform: translateY(-20px); }
-}
-
-@keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(18px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.animate-fade-in-up   { animation: fade-in-up 0.9s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.animate-delay-200    { animation-delay: 0.2s; }
-.animate-delay-400    { animation-delay: 0.4s; }
-.animate-delay-600    { animation-delay: 0.6s; }
-.animate-delay-800    { animation-delay: 0.8s; }
