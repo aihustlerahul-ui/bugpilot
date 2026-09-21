@@ -5,7 +5,7 @@
   // Guard: don't inject twice
   if (document.getElementById('qa-annotator-overlay')) return;
 
-  var TOOLS = { SELECT: 'select', RECT: 'rect', ARROW: 'arrow', CIRCLE: 'circle', PEN: 'pen', TEXT: 'text', BLUR: 'blur' };
+  var TOOLS = { SELECT: 'select', RECT: 'rect', ARROW: 'arrow', CIRCLE: 'circle', PEN: 'pen', TEXT: 'text', BLUR: 'blur', STEP: 'step' };
 
   var currentTool        = TOOLS.RECT;
   var currentColor       = '#ef4444';
@@ -66,6 +66,9 @@
     '</button>' +
     '<button class="qa-ann-tool" data-tool="blur" title="Blur / Redact (B)">' +
       '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="12" height="8" rx="1" stroke-dasharray="2 1.5"/><line x1="5" y1="7" x2="11" y2="7"/><line x1="5" y1="9" x2="11" y2="9"/></svg>' +
+    '</button>' +
+    '<button class="qa-ann-tool" data-tool="step" title="Numbered Step Callout (S)">' +
+      '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><text x="8" y="11.5" font-size="10" font-weight="bold" font-family="system-ui" text-anchor="middle">1</text></svg>' +
     '</button>' +
     '<div class="qa-ann-separator"></div>' +
     '<input type="color" id="qa-ann-color-picker" value="#ef4444" title="Color">' +
@@ -186,8 +189,55 @@
       ctx.strokeText(s.text, s.x, s.y);
       ctx.fillText(s.text, s.x, s.y);
     } else if (s.type === 'blur') {
-      ctx.fillStyle = 'rgba(0,0,0,0.75)';
-      ctx.fillRect(s.x1, s.y1, s.x2 - s.x1, s.y2 - s.y1);
+      var bx = Math.min(s.x1, s.x2);
+      var by = Math.min(s.y1, s.y2);
+      var bw = Math.abs(s.x2 - s.x1);
+      var bh = Math.abs(s.y2 - s.y1);
+
+      if (bw > 0 && bh > 0 && baseImage) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(bx, by, bw, bh);
+        ctx.clip();
+        ctx.filter = 'blur(12px)';
+
+        var scale = Math.min(dispW / baseImage.naturalWidth, dispH / baseImage.naturalHeight);
+        var drawW = baseImage.naturalWidth  * scale;
+        var drawH = baseImage.naturalHeight * scale;
+        ctx.drawImage(baseImage, (dispW - drawW) / 2, (dispH - drawH) / 2, drawW, drawH);
+        ctx.restore();
+
+        // Subtle dashed indicator around blur region
+        ctx.save();
+        ctx.strokeStyle = 'rgba(91, 95, 199, 0.6)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(bx, by, bw, bh);
+        ctx.restore();
+      }
+    } else if (s.type === 'step') {
+      var radius = s.radius || 13;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+      ctx.shadowBlur = 4;
+      ctx.shadowOffsetY = 2;
+      ctx.fillStyle = s.color || '#ef4444';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(s.number || 1), s.x, s.y);
     }
     if (selected) {
       var b = getShapeBounds(s);
@@ -201,6 +251,10 @@
     if (s.type === 'pen') {
       var bb = penBoundingBox(s);
       return { x: bb.x, y: bb.y, w: bb.w, h: bb.h };
+    }
+    if (s.type === 'step') {
+      var r = s.radius || 13;
+      return { x: s.x - r - 2, y: s.y - r - 2, w: (r + 2) * 2, h: (r + 2) * 2 };
     }
     if (s.type === 'text') {
       ctx.font = 'bold ' + (s.fontSize || 14) + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
@@ -291,6 +345,9 @@
         for (var j = 0; j < s.points.length - 1; j++) {
           if (distToSegment(x, y, s.points[j].x, s.points[j].y, s.points[j+1].x, s.points[j+1].y) < 8) return i;
         }
+      } else if (s.type === 'step') {
+        var r = s.radius || 13;
+        if (Math.hypot(x - s.x, y - s.y) <= r + 4) return i;
       } else if (s.type === 'text') {
         ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
         var w = ctx.measureText(s.text).width;
@@ -445,6 +502,24 @@
       });
       // Delay blur listener so it doesn't fire from the originating click cycle
       setTimeout(function() { inp.addEventListener('blur', commitText); }, 200);
+      return;
+    }
+
+    // ── STEP tool ────────────────────────────────────────────────────────────
+    if (currentTool === TOOLS.STEP) {
+      pushHistory();
+      var existingSteps = shapes.filter(function(sh) { return sh.type === 'step'; }).length;
+      var stepNum = existingSteps + 1;
+      shapes.push({
+        type: 'step',
+        x: pos.x,
+        y: pos.y,
+        number: stepNum,
+        color: currentColor,
+        radius: 13,
+      });
+      selectedIndex = -1;
+      redraw();
       return;
     }
 

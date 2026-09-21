@@ -66,6 +66,14 @@ const captureAudioCheckbox = document.getElementById('capture-audio-checkbox');
 const captureWebcamToggle = document.getElementById('capture-webcam-toggle');
 const captureWebcamCheckbox = document.getElementById('capture-webcam-checkbox');
 
+// ── B7: Step Recording Elements ──
+const btnStepRec       = document.getElementById('btn-step-recording');
+const btnStepRecText   = document.getElementById('btn-step-recording-text');
+const stepsDrawer      = document.getElementById('steps-drawer');
+const stepsCountEl     = document.getElementById('steps-count');
+const stepsListEl      = document.getElementById('steps-list');
+const btnClearSteps    = document.getElementById('btn-clear-steps');
+
 function showMediaPermissionHelp(label, settingsUrl, reason) {
   mediaPermissionHelp.innerHTML =
     `${label} unavailable (${reason}). ` +
@@ -241,21 +249,32 @@ function applyRecordingState(recording, count) {
 
 // ── Buffer UI ─────────────────────────────────────────────────────────────────
 async function refreshBufferUI() {
-  const { qa_buffered_issues: issues = [] } = await chrome.storage.local.get(['qa_buffered_issues']);
+  const { qa_buffered_issues: issues = [], qa_pending_sync_queue: pendingQueue = [] } =
+    await chrome.storage.local.get(['qa_buffered_issues', 'qa_pending_sync_queue']);
   const count = issues.length;
+  const pendingCount = pendingQueue.length;
 
   bufferBadge.textContent = count;
   bufferBadge.className = `buffer-badge${count === 0 ? ' zero' : ''}`;
 
+  let pendingHtml = '';
+  if (pendingCount > 0) {
+    pendingHtml = `
+      <div class="pending-sync-banner" style="background:#fffbeb;border:1px solid #fde68a;padding:8px 10px;border-radius:6px;margin-bottom:8px;font-size:11px;color:#92400e;display:flex;align-items:center;justify-content:space-between;">
+        <span>⏳ <b>${pendingCount}</b> pending sync (offline)</span>
+        <button id="btn-retry-sync" style="background:#d97706;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">Retry</button>
+      </div>`;
+  }
+
   if (count === 0) {
-    issueList.innerHTML = `
+    issueList.innerHTML = pendingHtml + `
       <div class="empty-state">
         <div class="empty-icon">◻</div>
         No issues yet — start recording and click any element to capture a bug.
       </div>`;
     bufferActions.style.display = 'none';
   } else {
-    issueList.innerHTML = issues.map(issue => `
+    issueList.innerHTML = pendingHtml + issues.map(issue => `
       <div class="issue-item">
         <div class="issue-item-title">${escHtml(issue.title)}</div>
         <div class="issue-item-meta">
@@ -265,6 +284,20 @@ async function refreshBufferUI() {
       </div>`).join('');
     bufferActions.style.display = 'flex';
     btnSubmitAll.textContent = `Submit All (${count})`;
+  }
+
+  const btnRetrySync = document.getElementById('btn-retry-sync');
+  if (btnRetrySync) {
+    btnRetrySync.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      btnRetrySync.disabled = true;
+      btnRetrySync.textContent = 'Syncing…';
+      try {
+        await chrome.runtime.sendMessage({ type: 'RETRY_PENDING_SYNC' });
+        showToast('Background sync triggered');
+      } catch (_) {}
+      await refreshBufferUI();
+    });
   }
 
   // keep capture count in sync
@@ -652,6 +685,14 @@ chrome.storage.onChanged.addListener((changes, area) => {
     // Clear the status signal
     if (status) chrome.storage.local.remove(['qa_replay_status']);
   }
+  if (changes.qa_step_recording) {
+    chrome.storage.local.get(['qa_recorded_steps'], (r) => {
+      applyStepRecordingState(!!changes.qa_step_recording.newValue, r.qa_recorded_steps || []);
+    });
+  }
+  if (changes.qa_recorded_steps) {
+    renderStepsList(changes.qa_recorded_steps.newValue || [], isStepRecording);
+  }
 });
 
 // ── Multi-tab toggle ──────────────────────────────────────────────────────────
@@ -680,15 +721,84 @@ function applyMultiTabVisibility(settings) {
   multitabRow.style.display = settings?.multiTabRecording ? 'flex' : 'none';
 }
 
-chrome.storage.local.get(['qa_ext_settings', 'qa_multitab_mode', 'qa_multitab_recorded_tabs'], function (r) {
+chrome.storage.local.get(['qa_ext_settings', 'qa_multitab_mode', 'qa_multitab_recorded_tabs', 'qa_step_recording', 'qa_recorded_steps'], function (r) {
   applyMultiTabVisibility(r.qa_ext_settings);
   applyVideoRecordingVisibility(r.qa_ext_settings);
   applyMediaStatusRowVisibility(r.qa_ext_settings);
   applyMultiTabToggle(r.qa_multitab_mode ?? false);
   applyMultiTabBadge(r.qa_multitab_recorded_tabs);
+  applyStepRecordingState(!!r.qa_step_recording, r.qa_recorded_steps || []);
   refreshMicPermissionStatus();
   refreshCamPermissionStatus();
 });
+
+// ── B7: Step Recording Logic ──────────────────────────────────────────────────
+let isStepRecording = false;
+
+function applyStepRecordingState(active, steps = []) {
+  isStepRecording = active;
+  if (btnStepRec) {
+    if (active) {
+      btnStepRec.classList.add('active');
+      btnStepRec.style.background = '#fef2f2';
+      btnStepRec.style.color = '#991b1b';
+      btnStepRec.style.borderColor = '#fca5a5';
+      if (btnStepRecText) btnStepRecText.textContent = 'Stop Recording Steps';
+    } else {
+      btnStepRec.classList.remove('active');
+      btnStepRec.style.background = '';
+      btnStepRec.style.color = '';
+      btnStepRec.style.borderColor = '#cbd5e1';
+      if (btnStepRecText) btnStepRecText.textContent = 'Record Bug Steps';
+    }
+  }
+  renderStepsList(steps, active);
+}
+
+function renderStepsList(steps = [], active = false) {
+  if (!stepsDrawer || !stepsListEl) return;
+  if (active || steps.length > 0) {
+    stepsDrawer.style.display = 'block';
+  } else {
+    stepsDrawer.style.display = 'none';
+  }
+  if (stepsCountEl) stepsCountEl.textContent = String(steps.length);
+  if (steps.length === 0) {
+    stepsListEl.innerHTML = '<span style="color: #94a3b8; font-style: italic;">Interact with the page to record workflow steps...</span>';
+  } else {
+    stepsListEl.innerHTML = steps.map((s, idx) => `
+      <div style="padding: 4px 6px; background: #fff; border-radius: 4px; border: 1px solid #e2e8f0; font-size: 11px;">
+        <span style="font-weight: 700; color: #4f46e5; margin-right: 4px;">${idx + 1}.</span>
+        <span>${escapeHTML(s.label || s.action || 'Action')}</span>
+      </div>
+    `).join('');
+  }
+}
+
+if (btnStepRec) {
+  btnStepRec.addEventListener('click', async () => {
+    if (isStepRecording) {
+      chrome.runtime.sendMessage({ type: 'STOP_STEP_RECORDING' }, (res) => {
+        applyStepRecordingState(false, res?.steps || []);
+        showToast('Step recording stopped — steps saved for bug report', 'success');
+      });
+    } else {
+      chrome.runtime.sendMessage({ type: 'START_STEP_RECORDING' }, () => {
+        applyStepRecordingState(true, []);
+        showToast('Step recording active — interact on page to record steps', 'info');
+      });
+    }
+  });
+}
+
+if (btnClearSteps) {
+  btnClearSteps.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'CLEAR_RECORDED_STEPS' }, () => {
+      renderStepsList([], isStepRecording);
+      showToast('Recorded steps cleared', 'info');
+    });
+  });
+}
 
 // ── Video recording ───────────────────────────────────────────────────────────
 function applyVideoRecordingVisibility(settings) {
@@ -1297,6 +1407,102 @@ btnDeleteReplay.addEventListener('click', async function () {
   applyReplayChip(null);
   showToast('Recording deleted', 'success', 2500);
 });
+
+// ── Driver.js Product Walkthrough ─────────────────────────────────────────────
+const btnStartTour = document.getElementById('btn-start-tour');
+
+function startSidepanelTour() {
+  if (typeof driver !== 'function') {
+    console.warn('[QA Reporter] driver.js not loaded');
+    return;
+  }
+
+  const tourDriver = driver({
+    animate: true,
+    overlayOpacity: 0.72,
+    stagePadding: 6,
+    stageRadius: 8,
+    showProgress: true,
+    progressText: 'Step {{current}} of {{total}}',
+    nextBtnText: 'Next →',
+    prevBtnText: '← Back',
+    doneBtnText: 'Finish Guide ✓',
+    steps: [
+      {
+        element: '#project-select',
+        popover: {
+          title: '📁 1. Active Target Project',
+          description: 'Choose which project receives captured bugs. Issue trackers, team assignees, tags, and settings sync with this selected workspace.',
+          side: 'bottom',
+          align: 'start',
+        },
+      },
+      {
+        element: '#btn-toggle-recording',
+        popover: {
+          title: '⚡ 2. One-Click Element Capture',
+          description: 'Toggle interactive capture mode or press <span class="kbd">⌥⇧Q</span>. Hover over any UI element and click to record computed CSS, DOM breadcrumbs, React fibers, and screenshot annotations.',
+          side: 'bottom',
+          align: 'start',
+        },
+      },
+      {
+        element: '#screen-rec-row',
+        popover: {
+          title: '🎬 3. Replay & Screen Recording',
+          description: 'Capture DOM mutations using rrweb or video with configurable buffer duration (30s to 5min). Replays link directly with the DevTools master scrubber clock.',
+          side: 'bottom',
+          align: 'start',
+        },
+      },
+      {
+        element: '#step-rec-row',
+        popover: {
+          title: '🐾 4. Record Bug Steps',
+          description: 'Track click streams and form inputs to automatically generate human-readable reproduction steps and Playwright test scripts.',
+          side: 'bottom',
+          align: 'start',
+        },
+      },
+      {
+        element: '#issue-list',
+        popover: {
+          title: '📋 5. Buffered Issues Queue',
+          description: 'Review your captured bugs before submitting. Offline issues are stored locally and will synchronize automatically when connection is restored.',
+          side: 'top',
+          align: 'start',
+        },
+      },
+      {
+        element: '#btn-submit-all',
+        popover: {
+          title: '🚀 6. Sync to Issue Trackers',
+          description: 'Submit all buffered bugs simultaneously to create connected issues in Azure DevOps, Jira, Linear, or GitHub.',
+          side: 'top',
+          align: 'start',
+        },
+      },
+      {
+        element: '#btn-start-tour',
+        popover: {
+          title: '💡 7. Need Help Anytime?',
+          description: 'Click this Guide button anytime to revisit the extension features and workflow shortcuts.',
+          side: 'bottom',
+          align: 'end',
+        },
+      },
+    ],
+  });
+
+  tourDriver.drive();
+}
+
+if (btnStartTour) {
+  btnStartTour.addEventListener('click', function (e) {
+    e.preventDefault();
+    startSidepanelTour();
+  });
+}
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 init();

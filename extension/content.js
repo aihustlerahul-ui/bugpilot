@@ -23,8 +23,9 @@
     SUBMIT_ISSUE:       'SUBMIT_ISSUE',
   };
 
-  var CONSOLE_BUFFER_SIZE = 15;
+  var CONSOLE_BUFFER_SIZE = 30;
   var NETWORK_BUFFER_SIZE = 15;
+  var NETWORK_TRANSACTIONS_BUFFER_SIZE = 50;
   var NAV_HISTORY_SIZE    = 10;
 
   var OVERLAY_ID = 'qa-reporter-highlight';
@@ -43,101 +44,295 @@
     'width', 'height', 'overflow'
   ];
 
+  // ── Client-Side Sanitization Engine & PII Redaction ──────────────────────────
+  var DEFAULT_BLOCKED_PROP_PATTERNS = [
+    '*token*', '*password*', '*secret*', '*auth*', '*apikey*', '*api_key*',
+    '*credential*', '*privatekey*', '*private_key*', '*ssn*', '*creditcard*',
+    '*cardnumber*', '*sessionid*', '*jwt*', '*bearer*', '*cookie*', '*cvv*', '*pin*'
+  ];
+
+  function matchesPattern(str, pattern) {
+    if (!str || !pattern) return false;
+    var s = String(str).toLowerCase();
+    var p = String(pattern).toLowerCase();
+    if (p.startsWith('*') && p.endsWith('*') && p.length > 2) {
+      return s.indexOf(p.slice(1, -1)) !== -1;
+    }
+    if (p.startsWith('*')) {
+      return s.endsWith(p.slice(1));
+    }
+    if (p.endsWith('*')) {
+      return s.startsWith(p.slice(0, -1));
+    }
+    return s === p || s.indexOf(p) !== -1;
+  }
+
+  function isBlockedPropKey(key, customPatterns) {
+    var patterns = (customPatterns && customPatterns.length > 0)
+      ? DEFAULT_BLOCKED_PROP_PATTERNS.concat(customPatterns)
+      : DEFAULT_BLOCKED_PROP_PATTERNS;
+    for (var i = 0; i < patterns.length; i++) {
+      if (matchesPattern(key, patterns[i])) return true;
+    }
+    return false;
+  }
+
+  var SanitizationEngine = {
+    RE_CREDIT_CARD: /\b(?:\d[ -]*?){13,19}\b/g,
+    RE_EMAIL: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+    RE_SSN: /\b\d{3}-\d{2}-\d{4}\b/g,
+    RE_AUTH_HEADER: /(["']?Authorization["']?\s*:\s*["']?(?:Bearer|Basic)\s+)[^"'\r\n\s]+/gi,
+    RE_COOKIE_HEADER: /(["']?Cookie["']?\s*:\s*["']?)[^"'\r\n]+/gi,
+    RE_URL_PARAMS: /([?&](?:token|access_token|refresh_token|auth|password|pwd|secret|apikey|api_key|api-key|sessionId|jwt|client_secret|private_key|privatekey)=)([^&#\s]+)/gi,
+
+    sanitizeString: function (str) {
+      if (typeof str !== 'string') return str;
+      return str
+        .replace(SanitizationEngine.RE_CREDIT_CARD, '[REDACTED_CARD]')
+        .replace(SanitizationEngine.RE_EMAIL, '[REDACTED_EMAIL]')
+        .replace(SanitizationEngine.RE_SSN, '[REDACTED_SSN]')
+        .replace(SanitizationEngine.RE_AUTH_HEADER, '$1[REDACTED_AUTH]')
+        .replace(SanitizationEngine.RE_COOKIE_HEADER, '$1[REDACTED_COOKIE]')
+        .replace(SanitizationEngine.RE_URL_PARAMS, '$1[REDACTED]');
+    },
+
+    sanitizeUrl: function (url) {
+      if (!url || typeof url !== 'string') return url;
+      return SanitizationEngine.sanitizeString(url);
+    }
+  };
+
   // ── Early interceptors (always active) ─────────────────────────────────────
-  var _consoleBuffer    = [];
-  var _networkBuffer    = [];
-  var _navigationHistory = [];
+  var _consoleBuffer         = [];
+  var _networkBuffer         = [];
+  var _networkTransactions   = [];
+  var _navigationHistory      = [];
+  var _longTasksBuffer       = [];
+  window.__qaConsoleBuffer    = _consoleBuffer;
+
+  // ── Long Tasks Observer (>50ms UI freezes) ──────────────────────────────────
+  try {
+    if (typeof PerformanceObserver !== 'undefined' && PerformanceObserver.supportedEntryTypes && PerformanceObserver.supportedEntryTypes.includes('longtask')) {
+      var po = new PerformanceObserver(function (list) {
+        list.getEntries().forEach(function (entry) {
+          _longTasksBuffer.push({
+            name: entry.name,
+            durationMs: Math.round(entry.duration),
+            startTimeMs: Math.round(entry.startTime),
+            containerType: entry.attribution && entry.attribution[0] ? entry.attribution[0].containerType : undefined,
+            containerName: entry.attribution && entry.attribution[0] ? entry.attribution[0].containerName : undefined,
+          });
+          if (_longTasksBuffer.length > 20) _longTasksBuffer.shift();
+        });
+      });
+      po.observe({ entryTypes: ['longtask'] });
+    }
+  } catch (_) {}
 
   function setupConsoleInterceptor() {
-    var levels = ['error', 'warn'];
+    var levels = ['error', 'warn', 'info', 'log'];
     levels.forEach(function (level) {
+      if (!console[level]) return;
       var original = console[level].bind(console);
       console[level] = function () {
         var args = Array.prototype.slice.call(arguments);
         var message;
         try {
           message = args.map(function (a) {
-            if (typeof a === 'string') return a;
-            if (a instanceof Error) return a.message + (a.stack ? '\n' + a.stack : '');
-            try { return JSON.stringify(a); } catch (e) { return String(a); }
+            if (typeof a === 'string') return SanitizationEngine.sanitizeString(a);
+            if (typeof a === 'undefined') return 'undefined';
+            if (a === null) return 'null';
+            if (a instanceof Error || (a && typeof a === 'object' && (a.message || a.stack))) {
+              return SanitizationEngine.sanitizeString((a.message || '') + (a.stack ? (a.message ? '\n' : '') + a.stack : ''));
+            }
+            try { return SanitizationEngine.sanitizeString(JSON.stringify(a)); } catch (e) { return SanitizationEngine.sanitizeString(String(a)); }
           }).join(' ');
         } catch (e) {
-          message = String(args[0]);
+          message = SanitizationEngine.sanitizeString(String(args[0]));
         }
-        _consoleBuffer.push({ level: level, message: message.substring(0, 300), timestamp: new Date().toISOString() });
+        _consoleBuffer.push({ level: level, message: message.substring(0, 500), timestamp: new Date().toISOString() });
         if (_consoleBuffer.length > CONSOLE_BUFFER_SIZE) _consoleBuffer.shift();
         original.apply(console, args);
       };
     });
+
+    window.addEventListener('error', function (event) {
+      if (!isCurrentInstance()) return;
+      try {
+        var errText = (event && event.message) || 'Script error';
+        if (event && event.filename) {
+          errText += ' (' + event.filename + (event.lineno ? ':' + event.lineno : '') + (event.colno ? ':' + event.colno : '') + ')';
+        }
+        if (event && event.error && event.error.stack) {
+          errText += '\n' + event.error.stack;
+        }
+        var sanitized = SanitizationEngine.sanitizeString(errText);
+        var isDup = _consoleBuffer.some(function (entry) {
+          return entry.message === sanitized.substring(0, 500) &&
+            Math.abs(new Date(entry.timestamp).getTime() - Date.now()) < 1000;
+        });
+        if (!isDup) {
+          _consoleBuffer.push({
+            level: 'error',
+            message: sanitized.substring(0, 500),
+            timestamp: new Date().toISOString()
+          });
+          if (_consoleBuffer.length > CONSOLE_BUFFER_SIZE) _consoleBuffer.shift();
+        }
+      } catch (_) {}
+    });
+
+    window.addEventListener('unhandledrejection', function (event) {
+      if (!isCurrentInstance()) return;
+      try {
+        var reason = event && event.reason;
+        var reasonText = '';
+        if (reason instanceof Error || (reason && typeof reason === 'object' && (reason.message || reason.stack))) {
+          reasonText = (reason.message || '') + (reason.stack ? (reason.message ? '\n' : '') + reason.stack : '');
+        } else if (typeof reason === 'string') {
+          reasonText = reason;
+        } else if (reason) {
+          try {
+            reasonText = JSON.stringify(reason);
+          } catch (_) {
+            reasonText = String(reason);
+          }
+        }
+        var fullMsg = 'Unhandled Promise Rejection: ' + (reasonText || 'Unknown reason');
+        var sanitized = SanitizationEngine.sanitizeString(fullMsg);
+        var isDup = _consoleBuffer.some(function (entry) {
+          return entry.message === sanitized.substring(0, 500) &&
+            Math.abs(new Date(entry.timestamp).getTime() - Date.now()) < 1000;
+        });
+        if (!isDup) {
+          _consoleBuffer.push({
+            level: 'error',
+            message: sanitized.substring(0, 500),
+            timestamp: new Date().toISOString()
+          });
+          if (_consoleBuffer.length > CONSOLE_BUFFER_SIZE) _consoleBuffer.shift();
+        }
+      } catch (_) {}
+    });
   }
 
   function setupNetworkInterceptor() {
-    if (window.fetch) {
+    var seenTxIds = {};
+
+    function addNetworkTransaction(tx) {
+      if (!tx || typeof tx !== 'object') return;
+      if (tx.id && seenTxIds[tx.id]) return;
+      if (tx.id) seenTxIds[tx.id] = true;
+
+      _networkTransactions.push(tx);
+      if (_networkTransactions.length > NETWORK_TRANSACTIONS_BUFFER_SIZE) {
+        var removed = _networkTransactions.shift();
+        if (removed && removed.id) delete seenTxIds[removed.id];
+      }
+
+      // Keep _networkBuffer updated for modal preview & backwards compat
+      var st = String(tx.status);
+      var isErr = st === 'failed' || st.startsWith('4') || st.startsWith('5');
+      if (isErr) {
+        _networkBuffer.push({
+          method: tx.method || 'GET',
+          url: (tx.url || '').substring(0, 200),
+          status: tx.status,
+          duration: tx.duration || 0,
+          timestamp: tx.timestamp || new Date().toISOString()
+        });
+        if (_networkBuffer.length > NETWORK_BUFFER_SIZE) _networkBuffer.shift();
+      }
+    }
+
+    // Listen for events from MAIN World network-interceptor.js
+    window.addEventListener('message', function (event) {
+      if (event.source !== window || !event.data) return;
+      if (event.data.type === 'BUGPILOT_NETWORK_EVENT') {
+        addNetworkTransaction(event.data.payload);
+      } else if (event.data.type === 'BUGPILOT_CONSOLE_EVENT') {
+        var payload = event.data.payload;
+        if (payload && payload.message) {
+          var sanitizedMsg = SanitizationEngine.sanitizeString(payload.message);
+          var isDup = _consoleBuffer.some(function (entry) {
+            return entry.message === sanitizedMsg.substring(0, 500) &&
+              Math.abs(new Date(entry.timestamp).getTime() - new Date(payload.timestamp || new Date()).getTime()) < 1000;
+          });
+          if (!isDup) {
+            _consoleBuffer.push({
+              level: payload.level || 'error',
+              message: sanitizedMsg.substring(0, 500),
+              timestamp: payload.timestamp || new Date().toISOString()
+            });
+            if (_consoleBuffer.length > CONSOLE_BUFFER_SIZE) _consoleBuffer.shift();
+          }
+        }
+      }
+    });
+
+    // Content-script fallback if MAIN world interceptor is not present
+    if (window.fetch && !window.__bugpilotNetworkInterceptorInjected) {
       var originalFetch = window.fetch.bind(window);
       window.fetch = function (input, init) {
-        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        var rawUrl = typeof input === 'string' ? input : (input && input.url) || '';
+        var url = SanitizationEngine.sanitizeUrl(rawUrl);
         var method = (init && init.method) || (input && input.method) || 'GET';
         var start = Date.now();
         return originalFetch(input, init).then(function (response) {
-          if (!response.ok) {
-            _networkBuffer.push({ method: method.toUpperCase(), url: url.substring(0, 200), status: response.status, duration: Date.now() - start, timestamp: new Date().toISOString() });
-            if (_networkBuffer.length > NETWORK_BUFFER_SIZE) _networkBuffer.shift();
-          }
+          addNetworkTransaction({
+            id: 'fallback_fetch_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+            method: method.toUpperCase(),
+            url: url,
+            status: response.status,
+            duration: Date.now() - start,
+            timestamp: new Date().toISOString(),
+            initiator: 'fetch'
+          });
           return response;
         }, function (err) {
-          _networkBuffer.push({ method: method.toUpperCase(), url: url.substring(0, 200), status: 'failed', duration: Date.now() - start, timestamp: new Date().toISOString() });
-          if (_networkBuffer.length > NETWORK_BUFFER_SIZE) _networkBuffer.shift();
+          addNetworkTransaction({
+            id: 'fallback_fetch_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+            method: method.toUpperCase(),
+            url: url,
+            status: 'failed',
+            duration: Date.now() - start,
+            timestamp: new Date().toISOString(),
+            error: err && err.message ? err.message : String(err),
+            initiator: 'fetch'
+          });
           throw err;
         });
       };
     }
-
-    var OriginalXHR = window.XMLHttpRequest;
-    window.XMLHttpRequest = function () {
-      var xhr = new OriginalXHR();
-      var entry = { method: 'GET', url: '', start: 0 };
-      var originalOpen = xhr.open.bind(xhr);
-      xhr.open = function (method, url) {
-        entry.method = method.toUpperCase();
-        entry.url = String(url).substring(0, 200);
-        return originalOpen.apply(xhr, arguments);
-      };
-      var originalSend = xhr.send.bind(xhr);
-      xhr.send = function () {
-        entry.start = Date.now();
-        xhr.addEventListener('loadend', function () {
-          if (xhr.status >= 400) {
-            _networkBuffer.push({ method: entry.method, url: entry.url, status: xhr.status, duration: Date.now() - entry.start, timestamp: new Date().toISOString() });
-            if (_networkBuffer.length > NETWORK_BUFFER_SIZE) _networkBuffer.shift();
-          }
-        });
-        return originalSend.apply(xhr, arguments);
-      };
-      return xhr;
-    };
   }
 
   function setupNavigationTracking() {
     function pushNav() {
-      _navigationHistory.push({ url: window.location.href, timestamp: new Date().toISOString() });
-      if (_navigationHistory.length > NAV_HISTORY_SIZE) _navigationHistory.shift();
+      if (typeof window !== 'undefined' && window.location) {
+        _navigationHistory.push({ url: SanitizationEngine.sanitizeUrl(window.location.href), timestamp: new Date().toISOString() });
+        if (_navigationHistory.length > NAV_HISTORY_SIZE) _navigationHistory.shift();
+      }
     }
 
     pushNav(); // record initial page
 
-    var origPush    = history.pushState.bind(history);
-    var origReplace = history.replaceState.bind(history);
-    history.pushState = function () {
-      var result = origPush.apply(history, arguments);
-      pushNav();
-      return result;
-    };
-    history.replaceState = function () {
-      var result = origReplace.apply(history, arguments);
-      pushNav();
-      return result;
-    };
-    window.addEventListener('popstate', pushNav);
+    if (typeof history !== 'undefined' && history && history.pushState && history.replaceState) {
+      var origPush    = history.pushState.bind(history);
+      var origReplace = history.replaceState.bind(history);
+      history.pushState = function () {
+        var result = origPush.apply(history, arguments);
+        pushNav();
+        return result;
+      };
+      history.replaceState = function () {
+        var result = origReplace.apply(history, arguments);
+        pushNav();
+        return result;
+      };
+    }
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('popstate', pushNav);
+    }
   }
 
   // ── State ───────────────────────────────────────────────────────────────────
@@ -163,30 +358,202 @@
     });
   }
 
+  var PAD_RATIO = 0.3;
+
   function cropToElement(dataUrl, rect, padding, callback) {
     var img = new Image();
     img.onload = function () {
       var dpr = window.devicePixelRatio || 1;
-      var x = Math.max(0, (rect.left - padding) * dpr);
-      var y = Math.max(0, (rect.top  - padding) * dpr);
-      var w = Math.min(img.width  - x, (rect.width  + padding * 2) * dpr);
-      var h = Math.min(img.height - y, (rect.height + padding * 2) * dpr);
+
+      // Aspect-ratio aware padding (unless padding is explicitly 0 for element_crop)
+      var padX = padding === 0 ? 0 : Math.max(24, Math.round(rect.width * PAD_RATIO));
+      var padY = padding === 0 ? 0 : Math.max(24, Math.round(rect.height * PAD_RATIO));
+
+      var x = Math.max(0, (rect.left - padX) * dpr);
+      var y = Math.max(0, (rect.top  - padY) * dpr);
+      var w = Math.min(img.width  - x, (rect.width  + padX * 2) * dpr);
+      var h = Math.min(img.height - y, (rect.height + padY * 2) * dpr);
+
       var canvas = document.createElement('canvas');
       canvas.width  = w;
       canvas.height = h;
       var ctx = canvas.getContext('2d');
       ctx.drawImage(img, x, y, w, h, 0, 0, w, h);
-      var highlightX = padding * dpr;
-      var highlightY = padding * dpr;
+
+      var highlightX = (rect.left * dpr) - x;
+      var highlightY = (rect.top  * dpr) - y;
       var highlightW = rect.width  * dpr;
       var highlightH = rect.height * dpr;
-      ctx.strokeStyle = '#ff4444';
+
+      // Rounded dashed highlight border
+      ctx.save();
+      ctx.strokeStyle = '#ef4444';
       ctx.lineWidth   = 3 * dpr;
-      ctx.strokeRect(highlightX, highlightY, highlightW, highlightH);
+      ctx.setLineDash([8 * dpr, 5 * dpr]);
+      var radius = Math.min(8 * dpr, highlightW / 4, highlightH / 4);
+
+      if (typeof ctx.roundRect === 'function') {
+        ctx.beginPath();
+        ctx.roundRect(highlightX, highlightY, highlightW, highlightH, radius);
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.moveTo(highlightX + radius, highlightY);
+        ctx.lineTo(highlightX + highlightW - radius, highlightY);
+        ctx.quadraticCurveTo(highlightX + highlightW, highlightY, highlightX + highlightW, highlightY + radius);
+        ctx.lineTo(highlightX + highlightW, highlightY + highlightH - radius);
+        ctx.quadraticCurveTo(highlightX + highlightW, highlightY + highlightH, highlightX + highlightW - radius, highlightY + highlightH);
+        ctx.lineTo(highlightX + radius, highlightY + highlightH);
+        ctx.quadraticCurveTo(highlightX, highlightY + highlightH, highlightX, highlightY + highlightH - radius);
+        ctx.lineTo(highlightX, highlightY + radius);
+        ctx.quadraticCurveTo(highlightX, highlightY, highlightX + radius, highlightY);
+        ctx.closePath();
+        ctx.stroke();
+      }
+      ctx.restore();
+
       callback(canvas.toDataURL('image/jpeg', 0.85));
     };
     img.onerror = function () { callback(dataUrl); };
     img.src = dataUrl;
+  }
+
+  // ── Smart Blur (Live DOM Redaction ported from Mimik) ────────────────────────
+  var SMART_BLUR_PRESETS = {
+    email:      /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
+    ssn:        /\b\d{3}-?\d{2}-?\d{4}\b/g,
+    creditCard: /\b(?:\d[ -]*?){13,19}\b/g,
+    phone:      /(?:\+\d{1,3}[\s.-]?\d{2,5}[\s.-]?\d{3,4}[\s.-]?\d{3,4}|\b0\d{1,4}[\s.-]?\d{3,4}[\s.-]?\d{3,4}|\(\d{3}\)[\s.-]?\d{3}[\s.-]?\d{4}|\b\d{3}[\s.-]\d{3}[\s.-]\d{4}|\b\d{10,11})\b/g,
+    ipAddress:  /\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g,
+  };
+
+  var SMART_BLUR_EXCLUDE = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION']);
+
+  function findTextMatches(text, patterns) {
+    var ranges = [];
+    for (var i = 0; i < patterns.length; i++) {
+      var pat = patterns[i];
+      if (!pat.global) pat = new RegExp(pat.source, pat.flags + "g");
+      pat.lastIndex = 0;
+      var match = pat.exec(text);
+      while (match !== null) {
+        ranges.push({ start: match.index, end: match.index + match[0].length });
+        match = pat.exec(text);
+      }
+    }
+    ranges.sort(function (a, b) { return a.start - b.start; });
+    var merged = [];
+    for (var j = 0; j < ranges.length; j++) {
+      var r = ranges[j];
+      var last = merged[merged.length - 1];
+      if (last && r.start <= last.end) {
+        last.end = Math.max(last.end, r.end);
+      } else {
+        merged.push({ start: r.start, end: r.end });
+      }
+    }
+    return merged;
+  }
+
+  function applySmartBlur(root) {
+    root = root || document.body;
+    if (!root) return function () {};
+
+    var patterns = Object.values(SMART_BLUR_PRESETS).map(function (p) {
+      return new RegExp(p.source, p.flags);
+    });
+
+    var walker = (typeof document !== 'undefined' && document.createTreeWalker) ? document.createTreeWalker(root, (typeof NodeFilter !== 'undefined' ? NodeFilter.SHOW_TEXT : 4), {
+      acceptNode: function (node) {
+        if (!node.parentElement) return (typeof NodeFilter !== 'undefined' ? NodeFilter.FILTER_REJECT : 2);
+        if (SMART_BLUR_EXCLUDE.has(node.parentElement.tagName)) return (typeof NodeFilter !== 'undefined' ? NodeFilter.FILTER_REJECT : 2);
+        if (node.parentElement.closest && node.parentElement.closest('[data-qa-blur]')) return (typeof NodeFilter !== 'undefined' ? NodeFilter.FILTER_REJECT : 2);
+        if (!node.textContent || !node.textContent.trim()) return (typeof NodeFilter !== 'undefined' ? NodeFilter.FILTER_REJECT : 2);
+        return (typeof NodeFilter !== 'undefined' ? NodeFilter.FILTER_ACCEPT : 1);
+      }
+    }) : null;
+
+    var textNodes = [];
+    if (walker) {
+      while (walker.nextNode()) textNodes.push(walker.currentNode);
+    }
+
+    for (var i = 0; i < textNodes.length; i++) {
+      var tNode = textNodes[i];
+      var text = tNode.textContent || '';
+      var matches = findTextMatches(text, patterns);
+      if (matches.length === 0) continue;
+
+      var frag = document.createDocumentFragment();
+      var lastEnd = 0;
+      for (var m = 0; m < matches.length; m++) {
+        var range = matches[m];
+        if (range.start > lastEnd) {
+          frag.appendChild(document.createTextNode(text.slice(lastEnd, range.start)));
+        }
+        var span = document.createElement('span');
+        span.className = 'qa-smart-blur';
+        span.setAttribute('data-qa-blur', 'regex');
+        span.style.setProperty('filter', 'blur(10px)', 'important');
+        span.style.setProperty('display', 'inline-block', 'important');
+        span.textContent = text.slice(range.start, range.end);
+        frag.appendChild(span);
+        lastEnd = range.end;
+      }
+      if (lastEnd < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(lastEnd)));
+      }
+      if (tNode.parentNode) {
+        tNode.parentNode.replaceChild(frag, tNode);
+      }
+    }
+
+    var searchRoot = (root.querySelectorAll ? root : (typeof document !== 'undefined' ? document : null));
+    var inputs = searchRoot ? Array.from(searchRoot.querySelectorAll('input, textarea')) : [];
+    for (var k = 0; k < inputs.length; k++) {
+      var inp = inputs[k];
+      if (inp.getAttribute && inp.getAttribute('data-qa-blur')) continue;
+      var val = inp.value;
+      if (!val) continue;
+      if (findTextMatches(val, patterns).length > 0) {
+        if (inp.style && inp.style.setProperty) {
+          inp.style.setProperty('filter', 'blur(10px)', 'important');
+        }
+        if (inp.setAttribute) {
+          inp.setAttribute('data-qa-blur', 'input');
+        }
+      }
+    }
+
+    return function unblur() {
+      var unblurRoot = (root.querySelectorAll ? root : (typeof document !== 'undefined' ? document : null));
+      if (!unblurRoot) return;
+      var spans = Array.from(unblurRoot.querySelectorAll('span[data-qa-blur="regex"]'));
+      for (var s = 0; s < spans.length; s++) {
+        var sp = spans[s];
+        var txt = document.createTextNode(sp.textContent || '');
+        if (sp.parentNode) {
+          var p = sp.parentNode;
+          p.replaceChild(txt, sp);
+          if (p.normalize) p.normalize();
+        }
+      }
+      var blurredInputs = Array.from(unblurRoot.querySelectorAll('[data-qa-blur="input"]'));
+      for (var b = 0; b < blurredInputs.length; b++) {
+        if (blurredInputs[b].style && blurredInputs[b].style.removeProperty) {
+          blurredInputs[b].style.removeProperty('filter');
+        }
+        if (blurredInputs[b].removeAttribute) {
+          blurredInputs[b].removeAttribute('data-qa-blur');
+        }
+      }
+    };
+  }
+
+  if (typeof window !== 'undefined') {
+    window.applySmartBlur = applySmartBlur;
+    window.SMART_BLUR_PRESETS = SMART_BLUR_PRESETS;
+    window.findTextMatches = findTextMatches;
   }
 
   function drawHighlight(dataUrl, rect, callback) {
@@ -295,19 +662,39 @@
           });
         }
       }
+      if (_longTasksBuffer && _longTasksBuffer.length > 0) {
+        metrics.longTasks = _longTasksBuffer.slice(0, 10);
+      }
+      if (window.performance && window.performance.memory) {
+        var mem = window.performance.memory;
+        metrics.memoryHeap = {
+          usedJSHeapSizeMb: Math.round(mem.usedJSHeapSize / (1024 * 1024) * 10) / 10,
+          totalJSHeapSizeMb: Math.round(mem.totalJSHeapSize / (1024 * 1024) * 10) / 10,
+        };
+      }
       return Object.keys(metrics).length > 0 ? metrics : null;
     } catch (e) {
       return null;
     }
   }
 
-  // ── App state (React Router + Zustand) ──────────────────────────────────────
+  // ── App state (React Router + Redux + Zustand) ─────────────────────────────
   function captureAppState() {
     var result = {};
     try {
       var state = window.history.state;
       if (state && (state.idx !== undefined || state.key !== undefined)) {
         result.reactRouterState = { idx: state.idx, key: state.key, usr: state.usr || null };
+      }
+    } catch (e) {}
+    try {
+      // Redux DevTools / Store capture
+      var reduxStore = window.store || (window.__REDUX_DEVTOOLS_EXTENSION__ && window.__REDUX_DEVTOOLS_EXTENSION__.store);
+      if (reduxStore && typeof reduxStore.getState === 'function') {
+        var rawState = reduxStore.getState();
+        if (rawState && typeof rawState === 'object') {
+          result.reduxStateKeys = Object.keys(rawState).slice(0, 20);
+        }
       }
     } catch (e) {}
     try {
@@ -399,43 +786,87 @@
     return patterns.some(function (pattern) { return pattern.test(className); });
   }
 
+  function safeCssEscape(str) {
+    if (typeof str !== 'string') return str;
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+      return CSS.escape(str);
+    }
+    return str.replace(/([!"#$%&'()*+,.\/:;<=>?@[\\\]^`{|}~])/g, '\\$1');
+  }
+
   function generateCssSelector(element) {
     if (!element || element === document.body) return 'body';
-    if (element.id && !isNumericId(element.id)) return '#' + CSS.escape(element.id);
+    if (element === document.documentElement) return 'html';
+
+    // 1. Direct explicit test attributes priority
     var dataAttrs = ['data-testid', 'data-test-id', 'data-cy', 'data-qa'];
     for (var i = 0; i < dataAttrs.length; i++) {
       var attrVal = element.getAttribute(dataAttrs[i]);
-      if (attrVal) return '[' + dataAttrs[i] + '="' + CSS.escape(attrVal) + '"]';
+      if (attrVal) return '[' + dataAttrs[i] + '="' + safeCssEscape(attrVal) + '"]';
     }
+
+    // 2. Direct unique ID if non-numeric
+    if (element.id && !isNumericId(element.id)) {
+      var idSel = '#' + safeCssEscape(element.id);
+      try {
+        if (document.querySelectorAll(idSel).length === 1) return idSel;
+      } catch (_) {}
+    }
+
+    // 3. Anton Medvedev's shortest unique CSS selector algorithm via finder
+    try {
+      var finderFn = (typeof finder === 'function') ? finder : (typeof window !== 'undefined' && typeof window.finder === 'function' ? window.finder : null);
+      if (finderFn) {
+        var opt = finderFn(element, {
+          root: (element.ownerDocument && element.ownerDocument.body) ? element.ownerDocument.body : document.body,
+          idName: function (id) { return !isNumericId(id); },
+          className: function (cls) { return !isGeneratedClass(cls) && !cls.startsWith('qa-'); },
+          tagName: function () { return true; },
+          attr: function (name) {
+            return ['data-testid', 'data-test-id', 'data-cy', 'data-qa', 'name', 'role', 'aria-label'].indexOf(name) !== -1;
+          }
+        });
+        if (opt && document.querySelectorAll(opt).length === 1) return opt;
+      }
+    } catch (e) {
+      console.warn('[QA] finder fallback:', e);
+    }
+
+    // 4. Fallback heuristics
     if (element.classList && element.classList.length > 0) {
       var stableClasses = Array.from(element.classList).filter(function (cls) { return !isGeneratedClass(cls); });
       if (stableClasses.length > 0) {
-        var className = stableClasses.map(function (c) { return '.' + CSS.escape(c); }).join('');
+        var className = stableClasses.map(function (c) { return '.' + safeCssEscape(c); }).join('');
         try { if (document.querySelectorAll(className).length === 1) return className; } catch (e) {}
       }
     }
     var stableAttrs = ['name', 'type', 'placeholder', 'aria-label', 'title', 'role'];
     for (var j = 0; j < stableAttrs.length; j++) {
       var val = element.getAttribute(stableAttrs[j]);
-      if (val) return element.tagName.toLowerCase() + '[' + stableAttrs[j] + '="' + CSS.escape(val) + '"]';
+      if (val) return element.tagName.toLowerCase() + '[' + stableAttrs[j] + '="' + safeCssEscape(val) + '"]';
     }
     var path = [];
     var current = element;
     while (current && current !== document.body && current !== document.documentElement) {
       var sel = current.tagName.toLowerCase();
       var parent = current.parentElement;
-      if (parent) {
+      if (parent && parent !== document.documentElement) {
         var siblings = Array.from(parent.children).filter(function (child) { return child.tagName === current.tagName; });
         if (siblings.length > 1) sel += ':nth-of-type(' + (siblings.indexOf(current) + 1) + ')';
       }
       path.unshift(sel);
       current = parent;
     }
-    return path.join(' > ');
+    return path.join(' > ') || (element.tagName ? element.tagName.toLowerCase() : '');
+  }
+
+  if (typeof window !== 'undefined') {
+    window.__qaGenerateCssSelector = generateCssSelector;
   }
 
   function generateXPath(element) {
     if (!element) return '';
+    if (element === document.documentElement) return '/html';
     if (element === document.body) return '/html/body';
     if (element.id && !isNumericId(element.id)) return '//*[@id="' + element.id + '"]';
     var dataAttrs = ['data-testid', 'data-test-id', 'data-cy', 'data-qa'];
@@ -449,7 +880,7 @@
       var part = current.tagName.toLowerCase();
       if (current.id && !isNumericId(current.id)) { parts.unshift('//*[@id="' + current.id + '"]'); break; }
       var parent = current.parentElement;
-      if (parent) {
+      if (parent && current !== document.body) {
         var siblings = Array.from(parent.children).filter(function (c) { return c.tagName === current.tagName; });
         if (siblings.length > 1) part += '[' + (siblings.indexOf(current) + 1) + ']';
       }
@@ -461,19 +892,21 @@
 
   // ── DOM breadcrumb (ancestry) ────────────────────────────────────────────────
   function captureDomBreadcrumb(element) {
+    if (!element) return [];
+    if (element === document.documentElement) return [{ tag: 'html' }];
     var breadcrumb = [];
     var current = element;
     var depth = 0;
     while (current && current !== document.documentElement && depth < 20) {
-      var item = { tag: current.tagName.toLowerCase() };
+      var item = { tag: current.tagName ? current.tagName.toLowerCase() : '' };
       if (current.id && !isNumericId(current.id)) item.id = current.id;
-      if (current.getAttribute('role')) item.role = current.getAttribute('role');
+      if (current.getAttribute && current.getAttribute('role')) item.role = current.getAttribute('role');
       if (current.classList && current.classList.length > 0) {
         var stableClasses = Array.from(current.classList).filter(function (c) { return !isGeneratedClass(c); });
         if (stableClasses.length > 0) item.classes = stableClasses.slice(0, 5);
       }
       var parent = current.parentElement;
-      if (parent) {
+      if (parent && current !== document.body) {
         var siblings = Array.from(parent.children).filter(function (c) { return c.tagName === current.tagName; });
         if (siblings.length > 1) item.nthOfType = siblings.indexOf(current) + 1;
       }
@@ -498,27 +931,36 @@
   }
 
   // ── React component info ────────────────────────────────────────────────────
-  function sanitizeReactProps(props, depth) {
+  function sanitizeReactProps(props, depth, customBlocklist) {
     if (!props || depth > 2) return undefined;
     var result = {};
     var count = 0;
     Object.keys(props).forEach(function (key) {
       if (count >= 15) return;
       if (key === 'children') return;
+      if (isBlockedPropKey(key, customBlocklist)) {
+        result[key] = '[REDACTED]';
+        count++;
+        return;
+      }
       var val = props[key];
       if (val === null || val === undefined) return;
       if (typeof val === 'function') return;
-      if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
-        result[key] = val; count++;
+      if (typeof val === 'string') {
+        result[key] = SanitizationEngine.sanitizeString(val);
+        count++;
+      } else if (typeof val === 'number' || typeof val === 'boolean') {
+        result[key] = val;
+        count++;
       } else if (typeof val === 'object' && !Array.isArray(val) && depth < 2) {
-        var nested = sanitizeReactProps(val, depth + 1);
+        var nested = sanitizeReactProps(val, depth + 1, customBlocklist);
         if (nested && Object.keys(nested).length > 0) { result[key] = nested; count++; }
       }
     });
     return Object.keys(result).length > 0 ? result : undefined;
   }
 
-  function getReactComponentInfo(element) {
+  function getReactComponentInfo(element, customBlocklist) {
     try {
       var fiberKey = Object.keys(element).find(function (k) {
         return k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$');
@@ -531,14 +973,20 @@
       var node = fiber;
       var depth = 0;
       var closestSource = null;
-      while (node && depth < 30) {
+      var visitedNodes = typeof Set !== 'undefined' ? new Set() : null;
+
+      while (node && depth < 20) {
+        if (visitedNodes) {
+          if (visitedNodes.has(node)) break;
+          visitedNodes.add(node);
+        }
         if (node.type && typeof node.type === 'function') {
           var name = node.type.displayName || node.type.name || 'Anonymous';
           if (name && name !== 'Anonymous') {
             componentTree.push(name);
             if (!closestName) {
               closestName = name;
-              closestProps = sanitizeReactProps(node.memoizedProps || {}, 0);
+              closestProps = sanitizeReactProps(node.memoizedProps || {}, 0, customBlocklist);
               var src = node._debugSource;
               if (src && src.fileName) {
                 closestSource = { file: src.fileName, line: src.lineNumber || null, col: src.columnNumber || null };
@@ -601,7 +1049,7 @@
   function getNearestLabel(element) {
     try {
       if (element.id) {
-        var label = document.querySelector('label[for="' + CSS.escape(element.id) + '"]');
+        var label = document.querySelector('label[for="' + safeCssEscape(element.id) + '"]');
         if (label) return safeGetTextContent(label, 60);
       }
       var parent = element.closest('label');
@@ -628,24 +1076,42 @@
     return context;
   }
 
+  function isBlankOrRootElement(element) {
+    if (!element) return false;
+    if (element === document.body || element === document.documentElement) return true;
+    var tag = (element.tagName || '').toLowerCase();
+    var id = element.id || '';
+    var isKnownRoot = id === 'root' || id === 'app' || id === '__next' || tag === 'main' || tag === 'body' || tag === 'html';
+    var hasNoChildren = !element.children || element.children.length === 0;
+    var hasNoText = !element.textContent || !element.textContent.trim();
+    if (isKnownRoot && (hasNoChildren || hasNoText)) return true;
+    if (hasNoChildren && hasNoText && (!element.parentElement || element.parentElement === document.body || element.parentElement === document.documentElement)) return true;
+    return false;
+  }
+
   // ── Full element data capture ────────────────────────────────────────────────
-  function captureElementData(element) {
+  function captureElementData(element, customBlocklist) {
+    if (!element) return null;
+    var isBlankOrRoot = isBlankOrRootElement(element);
+
     var cssSelector = generateCssSelector(element);
     var xpath       = generateXPath(element);
 
     var dataAttributes = {};
-    DATA_ATTRIBUTES.forEach(function (attr) {
-      var value = element.getAttribute(attr);
-      if (value) dataAttributes[attr] = value;
-    });
+    if (element.getAttribute) {
+      DATA_ATTRIBUTES.forEach(function (attr) {
+        var value = element.getAttribute(attr);
+        if (value) dataAttributes[attr] = SanitizationEngine.sanitizeString(value);
+      });
+    }
 
     var result = {
-      tag:            element.tagName.toLowerCase(),
-      tagName:        element.tagName,
+      tag:            element.tagName ? element.tagName.toLowerCase() : '',
+      tagName:        element.tagName || '',
       id:             element.id || null,
       classList:      element.classList ? Array.from(element.classList) : [],
-      text:           safeGetTextContent(element, 100),
-      textContent:    safeGetTextContent(element, 100),
+      text:           SanitizationEngine.sanitizeString(safeGetTextContent(element, 100)),
+      textContent:    SanitizationEngine.sanitizeString(safeGetTextContent(element, 100)),
       cssSelector:    cssSelector,
       xpath:          xpath,
       selector:       cssSelector,
@@ -657,11 +1123,17 @@
       domBreadcrumb:  captureDomBreadcrumb(element),
     };
 
-    var reactInfo = getReactComponentInfo(element);
+    if (isBlankOrRoot) {
+      result.note = 'Full viewport / empty root capture (potential WSOD or unmounted state)';
+    }
+
+    var reactInfo = getReactComponentInfo(element, customBlocklist);
     if (reactInfo) result.react = reactInfo;
 
     return result;
   }
+
+  window.__qaCaptureElementData = captureElementData;
 
   // ── Message listener ─────────────────────────────────────────────────────────
   chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
@@ -674,6 +1146,39 @@
     }
     if (message.type === MESSAGE_TYPES.STOP_REPORTING)  { stopReporting();  sendResponse({ ok: true }); return true; }
     if (message.type === 'IS_RECORDING')                { sendResponse({ recording: recording }); return true; }
+
+    if (message.type === 'BUG_MAGNET_INSERT') {
+      var el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+        var start = typeof el.selectionStart === 'number' ? el.selectionStart : (el.value || '').length;
+        var end = typeof el.selectionEnd === 'number' ? el.selectionEnd : (el.value || '').length;
+        var val = el.value || '';
+        var insertVal = message.value != null ? String(message.value) : '';
+        el.value = val.substring(0, start) + insertVal + val.substring(end);
+        el.selectionStart = el.selectionEnd = start + insertVal.length;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      } else if (el && el.isContentEditable) {
+        var insertVal = message.value != null ? String(message.value) : '';
+        if (document.queryCommandSupported && document.queryCommandSupported('insertText')) {
+          document.execCommand('insertText', false, insertVal);
+        } else {
+          var sel = window.getSelection();
+          if (sel && sel.rangeCount > 0) {
+            var range = sel.getRangeAt(0);
+            range.deleteContents();
+            var textNode = document.createTextNode(insertVal);
+            range.insertNode(textNode);
+            range.setStartAfter(textNode);
+            range.setEndAfter(textNode);
+          }
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      sendResponse({ ok: true });
+      return true;
+    }
   });
 
   window.addEventListener('message', function (e) {
@@ -845,23 +1350,43 @@
     };
     var elemData = buildCoordinateElementData(cx, cy);
     setTimeout(function () {
-      chrome.runtime.sendMessage({ type: MESSAGE_TYPES.CAPTURE_SCREENSHOT }, function (res) {
-        var fullDataUrl = (res && res.ok) ? res.dataUrl : null;
-        var screenRecordingActive = !!(res && res.screenRecordingActive);
-        var isMultiTab = !!(res && res.isMultiTab);
-        var recordingStartedAt = (res && res.recordingStartedAt) || null;
-        chrome.storage.local.get(['qa_ext_settings', 'qa_video_recording_pending'], function (stored) {
-          var settings = stored.qa_ext_settings || {};
-          var mode     = settings.screenshotMode || 'element_context';
-          var videoRecordingPending = !!stored.qa_video_recording_pending;
-          function openModal(screenshotDataUrl) {
-            showModal({ element: clickedEl || document.body, elemData: elemData, screenshotDataUrl: screenshotDataUrl, fullScreenshotDataUrl: fullDataUrl, settings: settings, screenRecordingActive: screenRecordingActive, isMultiTab: isMultiTab, recordingStartedAt: recordingStartedAt, videoRecordingPending: videoRecordingPending });
+      var unblur = applySmartBlur(document.body);
+      var unblurTimer = setTimeout(function () {
+        try {
+          if (typeof unblur === 'function') {
+            unblur();
+            unblur = null;
           }
-          if (!fullDataUrl || elemRect.width === 0) return openModal(fullDataUrl);
-          if (mode === 'full')             { openModal(fullDataUrl); }
-          else if (mode === 'element_crop'){ cropToElement(fullDataUrl, elemRect, 0,  openModal); }
-          else if (mode === 'full_highlighted') { drawHighlight(fullDataUrl, elemRect, openModal); }
-          else { cropToElement(fullDataUrl, elemRect, 80, openModal); }
+        } catch (_) {}
+      }, 2500);
+      requestAnimationFrame(function () {
+        chrome.runtime.sendMessage({ type: MESSAGE_TYPES.CAPTURE_SCREENSHOT }, function (res) {
+          clearTimeout(unblurTimer);
+          try {
+            if (typeof unblur === 'function') {
+              unblur();
+              unblur = null;
+            }
+          } catch (unblurErr) {
+            console.warn('[QA] Error unblurring DOM:', unblurErr);
+          }
+          var fullDataUrl = (res && res.ok) ? res.dataUrl : null;
+          var screenRecordingActive = !!(res && res.screenRecordingActive);
+          var isMultiTab = !!(res && res.isMultiTab);
+          var recordingStartedAt = (res && res.recordingStartedAt) || null;
+          chrome.storage.local.get(['qa_ext_settings', 'qa_video_recording_pending'], function (stored) {
+            var settings = stored.qa_ext_settings || {};
+            var mode     = settings.screenshotMode || 'element_context';
+            var videoRecordingPending = !!stored.qa_video_recording_pending;
+            function openModal(screenshotDataUrl) {
+              showModal({ element: clickedEl || document.body, elemData: elemData, screenshotDataUrl: screenshotDataUrl, fullScreenshotDataUrl: fullDataUrl, settings: settings, screenRecordingActive: screenRecordingActive, isMultiTab: isMultiTab, recordingStartedAt: recordingStartedAt, videoRecordingPending: videoRecordingPending });
+            }
+            if (!fullDataUrl || elemRect.width === 0) return openModal(fullDataUrl);
+            if (mode === 'full')             { openModal(fullDataUrl); }
+            else if (mode === 'element_crop'){ cropToElement(fullDataUrl, elemRect, 0,  openModal); }
+            else if (mode === 'full_highlighted') { drawHighlight(fullDataUrl, elemRect, openModal); }
+            else { cropToElement(fullDataUrl, elemRect, 80, openModal); }
+          });
         });
       });
     }, 50);
@@ -1026,32 +1551,375 @@
     var elemData = null;
 
     setTimeout(function () {
-      chrome.runtime.sendMessage({ type: MESSAGE_TYPES.CAPTURE_SCREENSHOT }, function (res) {
-        var fullDataUrl = (res && res.ok) ? res.dataUrl : null;
-        var screenRecordingActive = !!(res && res.screenRecordingActive);
-        var isMultiTab = !!(res && res.isMultiTab);
-        var recordingStartedAt = (res && res.recordingStartedAt) || null;
-        elemData = captureElementData(clickedEl);
-
-        chrome.storage.local.get(['qa_ext_settings', 'qa_video_recording_pending'], function (stored) {
-          var settings = stored.qa_ext_settings || {};
-          var mode     = settings.screenshotMode || 'element_context';
-          var videoRecordingPending = !!stored.qa_video_recording_pending;
-
-          function openModal(screenshotDataUrl) {
-            showModal({ element: clickedEl, elemData: elemData, screenshotDataUrl: screenshotDataUrl, fullScreenshotDataUrl: fullDataUrl, settings: settings, screenRecordingActive: screenRecordingActive, isMultiTab: isMultiTab, recordingStartedAt: recordingStartedAt, videoRecordingPending: videoRecordingPending });
+      var unblur = applySmartBlur(document.body);
+      var unblurTimer = setTimeout(function () {
+        try {
+          if (typeof unblur === 'function') {
+            unblur();
+            unblur = null;
           }
+        } catch (_) {}
+      }, 2500);
+      requestAnimationFrame(function () {
+        chrome.runtime.sendMessage({ type: MESSAGE_TYPES.CAPTURE_SCREENSHOT }, function (res) {
+          clearTimeout(unblurTimer);
+          try {
+            if (typeof unblur === 'function') {
+              unblur();
+              unblur = null;
+            }
+          } catch (unblurErr) {
+            console.warn('[QA] Error unblurring DOM:', unblurErr);
+          }
+          var fullDataUrl = (res && res.ok) ? res.dataUrl : null;
+          var screenRecordingActive = !!(res && res.screenRecordingActive);
+          var isMultiTab = !!(res && res.isMultiTab);
+          var recordingStartedAt = (res && res.recordingStartedAt) || null;
+          chrome.storage.local.get(['qa_ext_settings', 'qa_video_recording_pending'], function (stored) {
+            var settings = stored.qa_ext_settings || {};
+            var mode     = settings.screenshotMode || 'element_context';
+            var videoRecordingPending = !!stored.qa_video_recording_pending;
+            elemData = captureElementData(clickedEl, settings.propBlocklist);
 
-          if (!fullDataUrl || elemRect.width === 0) return openModal(fullDataUrl);
+            function openModal(screenshotDataUrl) {
+              showModal({ element: clickedEl, elemData: elemData, screenshotDataUrl: screenshotDataUrl, fullScreenshotDataUrl: fullDataUrl, settings: settings, screenRecordingActive: screenRecordingActive, isMultiTab: isMultiTab, recordingStartedAt: recordingStartedAt, videoRecordingPending: videoRecordingPending });
+            }
 
-          if (mode === 'full')             { openModal(fullDataUrl); }
-          else if (mode === 'element_crop'){ cropToElement(fullDataUrl, elemRect, 0,  openModal); }
-          else if (mode === 'full_highlighted') { drawHighlight(fullDataUrl, elemRect, openModal); }
-          else { cropToElement(fullDataUrl, elemRect, 80, openModal); } // element_context + both + default
+            if (!fullDataUrl || elemRect.width === 0) return openModal(fullDataUrl);
+
+            if (mode === 'full')             { openModal(fullDataUrl); }
+            else if (mode === 'element_crop'){ cropToElement(fullDataUrl, elemRect, 0,  openModal); }
+            else if (mode === 'full_highlighted') { drawHighlight(fullDataUrl, elemRect, openModal); }
+            else { cropToElement(fullDataUrl, elemRect, 80, openModal); } // element_context + both + default
+          });
         });
       });
     }, 80);
   }
+
+  // ── B2: Mimik 50-Token Semantic DOM Context Extractor ────────────────────────
+  var SEMANTIC_CONTAINERS = ['form', 'nav', 'dialog', 'section', 'main', 'aside', 'header', 'footer', 'article'];
+  var INTERACTIVE_SELECTOR = 'a[href], button, input:not([type="hidden"]), select, textarea, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"], [tabindex]:not([tabindex="-1"])';
+
+  function textOf(el) {
+    return el && el.textContent ? el.textContent.trim() : null;
+  }
+
+  function resolveAriaLabelledBy(el) {
+    var ids = el.getAttribute('aria-labelledby');
+    if (!ids) return null;
+    return ids.split(/\s+/).map(function (id) {
+      return textOf(document.getElementById(id));
+    }).filter(Boolean).join(' ') || null;
+  }
+
+  function getLabelForInput(el) {
+    var id = el.id;
+    if (id) {
+      try {
+        var label = textOf(document.querySelector('label[for="' + CSS.escape(id) + '"]'));
+        if (label) return label;
+      } catch (_) {}
+    }
+    var parentLabel = el.closest('label');
+    if (!parentLabel) return null;
+    var clone = parentLabel.cloneNode(true);
+    var inputs = clone.querySelectorAll('input, select, textarea');
+    for (var i = 0; i < inputs.length; i++) inputs[i].remove();
+    return textOf(clone);
+  }
+
+  function getAccessibleName(el) {
+    if (!el || !(el instanceof Element)) return null;
+    var ariaLabel = el.getAttribute('aria-label');
+    if (ariaLabel) return ariaLabel.trim();
+    var labelledBy = resolveAriaLabelledBy(el);
+    if (labelledBy) return labelledBy.trim();
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+      var inpLabel = getLabelForInput(el);
+      if (inpLabel) return inpLabel.trim();
+    }
+    var title = el.getAttribute('title');
+    if (title) return title.trim();
+    var placeholder = el.getAttribute('placeholder');
+    if (placeholder) return placeholder.trim();
+    var text = textOf(el);
+    if (text && text.length <= 60) return text;
+    return null;
+  }
+
+  function isSensitiveElement(el) {
+    if (!el) return false;
+    if (el instanceof HTMLInputElement && (el.type === 'password' || el.type === 'hidden')) return true;
+    var name = (el.getAttribute('name') || el.id || '').toLowerCase();
+    var label = (getAccessibleName(el) || '').toLowerCase();
+    return isBlockedPropKey(name) || isBlockedPropKey(label);
+  }
+
+  function getElementValue(el) {
+    if (!el) return null;
+    if (isSensitiveElement(el)) return '***';
+    if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) {
+      return el.checked ? 'checked' : 'unchecked';
+    }
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      return el.value ? 'value=' + el.value.slice(0, 40) : null;
+    }
+    if (el instanceof HTMLSelectElement && el.selectedOptions.length) {
+      return 'selected=' + el.selectedOptions[0].text.slice(0, 40);
+    }
+    return null;
+  }
+
+  function findContainer(el) {
+    var cur = el ? el.parentElement : null;
+    var depth = 0;
+    while (cur && cur !== document.body && depth < 4) {
+      var tag = cur.tagName.toLowerCase();
+      var role = cur.getAttribute('role');
+      if (SEMANTIC_CONTAINERS.indexOf(tag) !== -1 || role) {
+        var label = cur.getAttribute('aria-label') || textOf(cur.querySelector(':scope > legend, :scope > caption')) || resolveAriaLabelledBy(cur);
+        return { tag: tag, role: role, label: label ? label.slice(0, 60) : null, element: cur };
+      }
+      cur = cur.parentElement;
+      depth++;
+    }
+    return null;
+  }
+
+  function findNearestHeading(el) {
+    var cur = el ? el.parentElement : null;
+    var depth = 0;
+    while (cur && cur !== document.body && depth < 4) {
+      var h = cur.querySelector('h1, h2, h3, h4, h5, h6, [role="heading"]');
+      if (h) {
+        var t = textOf(h);
+        if (t) return t.slice(0, 80);
+      }
+      cur = cur.parentElement;
+      depth++;
+    }
+    return null;
+  }
+
+  function collectInteractiveSiblings(el, containerEl) {
+    var parent = containerEl || (el ? el.parentElement : null);
+    if (!parent) return [];
+    var sibs = [];
+    try {
+      var list = parent.querySelectorAll(INTERACTIVE_SELECTOR);
+      for (var i = 0; i < list.length && sibs.length < 8; i++) {
+        var s = list[i];
+        if (s === el || s.closest('#qa-reporter-modal') || s.closest('#qa-reporter-highlight')) continue;
+        sibs.push({
+          tag: s.tagName.toLowerCase(),
+          role: s.getAttribute('role') || null,
+          name: getAccessibleName(s),
+          value: getElementValue(s),
+        });
+      }
+    } catch (_) {}
+    return sibs;
+  }
+
+  function extractDOMContext(el, action) {
+    if (!el || !(el instanceof Element)) {
+      return {
+        page: { title: document.title, path: window.location.pathname },
+        container: null,
+        heading: null,
+        siblings: [],
+        target: { tag: 'unknown', role: null, name: null, value: null, action: action || 'click' },
+        rawSummary: 'Page: "' + document.title + '" ' + window.location.pathname,
+      };
+    }
+    var container = findContainer(el);
+    var heading = findNearestHeading(el);
+    var siblings = collectInteractiveSiblings(el, container ? container.element : null);
+    var target = {
+      tag: el.tagName.toLowerCase(),
+      role: el.getAttribute('role') || null,
+      name: getAccessibleName(el),
+      value: getElementValue(el),
+      action: action || 'click',
+    };
+    var ctx = {
+      page: { title: document.title, path: window.location.pathname },
+      container: container ? { tag: container.tag, role: container.role, label: container.label } : null,
+      heading: heading,
+      siblings: siblings,
+      target: target,
+    };
+    ctx.rawSummary = serializeDOMContext(ctx);
+    return ctx;
+  }
+
+  function serializeDOMContext(ctx) {
+    var parts = [];
+    parts.push('Page: "' + (ctx.page.title || '') + '" ' + ctx.page.path);
+    if (ctx.container) {
+      var cStr = '<' + ctx.container.tag + '>';
+      if (ctx.container.role) cStr += ' [role=' + ctx.container.role + ']';
+      if (ctx.container.label) cStr += ' "' + ctx.container.label + '"';
+      parts.push('Container: ' + cStr);
+    }
+    if (ctx.heading) parts.push('Heading: "' + ctx.heading + '"');
+    if (ctx.siblings && ctx.siblings.length > 0) {
+      var sibsStr = ctx.siblings.slice(0, 4).map(function (s) {
+        return s.tag + (s.name ? ' "' + s.name + '"' : '');
+      }).join(', ');
+      parts.push('Siblings: ' + sibsStr);
+    }
+    var t = ctx.target;
+    parts.push('→ Target: <' + t.tag + '>' + (t.name ? ' "' + t.name + '"' : '') + (t.value ? ' [' + t.value + ']' : '') + ' (' + t.action + ')');
+    return parts.join(' | ');
+  }
+
+  // ── B7: Keystroke Consolidation & Step Recorder (InputSession) ────────────────
+  var recordedSteps = [];
+  var stepRecordingActive = false;
+
+  var InputSession = {
+    active: false,
+    target: null,
+    stepId: null,
+    label: null,
+    selector: null,
+    startedAt: null,
+
+    start: function (target) {
+      if (!target || !(target instanceof HTMLElement)) return;
+      this.active = true;
+      this.target = target;
+      this.stepId = 'step-in-' + Date.now();
+      this.label = getAccessibleName(target) || target.name || target.placeholder || 'input field';
+      this.selector = getResilientSelector(target);
+      this.startedAt = Date.now();
+    },
+
+    update: function (target) {
+      if (!this.active || this.target !== target) return;
+      var isSecret = isSensitiveElement(target);
+      var val = target.value || '';
+      var desc = isSecret ? 'Type [SECRET] into ' + this.label : (val ? 'Type "' + val + '" into ' + this.label : 'Clear ' + this.label);
+      updateOrPushStep({
+        id: this.stepId,
+        type: 'input',
+        action: 'input',
+        label: desc,
+        targetName: this.label,
+        value: isSecret ? '***' : val,
+        selector: this.selector,
+        timestamp: this.startedAt,
+      });
+    },
+
+    finalize: function () {
+      if (!this.active) return;
+      if (this.target) {
+        this.update(this.target);
+      }
+      this.active = false;
+      this.target = null;
+      this.stepId = null;
+      this.label = null;
+      this.selector = null;
+      this.startedAt = null;
+    }
+  };
+
+  function updateOrPushStep(step) {
+    var idx = -1;
+    for (var i = 0; i < recordedSteps.length; i++) {
+      if (recordedSteps[i].id === step.id) {
+        idx = i;
+        break;
+      }
+    }
+    if (idx !== -1) {
+      recordedSteps[idx] = step;
+    } else {
+      step.stepNumber = recordedSteps.length + 1;
+      recordedSteps.push(step);
+    }
+    chrome.storage.local.set({ qa_recorded_steps: recordedSteps });
+  }
+
+  function recordClickStep(target) {
+    if (!target || !(target instanceof HTMLElement)) return;
+    if (target.closest('#qa-reporter-modal') || target.closest('#qa-reporter-highlight')) return;
+    var name = getAccessibleName(target) || (target.innerText ? target.innerText.slice(0, 30) : '') || target.tagName.toLowerCase();
+    var selector = getResilientSelector(target);
+    var step = {
+      id: 'step-click-' + Date.now(),
+      type: 'click',
+      action: 'click',
+      label: 'Click "' + name + '" (' + target.tagName.toLowerCase() + ')',
+      targetName: name,
+      selector: selector,
+      timestamp: Date.now(),
+    };
+    updateOrPushStep(step);
+  }
+
+  function setupStepRecordingListeners() {
+    window.addEventListener('click', function (e) {
+      if (!stepRecordingActive || modalOpen) return;
+      if (e.target instanceof HTMLElement) {
+        var interactive = e.target.closest(INTERACTIVE_SELECTOR) || e.target;
+        if (interactive && interactive instanceof HTMLElement) {
+          if (interactive instanceof HTMLInputElement || interactive instanceof HTMLTextAreaElement) {
+            if (!InputSession.active || InputSession.target !== interactive) {
+              InputSession.finalize();
+              InputSession.start(interactive);
+            }
+          } else {
+            InputSession.finalize();
+            recordClickStep(interactive);
+          }
+        }
+      }
+    }, true);
+
+    window.addEventListener('input', function (e) {
+      if (!stepRecordingActive || modalOpen) return;
+      if (e.target instanceof HTMLElement) {
+        if (!InputSession.active || InputSession.target !== e.target) {
+          InputSession.start(e.target);
+        }
+        InputSession.update(e.target);
+      }
+    }, { capture: true, passive: true });
+
+    window.addEventListener('keydown', function (e) {
+      if (!stepRecordingActive || modalOpen) return;
+      if (InputSession.active && (e.key === 'Enter' || e.key === 'Escape' || e.key === 'Tab')) {
+        InputSession.finalize();
+      }
+    }, true);
+
+    window.addEventListener('focusout', function (e) {
+      if (InputSession.active) {
+        InputSession.finalize();
+      }
+    }, { capture: true, passive: true });
+  }
+
+  try {
+    chrome.storage.local.get(['qa_step_recording', 'qa_recorded_steps'], function (res) {
+      stepRecordingActive = !!(res && res.qa_step_recording);
+      recordedSteps = (res && res.qa_recorded_steps) || [];
+    });
+    chrome.storage.onChanged.addListener(function (changes) {
+      if (changes.qa_step_recording) {
+        stepRecordingActive = !!changes.qa_step_recording.newValue;
+      }
+      if (changes.qa_recorded_steps) {
+        recordedSteps = changes.qa_recorded_steps.newValue || [];
+      }
+    });
+    setupStepRecordingListeners();
+  } catch (_) {}
 
   // ── Modal ────────────────────────────────────────────────────────────────────
   function showModal(opts) {
@@ -1189,13 +2057,132 @@
       ? '<span class="qa-collapsible-empty">No network errors captured</span>'
       : networkSnap.map(function (e) { return '<div class="qa-network-entry">[' + escapeHTML(String(e.status)) + '] ' + escapeHTML(e.method || '') + ' ' + escapeHTML(e.url || '') + '</div>'; }).join('');
 
+  // ── Speech Recognizer Helper ─────────────────────────────────────────────
+  var activeRecognizer = null;
+  var activeVoiceBtn = null;
+
+  function isSpeechRecognitionSupported() {
+    return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  }
+
+  function stopVoiceInput() {
+    if (activeRecognizer) {
+      try {
+        activeRecognizer.stop();
+      } catch (e) {}
+      activeRecognizer = null;
+    }
+    if (activeVoiceBtn) {
+      activeVoiceBtn.classList.remove('qa-voice-btn-active');
+      var statusEl = activeVoiceBtn.querySelector('.qa-voice-status');
+      if (statusEl) statusEl.textContent = 'Voice';
+      activeVoiceBtn = null;
+    }
+  }
+
+  function toggleVoiceInput(targetInputId, btnEl) {
+    var targetInput = document.getElementById(targetInputId);
+    if (!targetInput) return;
+
+    if (!isSpeechRecognitionSupported()) {
+      showNotification('Speech recognition is not supported in this browser.', 'error');
+      return;
+    }
+
+    if (activeVoiceBtn === btnEl && activeRecognizer) {
+      stopVoiceInput();
+      showNotification('Voice input stopped.', 'info');
+      return;
+    }
+
+    stopVoiceInput();
+
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    var recognizer = new SpeechRecognition();
+    recognizer.continuous = true;
+    recognizer.interimResults = true;
+    recognizer.lang = navigator.language || 'en-US';
+
+    var initialValue = targetInput.value;
+    var lastFinalText = '';
+
+    recognizer.onstart = function () {
+      activeRecognizer = recognizer;
+      activeVoiceBtn = btnEl;
+      btnEl.classList.add('qa-voice-btn-active');
+      var statusEl = btnEl.querySelector('.qa-voice-status');
+      if (statusEl) statusEl.textContent = 'Listening…';
+      showNotification('Listening… Speak now to dictate text.', 'info');
+    };
+
+    recognizer.onresult = function (event) {
+      var interimTranscript = '';
+      var finalTranscript = '';
+
+      for (var i = event.resultIndex; i < event.results.length; ++i) {
+        var transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      if (finalTranscript) {
+        lastFinalText += (lastFinalText ? ' ' : '') + finalTranscript.trim();
+      }
+
+      var currentSpeech = (lastFinalText + (interimTranscript ? ' ' + interimTranscript.trim() : '')).trim();
+      if (currentSpeech) {
+        var prefix = initialValue.trim();
+        targetInput.value = prefix ? prefix + ' ' + currentSpeech : currentSpeech;
+        targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    };
+
+    recognizer.onerror = function (event) {
+      if (event.error !== 'no-speech' && event.error !== 'aborted') {
+        showNotification('Microphone error: ' + (event.error || 'speech error'), 'error');
+      }
+      stopVoiceInput();
+    };
+
+    recognizer.onend = function () {
+      if (activeVoiceBtn === btnEl) {
+        stopVoiceInput();
+      }
+    };
+
+    try {
+      recognizer.start();
+    } catch (err) {
+      showNotification('Could not start microphone listener.', 'error');
+      stopVoiceInput();
+    }
+  }
+
+  function buildLabelWithMic(labelHtml, targetId) {
+    var micSvg = '<svg class="qa-mic-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>' +
+      '<path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>' +
+      '<line x1="12" y1="19" x2="12" y2="22"></line>' +
+      '</svg>';
+
+    return '<div class="qa-form-label-header">' +
+      '<label class="qa-form-label">' + labelHtml + '</label>' +
+      '<button type="button" class="qa-voice-btn" data-target-id="' + targetId + '" title="Voice input (dictate with mic)">' +
+        micSvg + '<span class="qa-voice-status">Voice</span>' +
+      '</button>' +
+    '</div>';
+  }
+
     // ── Optional form fields based on settings ────────────────────────────────
     var optionalFieldsHtml = '';
     if (settings.formExpectedResult !== false) {
-      optionalFieldsHtml += '<div class="qa-form-group"><label class="qa-form-label">Expected Result</label><textarea class="qa-form-textarea" id="qa-expected-input" rows="2" placeholder="What should happen?"></textarea></div>';
+      optionalFieldsHtml += '<div class="qa-form-group">' + buildLabelWithMic('Expected Result', 'qa-expected-input') + '<textarea class="qa-form-textarea" id="qa-expected-input" rows="2" placeholder="What should happen?"></textarea></div>';
     }
     if (settings.formActualResult !== false) {
-      optionalFieldsHtml += '<div class="qa-form-group"><label class="qa-form-label">Actual Result</label><textarea class="qa-form-textarea" id="qa-actual-input" rows="2" placeholder="What actually happened?"></textarea></div>';
+      optionalFieldsHtml += '<div class="qa-form-group">' + buildLabelWithMic('Actual Result', 'qa-actual-input') + '<textarea class="qa-form-textarea" id="qa-actual-input" rows="2" placeholder="What actually happened?"></textarea></div>';
     }
     if (settings.formPriority) {
       optionalFieldsHtml += '<div class="qa-form-group"><label class="qa-form-label">Priority</label><select class="qa-form-select" id="qa-priority-select"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option><option value="Critical">Critical</option></select></div>';
@@ -1204,14 +2191,16 @@
       optionalFieldsHtml += '<div class="qa-form-group"><label class="qa-form-label">Environment</label><select class="qa-form-select" id="qa-environment-select"><option>Production</option><option>Staging</option><option>Development</option><option>QA</option></select></div>';
     }
     if (settings.formLabels) {
-      optionalFieldsHtml += '<div class="qa-form-group"><label class="qa-form-label">Labels</label><input type="text" class="qa-form-input" id="qa-labels-input" placeholder="bug, ui, regression (comma-separated)"></div>';
+      optionalFieldsHtml += '<div class="qa-form-group">' + buildLabelWithMic('Labels', 'qa-labels-input') + '<input type="text" class="qa-form-input" id="qa-labels-input" placeholder="bug, ui, regression (comma-separated)"></div>';
     }
     if (settings.formSprint) {
-      optionalFieldsHtml += '<div class="qa-form-group"><label class="qa-form-label">Sprint</label><input type="text" class="qa-form-input" id="qa-sprint-input" placeholder="Sprint name or number"></div>';
+      optionalFieldsHtml += '<div class="qa-form-group">' + buildLabelWithMic('Sprint', 'qa-sprint-input') + '<input type="text" class="qa-form-input" id="qa-sprint-input" placeholder="Sprint name or number"></div>';
     }
     if (settings.formAssignee) {
-      optionalFieldsHtml += '<div class="qa-form-group"><label class="qa-form-label">Assignee</label><input type="text" class="qa-form-input" id="qa-assignee-input" placeholder="e.g. john@company.com"></div>';
+      optionalFieldsHtml += '<div class="qa-form-group">' + buildLabelWithMic('Assignee', 'qa-assignee-input') + '<input type="text" class="qa-form-input" id="qa-assignee-input" placeholder="e.g. john@company.com"></div>';
     }
+
+    var domContext = extractDOMContext(element, 'report');
 
     modal.innerHTML =
       '<div class="qa-modal-header" id="qa-modal-drag-handle">' +
@@ -1222,40 +2211,75 @@
         screenshotHtml +
         replayHtml +
         videoAttachHtml +
-        '<div class="qa-modal-element-info">' +
-          '<span class="qa-element-tag">&lt;' + escapeHTML(elemData.tag) + '&gt;</span>' +
-          '<span class="qa-element-text">' + escapeHTML(elemData.text || elemData.cssSelector) + '</span>' +
+        '<div class="qa-modal-tabs" id="qa-modal-tabs">' +
+          '<button type="button" class="qa-modal-tab qa-tab-active" id="qa-tab-smart">✨ Smart Mode (AI)</button>' +
+          '<button type="button" class="qa-modal-tab" id="qa-tab-standard">Standard Form</button>' +
         '</div>' +
-        '<div class="qa-form-group">' +
-          '<label class="qa-form-label">Issue Title <span class="qa-required">*</span></label>' +
-          '<input type="text" class="qa-form-input" id="qa-title-input" placeholder="Brief description of the bug">' +
-        '</div>' +
-        '<div class="qa-form-group">' +
-          '<label class="qa-form-label">Description</label>' +
-          '<textarea class="qa-form-textarea" id="qa-desc-input" placeholder="Steps to reproduce..." rows="3"></textarea>' +
-        '</div>' +
-        optionalFieldsHtml +
-        '<details class="qa-collapsible">' +
-          '<summary>Severity &amp; more</summary>' +
-          '<div class="qa-collapsible-body">' +
-            '<div class="qa-form-group"><label class="qa-form-label">Severity</label><select class="qa-form-select" id="qa-severity-select"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option><option value="Critical">Critical</option></select></div>' +
-            '<div class="qa-form-group"><label class="qa-form-label">Assignee</label><select class="qa-select" id="qa-assignee-select">' + buildAssigneeOptions(qaLastAssignee) + '</select></div>' +
+        '<div class="qa-tab-pane" id="qa-pane-smart">' +
+          '<div class="qa-dom-summary-badge">' +
+            '<span class="qa-badge-icon">📍</span>' +
+            '<span class="qa-badge-text">Target: <b>' + escapeHTML(domContext.target.name || elemData.note || elemData.text || elemData.tag) + '</b> &middot; Container: <i>' + escapeHTML(domContext.container ? (domContext.container.label || domContext.container.tag) : 'section') + '</i></span>' +
           '</div>' +
-        '</details>' +
-        '<details class="qa-collapsible">' +
-          '<summary>Element Details</summary>' +
-          '<div class="qa-collapsible-body">' +
-            '<div class="qa-detail-item"><span class="qa-detail-label">Tag</span><code>' + escapeHTML(elemData.tag) + '</code></div>' +
-            (elemData.id ? '<div class="qa-detail-item"><span class="qa-detail-label">ID</span><code>' + escapeHTML(elemData.id) + '</code></div>' : '') +
-            (elemData.classList.length ? '<div class="qa-detail-item"><span class="qa-detail-label">Classes</span><code>' + escapeHTML(elemData.classList.join(', ')) + '</code></div>' : '') +
-            semanticHtml +
-            '<div class="qa-detail-item"><span class="qa-detail-label">CSS Selector</span><code>' + escapeHTML(elemData.cssSelector) + '</code></div>' +
-            (settings.captureXPath !== false ? '<div class="qa-detail-item"><span class="qa-detail-label">XPath</span><code>' + escapeHTML(elemData.xpath) + '</code></div>' : '') +
-            reactHtml +
+          '<div class="qa-form-group" style="margin-top: 10px;">' +
+            '<div class="qa-form-label-header">' +
+              '<label class="qa-form-label">What\'s wrong? (Single-input AI reporting)</label>' +
+              '<button type="button" class="qa-voice-btn" data-target-id="qa-smart-input" title="Voice input (dictate)">' +
+                '<svg class="qa-mic-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>' +
+                '<span class="qa-voice-status">Voice</span>' +
+              '</button>' +
+            '</div>' +
+            '<textarea class="qa-form-textarea qa-smart-textarea" id="qa-smart-input" rows="3" placeholder="Describe the issue in your own words (e.g. \'Save button stays disabled after entering valid email\'). BugPilot will synthesize title, steps to reproduce, expected vs actual behavior, and severity."></textarea>' +
           '</div>' +
-        '</details>' +
-        (settings.captureConsole !== false ? '<details class="qa-collapsible"><summary>Console errors (' + consoleSnap.length + ')</summary><div class="qa-collapsible-body">' + consoleHtml + '</div></details>' : '') +
-        (settings.captureNetwork !== false ? '<details class="qa-collapsible"><summary>Network errors (' + networkSnap.length + ')</summary><div class="qa-collapsible-body">' + networkHtml + '</div></details>' : '') +
+          '<div class="qa-smart-action-row">' +
+            '<button type="button" class="qa-btn qa-btn-autofill" id="qa-btn-smart-autofill">✨ Auto-Fill with AI</button>' +
+            '<span class="qa-smart-status-text" id="qa-smart-status"></span>' +
+          '</div>' +
+          '<div class="qa-smart-preview-card" id="qa-smart-preview-card" style="display:none">' +
+            '<div class="qa-preview-header">' +
+              '<span class="qa-preview-title" id="qa-preview-title"></span>' +
+              '<span class="qa-badge qa-badge-sev" id="qa-preview-sev">Medium</span>' +
+            '</div>' +
+            '<div class="qa-preview-summary" id="qa-preview-summary"></div>' +
+          '</div>' +
+          (recordedSteps.length > 0 ? '<div class="qa-recorded-steps-banner">🐾 <b>' + recordedSteps.length + ' recorded workflow steps</b> attached to this bug report.</div>' : '') +
+        '</div>' +
+        '<div class="qa-tab-pane" id="qa-pane-standard" style="display:none">' +
+          '<div class="qa-modal-element-info">' +
+            '<span class="qa-element-tag">&lt;' + escapeHTML(elemData.tag) + '&gt;</span>' +
+            '<span class="qa-element-text">' + escapeHTML(elemData.note || elemData.text || elemData.cssSelector) + '</span>' +
+          '</div>' +
+          '<div class="qa-form-group">' +
+            buildLabelWithMic('Issue Title <span class="qa-required">*</span>', 'qa-title-input') +
+            '<input type="text" class="qa-form-input" id="qa-title-input" placeholder="Brief description of the bug">' +
+          '</div>' +
+          '<div class="qa-form-group">' +
+            buildLabelWithMic('Description', 'qa-desc-input') +
+            '<textarea class="qa-form-textarea" id="qa-desc-input" placeholder="Steps to reproduce..." rows="3"></textarea>' +
+          '</div>' +
+          optionalFieldsHtml +
+          '<details class="qa-collapsible">' +
+            '<summary>Severity &amp; more</summary>' +
+            '<div class="qa-collapsible-body">' +
+              '<div class="qa-form-group"><label class="qa-form-label">Severity</label><select class="qa-form-select" id="qa-severity-select"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option><option value="Critical">Critical</option></select></div>' +
+              '<div class="qa-form-group"><label class="qa-form-label">Assignee</label><select class="qa-select" id="qa-assignee-select">' + buildAssigneeOptions(qaLastAssignee) + '</select></div>' +
+            '</div>' +
+          '</details>' +
+          '<details class="qa-collapsible">' +
+            '<summary>Element Details</summary>' +
+            '<div class="qa-collapsible-body">' +
+              (elemData.note ? '<div class="qa-detail-item"><span class="qa-detail-label">Note</span><code>' + escapeHTML(elemData.note) + '</code></div>' : '') +
+              '<div class="qa-detail-item"><span class="qa-detail-label">Tag</span><code>' + escapeHTML(elemData.tag) + '</code></div>' +
+              (elemData.id ? '<div class="qa-detail-item"><span class="qa-detail-label">ID</span><code>' + escapeHTML(elemData.id) + '</code></div>' : '') +
+              (elemData.classList.length ? '<div class="qa-detail-item"><span class="qa-detail-label">Classes</span><code>' + escapeHTML(elemData.classList.join(', ')) + '</code></div>' : '') +
+              semanticHtml +
+              '<div class="qa-detail-item"><span class="qa-detail-label">CSS Selector</span><code>' + escapeHTML(elemData.cssSelector) + '</code></div>' +
+              (settings.captureXPath !== false ? '<div class="qa-detail-item"><span class="qa-detail-label">XPath</span><code>' + escapeHTML(elemData.xpath) + '</code></div>' : '') +
+              reactHtml +
+            '</div>' +
+          '</details>' +
+          (settings.captureConsole !== false ? '<details class="qa-collapsible"><summary>Console errors (' + consoleSnap.length + ')</summary><div class="qa-collapsible-body">' + consoleHtml + '</div></details>' : '') +
+          (settings.captureNetwork !== false ? '<details class="qa-collapsible"><summary>Network errors (' + networkSnap.length + ')</summary><div class="qa-collapsible-body">' + networkHtml + '</div></details>' : '') +
+        '</div>' +
       '</div></div>' +
       '<div class="qa-modal-footer">' +
         '<button class="qa-btn qa-btn-secondary" id="qa-btn-save-continue">Save &amp; Continue</button>' +
@@ -1264,8 +2288,111 @@
       '</div>';
 
     document.documentElement.appendChild(modal);
-    setTimeout(function () { var inp = modal.querySelector('#qa-title-input'); if (inp) inp.focus(); }, 50);
+    setTimeout(function () {
+      var smartInp = modal.querySelector('#qa-smart-input');
+      if (smartInp) smartInp.focus();
+      else {
+        var inp = modal.querySelector('#qa-title-input');
+        if (inp) inp.focus();
+      }
+    }, 50);
     makeDraggable(modal, document.getElementById('qa-modal-drag-handle'));
+
+    // ── Tab switcher ──────────────────────────────────────────────────────────
+    var tabSmart = modal.querySelector('#qa-tab-smart');
+    var tabStandard = modal.querySelector('#qa-tab-standard');
+    var paneSmart = modal.querySelector('#qa-pane-smart');
+    var paneStandard = modal.querySelector('#qa-pane-standard');
+
+    if (tabSmart && tabStandard && paneSmart && paneStandard) {
+      tabSmart.addEventListener('click', function () {
+        tabSmart.classList.add('qa-tab-active');
+        tabStandard.classList.remove('qa-tab-active');
+        paneSmart.style.display = 'block';
+        paneStandard.style.display = 'none';
+        var inp = modal.querySelector('#qa-smart-input');
+        if (inp) inp.focus();
+      });
+      tabStandard.addEventListener('click', function () {
+        tabStandard.classList.add('qa-tab-active');
+        tabSmart.classList.remove('qa-tab-active');
+        paneStandard.style.display = 'block';
+        paneSmart.style.display = 'none';
+        var inp = modal.querySelector('#qa-title-input');
+        if (inp) inp.focus();
+      });
+    }
+
+    // ── Smart Autofill Interaction ────────────────────────────────────────────
+    var btnAutofill = modal.querySelector('#qa-btn-smart-autofill');
+    var smartInp = modal.querySelector('#qa-smart-input');
+    var smartStatus = modal.querySelector('#qa-smart-status');
+    var previewCard = modal.querySelector('#qa-smart-preview-card');
+    var previewTitle = modal.querySelector('#qa-preview-title');
+    var previewSev = modal.querySelector('#qa-preview-sev');
+    var previewSummary = modal.querySelector('#qa-preview-summary');
+
+    function triggerSmartAutofill() {
+      var rawText = smartInp ? smartInp.value.trim() : '';
+      if (!rawText) {
+        if (smartInp) smartInp.focus();
+        return;
+      }
+      if (btnAutofill) {
+        btnAutofill.disabled = true;
+        btnAutofill.textContent = '✨ Generating…';
+      }
+      if (smartStatus) smartStatus.textContent = 'Analyzing DOM context…';
+
+      chrome.runtime.sendMessage({
+        type: 'SMART_AUTOFILL',
+        payload: {
+          userInput: rawText,
+          domContext: domContext,
+          elementInfo: elemData,
+          consoleErrors: consoleSnap,
+          networkErrors: networkSnap,
+          url: window.location.href,
+          route: window.location.pathname,
+        }
+      }, function (res) {
+        if (btnAutofill) {
+          btnAutofill.disabled = false;
+          btnAutofill.textContent = '✨ Auto-Fill with AI';
+        }
+        if (res && res.ok && res.result) {
+          var r = res.result;
+          var titleInp = modal.querySelector('#qa-title-input');
+          var descInp = modal.querySelector('#qa-desc-input');
+          var expInp = modal.querySelector('#qa-expected-input');
+          var actInp = modal.querySelector('#qa-actual-input');
+          var sevSel = modal.querySelector('#qa-severity-select');
+          var labelsInp = modal.querySelector('#qa-labels-input');
+
+          if (titleInp) titleInp.value = r.title;
+          if (descInp) descInp.value = r.description;
+          if (expInp && r.expectedResult) expInp.value = r.expectedResult;
+          if (actInp && r.actualResult) actInp.value = r.actualResult;
+          if (sevSel && r.severity) sevSel.value = r.severity;
+          if (labelsInp && r.labels && r.labels.length) labelsInp.value = r.labels.join(', ');
+
+          if (previewCard && previewTitle && previewSev && previewSummary) {
+            previewCard.style.display = 'block';
+            previewTitle.textContent = r.title;
+            previewSev.textContent = r.severity;
+            previewSev.className = 'qa-badge qa-badge-sev qa-sev-' + (r.severity || 'Medium').toLowerCase();
+            previewSummary.textContent = (r.expectedResult ? 'Expected: ' + r.expectedResult.slice(0, 100) : r.domSummary);
+          }
+          if (smartStatus) smartStatus.textContent = '✓ AI fields ready';
+        } else {
+          if (smartStatus) smartStatus.textContent = 'Autofill complete';
+        }
+      });
+    }
+
+    if (btnAutofill) {
+      btnAutofill.addEventListener('click', triggerSmartAutofill);
+    }
 
     // ── Slider interactivity ──────────────────────────────────────────────────
     function refreshSlider() {
@@ -1361,9 +2488,31 @@
       var sevEl    = modal.querySelector('#qa-severity-select');
       var severity = sevEl ? sevEl.value : 'Medium';
 
+      var smartText = modal.querySelector('#qa-smart-input') ? modal.querySelector('#qa-smart-input').value.trim() : '';
+      if (!title && smartText) {
+        var tName = domContext.target.name || elemData.note || elemData.text || elemData.tag || 'element';
+        title = smartText.length > 5 && smartText.length < 80 ? (smartText.charAt(0).toUpperCase() + smartText.slice(1)) : (tName + ': ' + smartText.slice(0, 60));
+        desc = '### 📝 Summary\n' + smartText + '\n\n### 🔄 Steps to Reproduce\n1. Navigate to `' + window.location.pathname + '`\n2. Interact with `' + tName + '`\n3. Observe: ' + smartText;
+        var titleInp = modal.querySelector('#qa-title-input');
+        if (titleInp) titleInp.value = title;
+        var descInp = modal.querySelector('#qa-desc-input');
+        if (descInp) descInp.value = desc;
+      }
+
+      if (recordedSteps.length > 0) {
+        var stepsText = '\n\n### 🐾 Recorded Workflow Steps\n' + recordedSteps.map(function (s, idx) {
+          return (idx + 1) + '. ' + s.label;
+        }).join('\n');
+        if (desc.indexOf('### 🐾 Recorded Workflow Steps') === -1) {
+          desc += stepsText;
+          var dInp = modal.querySelector('#qa-desc-input');
+          if (dInp) dInp.value = desc;
+        }
+      }
+
       if (!title) {
         var inp = modal.querySelector('#qa-title-input');
-        inp.focus();
+        if (inp) inp.focus();
         inp.style.borderColor = '#ef4444';
         return null;
       }
@@ -1482,10 +2631,11 @@
         issue.consoleErrors = consoleSnap;
       }
 
-      // Network errors
+      // Network transactions & errors
       if (settings.captureNetwork !== false) {
-        issue.recentNetworkRequests = networkSnap;
-        issue.networkErrors = networkSnap;
+        issue.networkTransactions   = _networkTransactions.slice();
+        issue.recentNetworkRequests = _networkTransactions.slice();
+        issue.networkErrors         = _networkTransactions.slice();
       }
 
       // User info
@@ -1499,11 +2649,22 @@
         issue.navigationHistory = _navigationHistory.slice(-5);
       }
 
+      // 50-token DOM Context & Recorded Steps
+      issue.domContext = domContext;
+      issue.element.domContext = domContext;
+      issue.metadata = issue.metadata || {};
+      issue.metadata.domContext = domContext;
+      if (recordedSteps && recordedSteps.length > 0) {
+        issue.recordedSteps = recordedSteps;
+        issue.metadata.recordedSteps = recordedSteps;
+      }
+
       return issue;
     }
 
     // ── Local closeModal (removes annotation listener) ────────────────────────
     function closeModal() {
+      stopVoiceInput();
       modalOpen = false;
       chrome.runtime.onMessage.removeListener(onAnnotationDone);
       chrome.storage.onChanged.removeListener(onStorageChanged);
@@ -1513,6 +2674,18 @@
       if (dimEl)   dimEl.remove();
       if (recording) enableHover();
     }
+
+    // ── Voice Input Button Click Handler ──────────────────────────────────────
+    modal.addEventListener('click', function (e) {
+      var btn = e.target.closest('.qa-voice-btn');
+      if (btn) {
+        e.preventDefault();
+        var targetId = btn.getAttribute('data-target-id');
+        if (targetId) {
+          toggleVoiceInput(targetId, btn);
+        }
+      }
+    });
 
     // ── Buttons ──────────────────────────────────────────────────────────────
     modal.querySelector('#qa-modal-x-btn').addEventListener('click', function () { closeModal(); });
@@ -1562,6 +2735,7 @@
   }
 
   function closeModal() {
+    stopVoiceInput();
     modalOpen = false;
     var modal = document.getElementById(MODAL_ID);
     var dim   = document.getElementById(DIM_ID);
@@ -1626,16 +2800,9 @@
   }
 
   // ── Init ─────────────────────────────────────────────────────────────────────
-  function init() {
-    setupConsoleInterceptor();
-    setupNetworkInterceptor();
-    setupNavigationTracking();
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  // Interceptors must start immediately so early console/network events are not lost
+  setupConsoleInterceptor();
+  setupNetworkInterceptor();
+  setupNavigationTracking();
 
 })();

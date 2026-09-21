@@ -3,7 +3,7 @@
   "name": "QA Reporter",
   "version": "2.1.0",
   "description": "Record and report bugs directly from any web page",
-  "permissions": ["storage", "unlimitedStorage", "activeTab", "scripting", "tabs", "sidePanel", "tabCapture"],
+  "permissions": ["storage", "unlimitedStorage", "activeTab", "scripting", "tabs", "sidePanel", "tabCapture", "alarms", "contextMenus"],
   "host_permissions": [
     "http://localhost:4000/*",
     "https://faasplsazadmtixuwzsn.supabase.co/*",
@@ -28,14 +28,20 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": ["network-interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["finder.js", "content.js"],
       "css": ["content-styles.css"],
       "run_at": "document_end"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["content-styles.css", "rrweb.min.js", "replay-recorder.js"],
+      "resources": ["content-styles.css", "rrweb-record.min.js", "finder.js", "replay-recorder.js", "network-interceptor.js", "driver.js", "driver.css"],
       "matches": ["<all_urls>"]
     }
   ]

@@ -161,6 +161,74 @@ export default function ExtensionPage() {
 
   const s = settings
 
+  // Calculate active preset
+  const isFullPreset =
+    (s?.captureReact ?? true) &&
+    (s?.captureConsole ?? true) &&
+    (s?.captureNetwork ?? true) &&
+    (s?.capturePerformance ?? true) &&
+    (s?.captureDomHierarchy ?? true) &&
+    (s?.captureComputedStyles ?? true) &&
+    (s?.captureXPath ?? true) &&
+    (s?.captureNavHistory ?? true)
+
+  const isPrivacyPreset =
+    !(s?.captureReact ?? true) &&
+    !(s?.captureDomHierarchy ?? true) &&
+    !(s?.captureComputedStyles ?? true) &&
+    !(s?.captureXPath ?? true) &&
+    !(s?.capturePerformance ?? true) &&
+    !(s?.captureNavHistory ?? true)
+
+  const currentPreset = isFullPreset ? 'full' : isPrivacyPreset ? 'privacy' : 'custom'
+
+  function applyPreset(preset: 'full' | 'privacy') {
+    if (preset === 'full') {
+      mutation.mutate({
+        capturePageTitle: true,
+        captureBrowserInfo: true,
+        captureRoute: true,
+        captureReact: true,
+        captureConsole: true,
+        captureNetwork: true,
+        capturePerformance: true,
+        captureDomHierarchy: true,
+        captureComputedStyles: true,
+        captureXPath: true,
+        captureNavHistory: true,
+      })
+    } else {
+      mutation.mutate({
+        capturePageTitle: true,
+        captureBrowserInfo: true,
+        captureRoute: true,
+        captureReact: false,
+        captureConsole: true,
+        captureNetwork: true,
+        capturePerformance: false,
+        captureDomHierarchy: false,
+        captureComputedStyles: false,
+        captureXPath: false,
+        captureLocalStorage: false,
+        captureSessionStorage: false,
+        captureCookies: false,
+        captureUserInfo: false,
+        captureNavHistory: false,
+      })
+    }
+  }
+
+  const activeAdvancedCount = [
+    s?.captureReact ?? true,
+    s?.captureConsole ?? true,
+    s?.captureNetwork ?? true,
+    s?.capturePerformance ?? true,
+    s?.captureDomHierarchy ?? true,
+    s?.captureComputedStyles ?? true,
+    s?.captureXPath ?? true,
+    s?.captureNavHistory ?? true,
+  ].filter(Boolean).length
+
   return (
     <div className="max-w-2xl mx-auto space-y-8 pb-16">
       {/* Header */}
@@ -210,7 +278,7 @@ export default function ExtensionPage() {
       </div>
 
       {/* Screenshot mode */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" id="tour-screenshot-modes">
         <div className="px-6 py-5 border-b border-gray-100">
           <h2 className="font-semibold text-gray-900">Screenshot mode</h2>
           <p className="text-xs text-gray-400 mt-0.5">What gets captured when you click an element.</p>
@@ -241,65 +309,182 @@ export default function ExtensionPage() {
         </div>
       </div>
 
-      {/* General */}
-      <Section title="General" description="Core data captured with every bug report.">
-        {isLoading ? <div className="py-4 text-sm text-gray-400">Loading…</div> : <>
-          <ToggleRow locked label="Capture Screenshot"        description="Visual capture based on the screenshot mode above."            enabled onChange={() => {}} />
-          <ToggleRow locked label="Capture URL"               description="Full URL of the page where the bug was found."                 enabled onChange={() => {}} />
-          <ToggleRow        label="Capture Page Title"        description="document.title of the page at the time of capture."            enabled={s?.capturePageTitle  ?? true}  onChange={v => set('capturePageTitle',  v)} />
-          <ToggleRow        label="Capture Browser Info"      description="Browser name, version, OS, language, viewport, device pixel ratio." enabled={s?.captureBrowserInfo ?? true} onChange={v => set('captureBrowserInfo', v)} />
-          <ToggleRow        label="Capture Route"             description="Current pathname and query parameters."                        enabled={s?.captureRoute      ?? true}  onChange={v => set('captureRoute',      v)} />
-        </>}
-      </Section>
+      {/* Sensible Defaults: Diagnostics Level Preset */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" id="tour-diagnostics-preset">
+        <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="font-semibold text-gray-900">Diagnostics Level</h2>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-green-50 text-green-700">
+                Sensible Defaults
+              </span>
+            </div>
+            <p className="text-xs text-gray-400 mt-0.5">
+              All diagnostic signals are turned on by default for full developer context.
+            </p>
+          </div>
+          {currentPreset === 'custom' && (
+            <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
+              Customized
+            </span>
+          )}
+        </div>
 
-      {/* Advanced */}
-      <Section title="Advanced" description="Richer diagnostic signals for deeper bug context." badge="Default on" badgeColor="bg-blue-50 text-blue-600">
-        {isLoading ? <div className="py-4 text-sm text-gray-400">Loading…</div> : <>
-          <ToggleRow label="Capture React Metadata"   description="Component name, tree, and props via React fiber introspection. Also captures React Router state and Zustand store keys." enabled={s?.captureReact       ?? true} onChange={v => set('captureReact',       v)} />
-          <ToggleRow label="Capture Console Errors"   description="Last 15 console.error / console.warn entries on the page."                  enabled={s?.captureConsole     ?? true} onChange={v => set('captureConsole',     v)} />
-          <ToggleRow label="Capture Failed API Calls" description="Non-2xx fetch and XHR requests intercepted in real time."                   enabled={s?.captureNetwork     ?? true} onChange={v => set('captureNetwork',     v)} />
-          <ToggleRow label="Capture Performance Metrics" description="First paint, FCP, TTFB, page load, transfer size, and user timing marks." enabled={s?.capturePerformance ?? true} onChange={v => set('capturePerformance', v)} />
-          <ToggleRow label="Capture DOM Hierarchy"    description="Ancestor chain (tag, id, classes, role, nth position) up to the root."      enabled={s?.captureDomHierarchy ?? true} onChange={v => set('captureDomHierarchy', v)} />
-          <ToggleRow label="Capture Computed Styles"  description="Font, color, display, and layout CSS values on the selected element."        enabled={s?.captureComputedStyles ?? false} onChange={v => set('captureComputedStyles', v)} />
-          <ToggleRow label="Capture XPath"            description="Full XPath of the selected element (useful for test automation)."             enabled={s?.captureXPath       ?? true}  onChange={v => set('captureXPath',       v)} />
-          <ToggleRow label="Capture Navigation History" description="Last 5 pages visited in this tab before the bug was captured."               enabled={s?.captureNavHistory  ?? true}  onChange={v => set('captureNavHistory',  v)} />
-        </>}
-      </Section>
+        <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Preset: Diagnostics Level: Full */}
+          <button
+            type="button"
+            onClick={() => applyPreset('full')}
+            className={`p-4 rounded-xl border text-left transition-all ${
+              currentPreset === 'full'
+                ? 'border-blue-600 bg-blue-50/50 ring-2 ring-blue-500/20'
+                : 'border-gray-200 hover:border-gray-300 bg-white'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                Diagnostics Level: Full
+                <span className="text-[10px] bg-blue-100 text-blue-700 font-semibold px-1.5 py-0.5 rounded">
+                  Default
+                </span>
+              </span>
+              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${currentPreset === 'full' ? 'border-blue-600 bg-blue-600' : 'border-gray-300'}`}>
+                {currentPreset === 'full' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Captures all diagnostic signals (DOM hierarchy, React state, computed styles, XPath, console &amp; network errors) for 100% reproduction fidelity.
+            </p>
+          </button>
 
-      {/* Security */}
-      <Section title="Security" description="Sensitive storage data — disabled by default. Only enable in trusted environments." badge="Default off" badgeColor="bg-amber-50 text-amber-600">
-        {isLoading ? <div className="py-4 text-sm text-gray-400">Loading…</div> : <>
-          <ToggleRow label="Capture Local Storage Keys"   description="Key names (not values) in localStorage at the time of capture."  enabled={s?.captureLocalStorage   ?? false} onChange={v => set('captureLocalStorage',   v)} />
-          <ToggleRow label="Capture Session Storage Keys" description="Key names (not values) in sessionStorage at the time of capture." enabled={s?.captureSessionStorage ?? false} onChange={v => set('captureSessionStorage', v)} />
-          <ToggleRow label="Capture Cookie Names"         description="Cookie names (not values) present on the page."                   enabled={s?.captureCookies        ?? false} onChange={v => set('captureCookies',        v)} />
-          <ToggleRow label="Capture User Information"     description="Logged-in user details from the app's state if accessible."       enabled={s?.captureUserInfo       ?? false} onChange={v => set('captureUserInfo',       v)} />
-        </>}
-      </Section>
+          {/* Preset: Strict Privacy */}
+          <button
+            type="button"
+            onClick={() => applyPreset('privacy')}
+            className={`p-4 rounded-xl border text-left transition-all ${
+              currentPreset === 'privacy'
+                ? 'border-blue-600 bg-blue-50/50 ring-2 ring-blue-500/20'
+                : 'border-gray-200 hover:border-gray-300 bg-white'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                Strict Privacy
+                <span className="text-[10px] bg-gray-100 text-gray-600 font-semibold px-1.5 py-0.5 rounded">
+                  Minimal
+                </span>
+              </span>
+              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${currentPreset === 'privacy' ? 'border-blue-600 bg-blue-600' : 'border-gray-300'}`}>
+                {currentPreset === 'privacy' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Disables deep DOM, computed styles, and XPath introspection. Captures only screenshot, URL, route, and basic console logs.
+            </p>
+          </button>
+        </div>
+
+        {/* Core General Capture Settings */}
+        <div className="px-6 py-2 border-t border-gray-100">
+          <ToggleRow locked label="Capture Screenshot" description="Visual capture based on the screenshot mode above." enabled onChange={() => {}} />
+          <ToggleRow locked label="Capture URL" description="Full URL of the page where the bug was found." enabled onChange={() => {}} />
+          <ToggleRow label="Capture Page Title" description="document.title of the page at the time of capture." enabled={s?.capturePageTitle ?? true} onChange={v => set('capturePageTitle', v)} />
+          <ToggleRow label="Capture Browser Info" description="Browser name, version, OS, language, viewport, device pixel ratio." enabled={s?.captureBrowserInfo ?? true} onChange={v => set('captureBrowserInfo', v)} />
+          <ToggleRow label="Capture Route" description="Current pathname and query parameters." enabled={s?.captureRoute ?? true} onChange={v => set('captureRoute', v)} />
+        </div>
+
+        {/* Advanced Accordion: Technical Diagnostic Toggles */}
+        <details className="border-t border-gray-200 group bg-gray-50/50" id="tour-advanced-accordion">
+          <summary className="px-6 py-4 flex items-center justify-between cursor-pointer text-sm font-medium text-gray-700 select-none list-none hover:bg-gray-100/60 transition-colors">
+            <div className="flex items-center gap-2.5">
+              <svg className="w-4 h-4 text-gray-400 group-open:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <div>
+                <span className="font-semibold text-gray-900">Advanced Diagnostic Collectors</span>
+                <span className="ml-2 text-xs font-normal text-gray-500">
+                  ({activeAdvancedCount}/8 active)
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 group-open:hidden">Click to customize toggles</span>
+              <svg className="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </summary>
+
+          <div className="px-6 py-3 border-t border-gray-100 bg-white space-y-6">
+            {/* DOM & Code Telemetry */}
+            <div>
+              <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                DOM &amp; Code Introspection
+              </div>
+              <ToggleRow label="Capture React Metadata" description="Component name, tree, and props via React fiber introspection. Also captures React Router state and Zustand store keys." enabled={s?.captureReact ?? true} onChange={v => set('captureReact', v)} />
+              <ToggleRow label="Capture DOM Hierarchy" description="Ancestor chain (tag, id, classes, role, nth position) up to the root." enabled={s?.captureDomHierarchy ?? true} onChange={v => set('captureDomHierarchy', v)} />
+              <ToggleRow label="Capture Computed Styles" description="Font, color, display, and layout CSS values on the selected element." enabled={s?.captureComputedStyles ?? true} onChange={v => set('captureComputedStyles', v)} />
+              <ToggleRow label="Capture XPath" description="Full XPath of the selected element (useful for automated test suites)." enabled={s?.captureXPath ?? true} onChange={v => set('captureXPath', v)} />
+            </div>
+
+            {/* Runtime & Network Telemetry */}
+            <div>
+              <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                Runtime &amp; Network Telemetry
+              </div>
+              <ToggleRow label="Capture Console Errors" description="Last 15 console.error / console.warn entries on the page." enabled={s?.captureConsole ?? true} onChange={v => set('captureConsole', v)} />
+              <ToggleRow label="Capture Failed API Calls" description="Non-2xx fetch and XHR requests intercepted in real time." enabled={s?.captureNetwork ?? true} onChange={v => set('captureNetwork', v)} />
+              <ToggleRow label="Capture Performance Metrics" description="First paint, FCP, TTFB, page load, transfer size, and user timing marks." enabled={s?.capturePerformance ?? true} onChange={v => set('capturePerformance', v)} />
+              <ToggleRow label="Capture Navigation History" description="Last 5 pages visited in this tab before the bug was captured." enabled={s?.captureNavHistory ?? true} onChange={v => set('captureNavHistory', v)} />
+            </div>
+
+            {/* Storage & Security Keys (Disabled by default) */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                  Storage &amp; Sensitive Keys
+                </span>
+                <span className="text-[10px] bg-amber-50 text-amber-700 font-semibold px-1.5 py-0.5 rounded">
+                  Default Off for Security
+                </span>
+              </div>
+              <ToggleRow label="Capture Local Storage Keys" description="Key names (not values) in localStorage at the time of capture." enabled={s?.captureLocalStorage ?? false} onChange={v => set('captureLocalStorage', v)} />
+              <ToggleRow label="Capture Session Storage Keys" description="Key names (not values) in sessionStorage at the time of capture." enabled={s?.captureSessionStorage ?? false} onChange={v => set('captureSessionStorage', v)} />
+              <ToggleRow label="Capture Cookie Names" description="Cookie names (not values) present on the page." enabled={s?.captureCookies ?? false} onChange={v => set('captureCookies', v)} />
+              <ToggleRow label="Capture User Information" description="Logged-in user details from the app's state if accessible." enabled={s?.captureUserInfo ?? false} onChange={v => set('captureUserInfo', v)} />
+            </div>
+          </div>
+        </details>
+      </div>
 
       {/* Bug Form */}
-      <Section title="Bug Form" description="Fields shown in the in-page bug report form when you click an element.">
-        {isLoading ? <div className="py-4 text-sm text-gray-400">Loading…</div> : <>
-          <ToggleRow locked label="Title"           description="One-line description of the bug." enabled onChange={() => {}} />
-          <ToggleRow locked label="Description"     description="Freeform notes, steps to reproduce." enabled onChange={() => {}} />
-          <ToggleRow locked label="Severity"        description="Low / Medium / High / Critical." enabled onChange={() => {}} />
-          <div className="mt-3 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Optional fields</div>
-          <ToggleRow label="Expected Result" description="What should have happened."               enabled={s?.formExpectedResult ?? true}  onChange={v => set('formExpectedResult', v)} />
-          <ToggleRow label="Actual Result"   description="What actually happened."                  enabled={s?.formActualResult   ?? true}  onChange={v => set('formActualResult',   v)} />
-          <ToggleRow label="Priority"        description="Low / Medium / High / Critical priority." enabled={s?.formPriority       ?? false} onChange={v => set('formPriority',       v)} />
-          <ToggleRow label="Environment"     description="Production / Staging / Development / QA." enabled={s?.formEnvironment    ?? false} onChange={v => set('formEnvironment',    v)} />
-          <ToggleRow label="Labels"          description="Comma-separated tags (bug, ui, regression…)." enabled={s?.formLabels     ?? false} onChange={v => set('formLabels',         v)} />
-          <ToggleRow label="Sprint"          description="Sprint name or number."                   enabled={s?.formSprint         ?? false} onChange={v => set('formSprint',         v)} />
-          <ToggleRow label="Assignee"        description="Email or name of the assignee."           enabled={s?.formAssignee       ?? false} onChange={v => set('formAssignee',       v)} />
-        </>}
-      </Section>
+      <div id="tour-bug-form-settings">
+        <Section title="Bug Form" description="Fields shown in the in-page bug report form when you click an element.">
+          {isLoading ? <div className="py-4 text-sm text-gray-400">Loading…</div> : <>
+            <ToggleRow locked label="Title"           description="One-line description of the bug." enabled onChange={() => {}} />
+            <ToggleRow locked label="Description"     description="Freeform notes, steps to reproduce." enabled onChange={() => {}} />
+            <ToggleRow locked label="Severity"        description="Low / Medium / High / Critical." enabled onChange={() => {}} />
+            <div className="mt-3 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Optional fields</div>
+            <ToggleRow label="Expected Result" description="What should have happened."               enabled={s?.formExpectedResult ?? true}  onChange={v => set('formExpectedResult', v)} />
+            <ToggleRow label="Actual Result"   description="What actually happened."                  enabled={s?.formActualResult   ?? true}  onChange={v => set('formActualResult',   v)} />
+            <ToggleRow label="Priority"        description="Low / Medium / High / Critical priority." enabled={s?.formPriority       ?? false} onChange={v => set('formPriority',       v)} />
+            <ToggleRow label="Environment"     description="Production / Staging / Development / QA." enabled={s?.formEnvironment    ?? false} onChange={v => set('formEnvironment',    v)} />
+            <ToggleRow label="Labels"          description="Comma-separated tags (bug, ui, regression…)." enabled={s?.formLabels     ?? false} onChange={v => set('formLabels',         v)} />
+            <ToggleRow label="Sprint"          description="Sprint name or number."                   enabled={s?.formSprint         ?? false} onChange={v => set('formSprint',         v)} />
+            <ToggleRow label="Assignee"        description="Email or name of the assignee."           enabled={s?.formAssignee       ?? false} onChange={v => set('formAssignee',       v)} />
+          </>}
+        </Section>
+      </div>
 
       {/* Session Replay */}
-      <Section
-        title="Session Replay"
-        description="Controls for the DOM session recorder. Multi-tab recording captures every tab the tester visits."
-        badge="Beta"
-        badgeColor="bg-purple-50 text-purple-600"
-      >
+      <div id="tour-replay-settings">
+        <Section
+          title="Session Replay"
+          description="Controls for the DOM session recorder. Multi-tab recording captures every tab the tester visits."
+          badge="Beta"
+          badgeColor="bg-purple-50 text-purple-600"
+        >
         {isLoading ? <div className="py-4 text-sm text-gray-400">Loading…</div> : <>
           <ToggleRow
             label="Multi-tab recording"
@@ -327,6 +512,7 @@ export default function ExtensionPage() {
           />
         </>}
       </Section>
+      </div>
 
       {/* Save feedback toast */}
       {saved && (

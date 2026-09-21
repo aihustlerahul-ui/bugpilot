@@ -7,3 +7,5 @@ backend/.env
 .superpowers/
 .worktrees/
 graphify-out/
+.agents/
+mimik/

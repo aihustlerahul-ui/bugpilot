@@ -1,0 +1,130 @@
+/* Driver.js Extension Theme */
+
+.driver-highlighted-element {
+  position: relative !important;
+  z-index: 999999 !important;
+  pointer-events: auto !important;
+  outline: 2.5px solid #5b5fc7 !important;
+  outline-offset: 3px !important;
+  border-radius: 6px !important;
+  box-shadow: 0 0 0 4px rgba(91, 95, 199, 0.25) !important;
+}
+
+.driver-popover {
+  background: #ffffff;
+  color: #0f1124;
+  border: 1px solid #e2e4f0;
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 12px 24px -4px rgba(15, 17, 36, 0.2), 0 4px 6px -2px rgba(15, 17, 36, 0.05);
+  max-width: 320px;
+  min-width: 250px;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  animation: driver-pop-in 0.18s ease-out;
+}
+
+@keyframes driver-pop-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.driver-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.driver-popover-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f1124;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.driver-popover-close {
+  background: transparent;
+  border: none;
+  color: #9097b3;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+  border-radius: 4px;
+}
+
+.driver-popover-close:hover {
+  color: #0f1124;
+  background: #f4f5fb;
+}
+
+.driver-popover-description {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #4b5066;
+  margin-bottom: 12px;
+}
+
+.driver-popover-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid #f4f5fb;
+}
+
+.driver-popover-progress {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9097b3;
+  background: #f4f5fb;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+.driver-popover-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.driver-btn {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  border: none;
+  outline: none;
+}
+
+.driver-btn-prev {
+  background: #f4f5fb;
+  color: #4b5066;
+}
+
+.driver-btn-prev:hover {
+  background: #e2e4f0;
+}
+
+.driver-btn-next {
+  background: #5b5fc7;
+  color: #ffffff;
+}
+
+.driver-btn-next:hover {
+  background: #4a4db5;
+}
+
+.driver-btn-done {
+  background: #22c55e;
+  color: #ffffff;
+}
+
+.driver-btn-done:hover {
+  background: #16a34a;
+}

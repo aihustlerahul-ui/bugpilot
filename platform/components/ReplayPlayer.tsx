@@ -1,11 +1,41 @@
 'use client'
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { unpack } from '@rrweb/packer'
 import 'rrweb/dist/style.css'
 
+export interface ReplayMarker {
+  type: 'error' | 'network' | 'network_error' | 'warning' | 'click'
+  timeMs?: number
+  relativeMs?: number
+  label: string
+  details?: string
+}
+
+export function safeUnpackEvents(events: any[]): any[] {
+  if (!Array.isArray(events)) return []
+  return events.map((ev) => {
+    if (typeof ev === 'string') {
+      try {
+        return unpack(ev)
+      } catch {
+        try {
+          return JSON.parse(ev)
+        } catch {
+          return ev
+        }
+      }
+    }
+    return ev
+  })
+}
+
 interface Props {
-  replayUrl:  string
-  issueTitle?: string
+  replayUrl:     string
+  issueTitle?:   string
+  markers?:      ReplayMarker[]
+  onTimeUpdate?: (currentMs: number, currentAbsTs: number) => void
+  seekToMs?:     number
 }
 
 type PlayerStatus = 'loading' | 'ready' | 'error' | 'skipping'
@@ -98,10 +128,10 @@ function streamCaptureWarning(events: unknown[], url: string): string | null {
     : 0
   const spanSec = Math.round(spanMs / 1000)
   // Canvas-only apps produce ~2–8 DOM events/sec without recordCanvas — looks "empty"
-  const suspiciouslySparse = events.length < 40 || (spanSec > 8 && events.length < spanSec * 3)
+  const suspiciouslySparse = !uncaptured && spanSec >= 4 && events.length < spanSec * 1.5
 
-  if (isOffice && (uncaptured || suspiciouslySparse)) {
-    return `Excel/Office renders cells on HTML canvas, not regular DOM — ${events.length} events over ~${spanSec || '?'}s is too sparse for the time you spent here. Sheet/tab switches used to wipe the buffer (now fixed). Reload the extension in chrome://extensions and record again.`
+  if (uncaptured && isOffice) {
+    return 'Office / Excel renders the spreadsheet grid on an HTML canvas. This replay was recorded without canvas capture enabled in the extension, so the sheet appears blank. Other UI interactions were captured.'
   }
   if (uncaptured) {
     return 'This page renders on HTML canvas. This replay was captured without canvas pixels, so the viewport appears blank. Reload the extension and re-record.'
@@ -115,7 +145,7 @@ function streamCaptureWarning(events: unknown[], url: string): string | null {
   return null
 }
 
-export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
+export function ReplayPlayer({ replayUrl, issueTitle, markers = [], onTimeUpdate, seekToMs }: Props) {
   const anchorRef      = useRef<HTMLDivElement>(null)
   const wrapperRef     = useRef<HTMLDivElement>(null)
   const viewportRef  = useRef<HTMLDivElement>(null)
@@ -141,6 +171,7 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
   const activeTabIdRef     = useRef<number | null>(null)
   const switchesRef        = useRef<{ atRel: number; toTabId: number }[]>([])
   const globalStartRef     = useRef<number>(0)
+  const [extractedClicks,  setExtractedClicks]  = useState<ReplayMarker[]>([])
   // ──────────────────────────────────────────────────────────────────────────
 
   const setActiveTab = useCallback((tabId: number | null) => {
@@ -159,6 +190,12 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
     loadTimeout: 0,
     showWarning: false,
     showDebug: false,
+    unpackFn: (raw: any) => {
+      if (typeof raw === 'string') {
+        try { return unpack(raw) } catch { return raw }
+      }
+      return raw
+    },
     UNSAFE_replayCanvas: true,
     // Required when replay container is moved (e.g. fullscreen overlay) — data is
     // workspace-owned QA capture, not arbitrary third-party replay input.
@@ -195,7 +232,24 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
     const clamped = Math.max(0, Math.min(total, ms))
     currentMsRef.current = clamped
     setCurrentMs(clamped)
-  }, [])
+    const currentAbsTs = (globalStartRef.current || 0) + clamped
+    onTimeUpdate?.(clamped, currentAbsTs)
+  }, [onTimeUpdate])
+
+  const allMarkers = useMemo(() => {
+    const list: ReplayMarker[] = [...(markers || [])]
+    for (const click of extractedClicks) {
+      const clickTime = click.timeMs ?? click.relativeMs ?? 0
+      const duplicate = list.some((m) => {
+        const mTime = m.timeMs ?? m.relativeMs ?? 0
+        return m.type === 'click' && Math.abs(mTime - clickTime) < 500
+      })
+      if (!duplicate) {
+        list.push(click)
+      }
+    }
+    return list.sort((a, b) => (a.timeMs ?? a.relativeMs ?? 0) - (b.timeMs ?? b.relativeMs ?? 0))
+  }, [markers, extractedClicks])
 
   /** rrweb getCurrentTime() is invalid (negative) until baselineTime is set — read safely */
   const readPlaybackMs = useCallback((replayer: any): number | null => {
@@ -381,6 +435,10 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
         return
       }
 
+      for (const s of payload.streams) {
+        s.events = safeUnpackEvents(s.events)
+      }
+
       // Global timeline
       let minTs = Infinity, maxTs = 0
       for (const s of payload.streams) {
@@ -394,6 +452,23 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
       const duration = maxTs - minTs
       totalMsRef.current = duration
       setTotalMs(duration)
+
+      // Auto-extract clicks from multi-stream rrweb mouse events
+      const clicks: ReplayMarker[] = []
+      for (const s of payload.streams) {
+        for (const ev of s.events) {
+          if (ev?.type === 3 && ev?.data?.source === 2 && ev?.data?.type === 2) {
+            const relMs = Math.max(0, (ev.timestamp || 0) - minTs)
+            clicks.push({
+              type: 'click',
+              timeMs: relMs,
+              relativeMs: relMs,
+              label: 'User Click',
+            })
+          }
+        }
+      }
+      setExtractedClicks(clicks)
 
       // Normalize switch timestamps to ms relative to session start
       switchesRef.current = (payload.switches ?? [])
@@ -476,14 +551,31 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
         }
 
         // --- existing single-stream path ---
-        const events: any[] = Array.isArray(raw) ? raw : raw.events ?? []
+        const rawEvents: any[] = Array.isArray(raw) ? raw : raw.events ?? []
+        const events: any[] = safeUnpackEvents(rawEvents)
 
         if (cancelled || !containerRef.current) return
         if (events.length < 2) { setErrorMsg('Replay too short.'); setStatus('error'); return }
 
+        globalStartRef.current = events[0].timestamp
         const duration = events[events.length - 1].timestamp - events[0].timestamp
         totalMsRef.current = duration
         setTotalMs(duration)
+
+        // Auto-extract clicks from rrweb mouse events
+        const clicks: ReplayMarker[] = []
+        for (const ev of events) {
+          if (ev?.type === 3 && ev?.data?.source === 2 && ev?.data?.type === 2) {
+            const relMs = Math.max(0, (ev.timestamp || 0) - events[0].timestamp)
+            clicks.push({
+              type: 'click',
+              timeMs: relMs,
+              relativeMs: relMs,
+              label: 'User Click',
+            })
+          }
+        }
+        setExtractedClicks(clicks)
 
         const metaEvent = events.find((e: any) => e.type === 4)
         if (metaEvent?.data) {
@@ -625,6 +717,15 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
       r.pause(clamped)
     }
   }, [stopTimeSync, startTimeSync, setTime, updateActiveTabForMs, syncReplayersAtGlobalMs])
+
+  // DevTools-to-Replay Reverse Sync
+  const lastSeekRef = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (seekToMs !== undefined && seekToMs !== lastSeekRef.current && status === 'ready') {
+      lastSeekRef.current = seekToMs
+      seek(seekToMs, playingRef.current)
+    }
+  }, [seekToMs, seek, status])
 
   const togglePlay = useCallback(() => {
     if (multiReplayersRef.current.size > 0) {
@@ -889,7 +990,7 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
       )}
 
       {isReady && (
-        <div className="bg-[#0f1124] border-t border-white/10 shrink-0">
+        <div className="bg-[#0f1124] border-t border-white/10 shrink-0" id="tour-scrubber-ticks">
           {/* scrub bar */}
           <div className="px-3 pt-3 pb-1">
             <div
@@ -927,6 +1028,43 @@ export function ReplayPlayer({ replayUrl, issueTitle }: Props) {
                 }`}
                 style={{ left: `${progress}%` }}
               />
+
+              {/* Scrubber Event Marker Pins with 2s Pre-roll seek */}
+              {allMarkers && allMarkers.length > 0 && totalMs > 0 && (
+                <div className="absolute inset-0 pointer-events-none z-10">
+                  {allMarkers.map((marker, idx) => {
+                    const markerTime = marker.timeMs ?? marker.relativeMs ?? 0
+                    const clampedTime = Math.max(0, Math.min(totalMs, markerTime))
+                    const pct = Math.max(0, Math.min(100, (clampedTime / totalMs) * 100))
+                    const isError = marker.type === 'error'
+                    const isWarnOrNet = marker.type === 'network' || marker.type === 'network_error' || marker.type === 'warning'
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          seek(Math.max(0, clampedTime - 2000), playingRef.current)
+                        }}
+                        className={`pointer-events-auto absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-2.5 w-2.5 rounded-full border border-[#0f1124] shadow-xs transition-transform hover:scale-175 group/pin ${
+                          isError
+                            ? 'bg-red-500 ring-2 ring-red-400/40 shadow-red-500/50'
+                            : isWarnOrNet
+                            ? 'bg-amber-400 ring-2 ring-amber-400/40 shadow-amber-400/50'
+                            : 'bg-blue-400 ring-2 ring-blue-400/40 shadow-blue-400/50'
+                        }`}
+                        style={{ left: `${pct}%` }}
+                        title={`${marker.label} at ${formatTime(clampedTime)} (Click to jump 2s before)`}
+                      >
+                        {/* Hover Tooltip */}
+                        <span className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 hidden rounded-md bg-slate-900/95 px-2 py-1 text-[10px] font-medium text-white shadow-xl whitespace-nowrap group-hover/pin:block z-30 border border-slate-700">
+                          {isError ? '🔴' : isWarnOrNet ? '🟡' : '🔵'} {marker.label} ({formatTime(clampedTime)})
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
               <input
                 type="range"
                 min={0}

@@ -1,4 +1,5 @@
-import { IsOptional, IsString, IsObject } from 'class-validator'
+import { IsOptional, IsString, IsObject, IsIn } from 'class-validator'
+import { TRIAGE_STATUSES } from './update-status.dto'
 
 export class CreateIssueDto {
   @IsString()
@@ -10,6 +11,11 @@ export class CreateIssueDto {
 
   @IsString()
   description: string
+
+  @IsOptional()
+  @IsString()
+  @IsIn([...TRIAGE_STATUSES])
+  status?: string
 
   @IsOptional()
   @IsString()

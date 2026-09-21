@@ -4,14 +4,15 @@ import { useState } from 'react'
 
 interface VideoBadgeProps {
   thumbnailUrl?: string | null
+  className?: string
 }
 
-export function VideoBadge({ thumbnailUrl }: VideoBadgeProps) {
+export function VideoBadge({ thumbnailUrl, className }: VideoBadgeProps) {
   const [hovering, setHovering] = useState(false)
 
   return (
     <span
-      className="relative inline-flex items-center justify-center"
+      className={`relative inline-flex items-center justify-center ${className || ''}`}
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
     >

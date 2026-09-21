@@ -67,7 +67,172 @@ async function compressMultiStream(payload) {
   }
 }
 
-// Tracks last injected URL per tab so onUpdated only re-injects after navigation,
+// ── Sanitization Engine & PII Redaction ───────────────────────────────────────
+const SanitizationEngine = {
+  RE_CREDIT_CARD: /\b(?:\d[ -]*?){13,19}\b/g,
+  RE_EMAIL: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+  RE_SSN: /\b\d{3}-\d{2}-\d{4}\b/g,
+  RE_AUTH_HEADER: /(["']?Authorization["']?\s*:\s*["']?(?:Bearer|Basic)\s+)[^"'\r\n\s]+/gi,
+  RE_COOKIE_HEADER: /(["']?Cookie["']?\s*:\s*["']?)[^"'\r\n]+/gi,
+  RE_URL_PARAMS: /([?&](?:token|access_token|refresh_token|auth|password|pwd|secret|apikey|api_key|api-key|sessionId|jwt|client_secret|private_key|privatekey)=)([^&#\s]+)/gi,
+
+  sanitizeString(str) {
+    if (typeof str !== 'string') return str;
+    return str
+      .replace(SanitizationEngine.RE_CREDIT_CARD, '[REDACTED_CARD]')
+      .replace(SanitizationEngine.RE_EMAIL, '[REDACTED_EMAIL]')
+      .replace(SanitizationEngine.RE_SSN, '[REDACTED_SSN]')
+      .replace(SanitizationEngine.RE_AUTH_HEADER, '$1[REDACTED_AUTH]')
+      .replace(SanitizationEngine.RE_COOKIE_HEADER, '$1[REDACTED_COOKIE]')
+      .replace(SanitizationEngine.RE_URL_PARAMS, '$1[REDACTED]');
+  },
+
+  sanitizeObject(obj, depth = 0) {
+    if (!obj || depth > 8) return obj;
+    if (typeof obj === 'string') return SanitizationEngine.sanitizeString(obj);
+    if (typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) {
+      return obj.map(item => SanitizationEngine.sanitizeObject(item, depth + 1));
+    }
+    const res = {};
+    for (const [k, v] of Object.entries(obj)) {
+      res[k] = SanitizationEngine.sanitizeObject(v, depth + 1);
+    }
+    return res;
+  }
+};
+
+// ── Chunked upload helper for payloads > 5MB ──────────────────────────────────
+async function uploadDataWithChunking({ data, type, projectId, issueId, onProgress }) {
+  const CHUNK_SIZE = 1.5 * 1024 * 1024; // 1.5MB chunks
+  const totalChunks = Math.ceil(data.length / CHUNK_SIZE);
+  let { qa_token: token } = await chrome.storage.local.get(['qa_token']);
+
+  const headers = () => ({
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  });
+
+  // 1. Init chunk upload session
+  let initRes = await fetch(`${API_URL}/api/issues/upload-chunk/init`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ project_id: projectId, type, total_chunks: totalChunks, total_size: data.length }),
+  });
+  if (initRes.status === 401) {
+    token = await tryRefreshToken();
+    initRes = await fetch(`${API_URL}/api/issues/upload-chunk/init`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ project_id: projectId, type, total_chunks: totalChunks, total_size: data.length }),
+    });
+  }
+  if (!initRes.ok) throw new Error(`Init chunk upload failed: ${initRes.status}`);
+  const { uploadId } = await initRes.json();
+
+  // 2. Upload each chunk with retries
+  for (let i = 0; i < totalChunks; i++) {
+    const chunkData = data.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+    let success = false;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        let chunkRes = await fetch(`${API_URL}/api/issues/upload-chunk`, {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({ upload_id: uploadId, chunk_index: i, chunk_data: chunkData }),
+        });
+        if (chunkRes.status === 401) {
+          token = await tryRefreshToken();
+          chunkRes = await fetch(`${API_URL}/api/issues/upload-chunk`, {
+            method: 'POST',
+            headers: headers(),
+            body: JSON.stringify({ upload_id: uploadId, chunk_index: i, chunk_data: chunkData }),
+          });
+        }
+        if (chunkRes.ok) {
+          success = true;
+          break;
+        }
+        lastError = new Error(`HTTP ${chunkRes.status}`);
+      } catch (e) {
+        lastError = e;
+      }
+      await new Promise(r => setTimeout(r, attempt * 400));
+    }
+
+    if (!success) {
+      throw new Error(`Failed to upload chunk ${i + 1}/${totalChunks}: ${lastError?.message || 'network error'}`);
+    }
+    if (typeof onProgress === 'function') onProgress(Math.round(((i + 1) / totalChunks) * 100));
+  }
+
+  // 3. Complete chunk upload session
+  let compRes = await fetch(`${API_URL}/api/issues/upload-chunk/complete`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ upload_id: uploadId, issue_id: issueId }),
+  });
+  if (compRes.status === 401) {
+    token = await tryRefreshToken();
+    compRes = await fetch(`${API_URL}/api/issues/upload-chunk/complete`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ upload_id: uploadId, issue_id: issueId }),
+    });
+  }
+  if (!compRes.ok) throw new Error(`Complete chunk upload failed: ${compRes.status}`);
+  return await compRes.json();
+}
+
+// ── Offline Pending Sync Queue ────────────────────────────────────────────────
+async function enqueuePendingSyncIssue(issue, errorReason) {
+  const { qa_pending_sync_queue = [] } = await chrome.storage.local.get(['qa_pending_sync_queue']);
+  const queueItem = {
+    id: issue.id || 'issue_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    issue,
+    queuedAt: Date.now(),
+    retries: 0,
+    lastError: errorReason || 'Offline / network failure',
+    status: 'pending_sync',
+  };
+  const updated = [queueItem, ...qa_pending_sync_queue];
+  await chrome.storage.local.set({ qa_pending_sync_queue: updated });
+  console.log('[QA] Queued issue for offline sync:', queueItem.id);
+  return queueItem;
+}
+
+async function processPendingSyncQueue() {
+  const { qa_pending_sync_queue = [] } = await chrome.storage.local.get(['qa_pending_sync_queue']);
+  if (!qa_pending_sync_queue.length) return;
+
+  console.log('[QA] Processing pending sync queue:', qa_pending_sync_queue.length, 'items');
+  const remaining = [];
+  for (const item of qa_pending_sync_queue) {
+    try {
+      await postIssue(item.issue, { skipQueueFallback: true });
+      console.log('[QA] Successfully synced pending issue:', item.id);
+    } catch (err) {
+      console.warn('[QA] Failed syncing pending issue', item.id, err?.message);
+      item.retries = (item.retries || 0) + 1;
+      item.lastError = err?.message || 'Sync failed';
+      remaining.push(item);
+    }
+  }
+  await chrome.storage.local.set({ qa_pending_sync_queue: remaining });
+}
+
+// ── Service worker watchdog & keepalive alarm ─────────────────────────────────
+try {
+  chrome.alarms.create('qa_keepalive_alarm', { periodInMinutes: 0.5 });
+} catch (_) {}
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === 'qa_keepalive_alarm') {
+    await processPendingSyncQueue();
+  }
+});
 // not on the initial load complete event that follows a fresh inject.
 const lastRecordedUrlByTab = new Map();
 /** Events flushed before same-tab re-inject (SharePoint/Excel sheet switches wipe the live buffer). */
@@ -143,8 +308,8 @@ async function injectReplayIntoTab(tabId, { preserveEvents = false } = {}) {
     const { qa_replay_window_ms } = await chrome.storage.local.get(['qa_replay_window_ms']);
     const windowMs = qa_replay_window_ms || 2 * 60 * 1000;
     console.log('[QA] inject: starting for tab', tabId);
-    await chrome.scripting.executeScript({ target: { tabId }, files: ['rrweb.min.js'] });
-    console.log('[QA] inject: rrweb.min.js done for tab', tabId);
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['rrweb-record.min.js'] });
+    console.log('[QA] inject: rrweb-record.min.js done for tab', tabId);
     // Pass window size from background — replay-recorder must not call chrome.storage
     // (storage.local.get uses runtime.sendMessage and throws when context is stale).
     await chrome.scripting.executeScript({
@@ -400,6 +565,54 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const tabId = _sender.tab && _sender.tab.id;
     if (tabId) chrome.tabs.sendMessage(tabId, message);
     return false;
+  }
+  if (type === 'GET_PENDING_SYNC_QUEUE') {
+    chrome.storage.local.get(['qa_pending_sync_queue'], ({ qa_pending_sync_queue = [] }) => {
+      sendResponse({ ok: true, queue: qa_pending_sync_queue });
+    });
+    return true;
+  }
+  if (type === 'RETRY_PENDING_SYNC') {
+    processPendingSyncQueue().then(() => {
+      chrome.storage.local.get(['qa_pending_sync_queue'], ({ qa_pending_sync_queue = [] }) => {
+        sendResponse({ ok: true, remaining: qa_pending_sync_queue.length });
+      });
+    });
+    return true;
+  }
+  if (type === 'CLEAR_PENDING_SYNC') {
+    chrome.storage.local.set({ qa_pending_sync_queue: [] }, () => {
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+  if (type === 'SMART_AUTOFILL') {
+    handleSmartAutofill(message, sendResponse);
+    return true;
+  }
+  if (type === 'ANALYZE_VISUAL_ANOMALIES') {
+    handleAnalyzeVisualAnomalies(message, sendResponse);
+    return true;
+  }
+  if (type === 'START_STEP_RECORDING') {
+    handleStartStepRecording(message, sendResponse);
+    return true;
+  }
+  if (type === 'STOP_STEP_RECORDING') {
+    handleStopStepRecording(sendResponse);
+    return true;
+  }
+  if (type === 'GET_RECORDED_STEPS') {
+    chrome.storage.local.get(['qa_recorded_steps'], (res) => {
+      sendResponse({ ok: true, steps: res.qa_recorded_steps || [] });
+    });
+    return true;
+  }
+  if (type === 'CLEAR_RECORDED_STEPS') {
+    chrome.storage.local.set({ qa_recorded_steps: [] }, () => {
+      sendResponse({ ok: true });
+    });
+    return true;
   }
 });
 
@@ -704,21 +917,27 @@ async function handleUploadAndAttachVideo(message, sendResponse) {
       return h;
     };
 
-    let uploadRes = await fetch(`${API_URL}/api/issues/upload-video`, {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({ project_id: projectId, video: base64 }),
-    });
-    if (uploadRes.status === 401) {
-      token = await tryRefreshToken();
-      uploadRes = await fetch(`${API_URL}/api/issues/upload-video`, {
+    let storagePath;
+    if (base64.length > 5 * 1024 * 1024) {
+      const chunkRes = await uploadDataWithChunking({ data: base64, type: 'video', projectId, issueId });
+      storagePath = chunkRes.storagePath;
+    } else {
+      let uploadRes = await fetch(`${API_URL}/api/issues/upload-video`, {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({ project_id: projectId, video: base64 }),
       });
+      if (uploadRes.status === 401) {
+        token = await tryRefreshToken();
+        uploadRes = await fetch(`${API_URL}/api/issues/upload-video`, {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({ project_id: projectId, video: base64 }),
+        });
+      }
+      if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`);
+      storagePath = (await uploadRes.json()).storagePath;
     }
-    if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`);
-    const { storagePath } = await uploadRes.json();
 
     let webcamStoragePath;
     if (webcamBase64) {
@@ -805,6 +1024,133 @@ async function handleGetRecentIssues(message, sendResponse) {
   } catch (err) {
     sendResponse({ ok: false, error: err.message });
   }
+}
+
+// ── B2: SMART_AUTOFILL ────────────────────────────────────────────────────────
+async function handleSmartAutofill(message, sendResponse) {
+  const payload = message.payload || {};
+  try {
+    let { qa_token: token } = await chrome.storage.local.get(['qa_token']);
+    const headers = () => ({
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    });
+
+    let res = await fetch(`${API_URL}/api/ai/smart-autofill`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(payload),
+    });
+
+    if (res.status === 401) {
+      token = await tryRefreshToken();
+      if (token) {
+        res = await fetch(`${API_URL}/api/ai/smart-autofill`, {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify(payload),
+        });
+      }
+    }
+
+    if (!res.ok) {
+      const fallback = fallbackSmartAutofill(payload);
+      sendResponse({ ok: true, result: fallback, fallback: true });
+      return;
+    }
+
+    const result = await res.json();
+    sendResponse({ ok: true, result });
+  } catch (err) {
+    const fallback = fallbackSmartAutofill(payload);
+    sendResponse({ ok: true, result: fallback, fallback: true, error: err.message });
+  }
+}
+
+function fallbackSmartAutofill(payload) {
+  const input = (payload.userInput || '').trim();
+  const ctx = payload.domContext || {};
+  const target = ctx.target || {};
+  const targetName = target.name || target.value || target.tag || 'element';
+  const containerLabel = ctx.container?.label || ctx.container?.tag || 'section';
+  const route = payload.route || ctx.page?.path || '/';
+
+  const title = input.length > 5 ? input.charAt(0).toUpperCase() + input.slice(1) : `${targetName}: unexpected behavior on ${route}`;
+  const description = `### 📝 Summary\n${input || `Issue observed on ${targetName} in ${route}`}\n\n### 🔄 Steps to Reproduce\n1. Navigate to \`${route}\`\n2. Interact with \`${targetName}\` in ${containerLabel}\n3. Observe: ${input || 'failure'}\n\n### ✅ Expected Behavior\nThe \`${targetName}\` element should work as intended.\n\n### ❌ Actual Behavior\n${input || 'Encountered unexpected behavior.'}`;
+
+  return {
+    title,
+    description,
+    severity: /crash|500|broken/i.test(input) ? 'High' : 'Medium',
+    expectedResult: `Element \`${targetName}\` functions properly without errors.`,
+    actualResult: input || 'Unexpected behavior observed.',
+    labels: [target.tag || 'ui', 'smart-report'],
+    domSummary: ctx.rawSummary || `Target: <${target.tag || 'element'}> "${targetName}" in ${containerLabel}`,
+    confidenceScore: 0.85,
+  };
+}
+
+// ── B8: ANALYZE_VISUAL_ANOMALIES ──────────────────────────────────────────────
+async function handleAnalyzeVisualAnomalies(message, sendResponse) {
+  const payload = message.payload || {};
+  try {
+    let { qa_token: token } = await chrome.storage.local.get(['qa_token']);
+    const headers = () => ({
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    });
+
+    let res = await fetch(`${API_URL}/api/ai/visual-analysis`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(payload),
+    });
+
+    if (res.status === 401) {
+      token = await tryRefreshToken();
+      if (token) {
+        res = await fetch(`${API_URL}/api/ai/visual-analysis`, {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify(payload),
+        });
+      }
+    }
+
+    if (!res.ok) {
+      sendResponse({ ok: false, error: `HTTP ${res.status}` });
+      return;
+    }
+
+    const result = await res.json();
+    sendResponse({ ok: true, result });
+  } catch (err) {
+    sendResponse({ ok: false, error: err.message });
+  }
+}
+
+// ── B7: STEP RECORDING ────────────────────────────────────────────────────────
+async function handleStartStepRecording(message, sendResponse) {
+  await chrome.storage.local.set({ qa_step_recording: true, qa_recorded_steps: [] });
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tabs[0]?.id) {
+      chrome.tabs.sendMessage(tabs[0].id, { type: 'START_STEP_RECORDING' }).catch(() => {});
+    }
+  } catch (_) {}
+  sendResponse({ ok: true });
+}
+
+async function handleStopStepRecording(sendResponse) {
+  await chrome.storage.local.set({ qa_step_recording: false });
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tabs[0]?.id) {
+      chrome.tabs.sendMessage(tabs[0].id, { type: 'STOP_STEP_RECORDING' }).catch(() => {});
+    }
+  } catch (_) {}
+  const { qa_recorded_steps = [] } = await chrome.storage.local.get(['qa_recorded_steps']);
+  sendResponse({ ok: true, steps: qa_recorded_steps });
 }
 
 // ── OPEN_ANNOTATOR ────────────────────────────────────────────────────────────
@@ -987,6 +1333,7 @@ chrome.runtime.onInstalled.addListener(function () {
     qa_recording:        false,
     qa_buffered_issues:  [],
   });
+  setupBugMagnetContextMenus();
 });
 
 // ── Token refresh ─────────────────────────────────────────────────────────────
@@ -1022,7 +1369,7 @@ function replayUrlMatches(a, b) {
   }
 }
 
-async function postIssue(issue) {
+async function postIssue(issue, options = {}) {
   // Attach the saved replay only to the specific bug captured on the recorded page.
   // Matching by issue URL (not the currently-active tab) makes Submit-All deterministic:
   // the replay lands on its own bug regardless of submit order, instead of whichever
@@ -1049,65 +1396,249 @@ async function postIssue(issue) {
   const element = issue.element || issue.elementInfo || issue.element_info || {};
   const env     = issue.environment_info || issue.browserInfo || issue.browser_info || {};
 
+  const sanitizedElement = SanitizationEngine.sanitizeObject(element);
+  const sanitizedEnv = SanitizationEngine.sanitizeObject(env);
+
+  const rawMetadata = {
+    // Page context
+    pageContext:        issue.pageContext        || null,
+    // Performance
+    performanceMetrics: issue.performanceMetrics || null,
+    // App state (React Router + Zustand)
+    appState:           issue.appState           || null,
+    // Console & network
+    consoleErrors:       issue.recentConsoleErrors || issue.consoleErrors || [],
+    networkTransactions: issue.networkTransactions || issue.recentNetworkRequests || issue.networkErrors || [],
+    networkErrors:       issue.networkErrors || issue.recentNetworkRequests || [],
+    // Navigation
+    navigationHistory:  issue.navigationHistory  || [],
+    // All captured images (no limit — element, full page, annotated versions, etc.)
+    screenshots:        issue.allScreenshots     || undefined,
+    // Optional form fields
+    expectedResult:     issue.expectedResult     || null,
+    actualResult:       issue.actualResult       || null,
+    priority:           issue.priority           || null,
+    environment:        issue.environment        || null,
+    labels:             issue.labels             || null,
+    sprint:             issue.sprint             || null,
+    assignee:           issue.assignee           || null,
+  };
+
+  const sanitizedMetadata = SanitizationEngine.sanitizeObject(rawMetadata);
+
   const payload = {
     project_id:   issue.projectId || issue.project_id,
-    title:        issue.title,
-    description:  issue.title + (issue.description ? '\n\n' + issue.description : ''),
+    title:        SanitizationEngine.sanitizeString(issue.title),
+    description:  SanitizationEngine.sanitizeString(issue.title + (issue.description ? '\n\n' + issue.description : '')),
     severity:     issue.severity || 'Medium',
-    url:          issue.url,
-    route:        issue.route,
-    browser_info: env,
-    element_info: element,
+    url:          SanitizationEngine.sanitizeString(issue.url),
+    route:        SanitizationEngine.sanitizeString(issue.route),
+    browser_info: sanitizedEnv,
+    element_info: sanitizedElement,
     screenshot:   issue.screenshot
       ? issue.screenshot.replace(/^data:image\/\w+;base64,/, '')
       : undefined,
     element_screenshot: issue.fullScreenshot
       ? issue.fullScreenshot.replace(/^data:image\/\w+;base64,/, '')
       : undefined,
-    metadata: {
-      // Page context
-      pageContext:        issue.pageContext        || null,
-      // Performance
-      performanceMetrics: issue.performanceMetrics || null,
-      // App state (React Router + Zustand)
-      appState:           issue.appState           || null,
-      // Console & network
-      consoleErrors:      issue.recentConsoleErrors || issue.consoleErrors || [],
-      networkErrors:      issue.recentNetworkRequests || issue.networkErrors || [],
-      // Navigation
-      navigationHistory:  issue.navigationHistory  || [],
-      // All captured images (no limit — element, full page, annotated versions, etc.)
-      screenshots:        issue.allScreenshots     || undefined,
-      // Optional form fields
-      expectedResult:     issue.expectedResult     || null,
-      actualResult:       issue.actualResult       || null,
-      priority:           issue.priority           || null,
-      environment:        issue.environment        || null,
-      labels:             issue.labels             || null,
-      sprint:             issue.sprint             || null,
-      assignee:           issue.assignee           || null,
-    },
-    replay_data: replayData ?? undefined,
+    metadata:     sanitizedMetadata,
+    replay_data:  (replayData && replayData.length <= 5 * 1024 * 1024) ? replayData : undefined,
   };
 
-  const res = await fetch(`${API_URL}/api/issues`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-  });
+  try {
+    const res = await fetch(`${API_URL}/api/issues`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
 
-  if (res.status === 401) throw new Error('Unauthorized — please sign in again');
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`HTTP ${res.status}: ${text}`);
+    if (res.status === 401) throw new Error('Unauthorized — please sign in again');
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HTTP ${res.status}: ${text}`);
+    }
+    const result = await res.json();
+
+    // If replay was > 5MB, upload via multipart chunking attached to the created issue
+    if (replayData && replayData.length > 5 * 1024 * 1024 && result?.id) {
+      try {
+        await uploadDataWithChunking({
+          data: replayData,
+          type: 'replay',
+          projectId: payload.project_id,
+          issueId: result.id,
+        });
+      } catch (chunkErr) {
+        console.warn('[QA] Large replay chunked upload failed:', chunkErr.message);
+      }
+    }
+
+    // Clear saved replay after successful submit and signal sidepanel
+    if (replayStatus === 'attached') {
+      await chrome.storage.local.remove(['qa_saved_replay']);
+    }
+    if (replayStatus) {
+      await chrome.storage.local.set({ qa_replay_status: replayStatus });
+    }
+    return result;
+  } catch (err) {
+    if (!options.skipQueueFallback) {
+      const queued = await enqueuePendingSyncIssue(issue, err.message);
+      return { queued: true, queueId: queued.id, message: 'Saved offline. Issue queued for background sync.' };
+    }
+    throw err;
   }
-  const result = await res.json();
-  // Clear saved replay after successful submit and signal sidepanel
-  if (replayStatus === 'attached') {
-    await chrome.storage.local.remove(['qa_saved_replay']);
+}
+
+// ── Bug Magnet Exploratory Test Data Context Menus ─────────────────────────────
+const BUG_MAGNET_DATA = {
+  whitespace: {
+    title: 'Whitespace',
+    items: [
+      { id: 'bm_ws_edges',    title: 'Leading & Trailing Space',  value: '   Leading & Trailing   ' },
+      { id: 'bm_ws_tabs',     title: 'Tabs (\\t)',               value: 'Tab\tSeparated\tValues' },
+      { id: 'bm_ws_newlines', title: 'Newlines (\\n)',           value: 'Line 1\nLine 2\nLine 3' },
+      { id: 'bm_ws_zero',     title: 'Zero-width Space (\\u200B)', value: 'Zero\u200BWidth\u200CSpace' },
+      { id: 'bm_ws_nonbreak', title: 'Non-breaking Space (\\u00A0)', value: 'Non\u00A0Breaking\u00A0Space' },
+    ]
+  },
+  accents: {
+    title: 'Accents & Diacritics',
+    items: [
+      { id: 'bm_acc_latin',  title: 'Latin Accents',                value: 'Héllo Wörld Café-au-lait' },
+      { id: 'bm_acc_german', title: 'German (ä ö ü ß)',             value: 'Größe Über Flöße daß' },
+      { id: 'bm_acc_french', title: 'French (é è ê ë ç)',           value: 'Ça va très bien, garçon' },
+      { id: 'bm_acc_nordic', title: 'Nordic (å æ ø)',               value: 'Blåbærgrød på Rømø' },
+      { id: 'bm_acc_zalgo',  title: 'Zalgo / Combining Diacritics', value: 'Z̶a̶l̶g̶o̶ t̸e̸x̸t̸' },
+    ]
+  },
+  emojis: {
+    title: 'Emojis (UTF-16)',
+    items: [
+      { id: 'bm_emo_common',  title: 'Common Emojis',        value: '👋 🚀 🐞 ⚡️ 🔥 🦄' },
+      { id: 'bm_emo_zwj',     title: 'Complex ZWJ Sequence', value: '👨‍👩‍👧‍👦 🏳️‍🌈 🧑🏽‍💻' },
+      { id: 'bm_emo_flags',   title: 'Flag Sequences',      value: '🇺🇸 🇬🇧 🇯🇵 🇩🇪 🇮🇳' },
+      { id: 'bm_emo_symbols', title: 'Math & Currency',     value: '€ £ ¥ ₹ © ® ™ ∑ π ∞' },
+    ]
+  },
+  rtl: {
+    title: 'RTL (Right-to-Left)',
+    items: [
+      { id: 'bm_rtl_ar',    title: 'Arabic',           value: 'مرحبا بالعالم' },
+      { id: 'bm_rtl_he',    title: 'Hebrew',           value: 'שלום עולם' },
+      { id: 'bm_rtl_mix',   title: 'Mixed LTR & RTL',  value: 'Hello مرحبا World 123' },
+      { id: 'bm_rtl_cjk',   title: 'CJK (East Asian)', value: '日本語テスト 中文测试 한국어' },
+    ]
+  },
+  emails: {
+    title: 'Email Edge Cases',
+    items: [
+      { id: 'bm_email_valid',   title: 'Valid: user+tag@example.com',   value: 'user+tag@example.com' },
+      { id: 'bm_email_dots',    title: 'Valid: first.last@sub.co.uk',   value: 'first.last@sub.domain.co.uk' },
+      { id: 'bm_email_no_at',   title: 'Invalid: missing @ sign',       value: 'invalid.example.com' },
+      { id: 'bm_email_no_user', title: 'Invalid: missing user part',    value: '@example.com' },
+      { id: 'bm_email_spaces',  title: 'Invalid: spaces in address',    value: 'user name@example.com' },
+      { id: 'bm_email_long',    title: 'Boundary: 254-char email',      value: 'a'.repeat(64) + '@' + 'b'.repeat(180) + '.com' },
+    ]
+  },
+  numbers: {
+    title: 'Numbers & Boundaries',
+    items: [
+      { id: 'bm_num_zero',    title: 'Zero (0)',                     value: '0' },
+      { id: 'bm_num_neg',     title: 'Negative (-1)',                value: '-1' },
+      { id: 'bm_num_max32',   title: 'Max 32-bit Int (2147483647)',  value: '2147483647' },
+      { id: 'bm_num_min32',   title: 'Min 32-bit Int (-2147483648)', value: '-2147483648' },
+      { id: 'bm_num_maxsafe', title: 'Max Safe Int (9007199254740991)', value: '9007199254740991' },
+      { id: 'bm_num_decimal', title: 'Decimal (3.14159265)',         value: '3.14159265' },
+      { id: 'bm_num_sci',     title: 'Scientific (1e+10)',           value: '1e+10' },
+      { id: 'bm_num_nan',     title: 'Not a Number (NaN)',           value: 'NaN' },
+    ]
+  },
+  boundaries: {
+    title: 'String Length Boundaries',
+    items: [
+      { id: 'bm_str_empty', title: 'Empty String ("")',   value: '' },
+      { id: 'bm_str_1',     title: '1 Character (A)',     value: 'A' },
+      { id: 'bm_str_255',   title: '255 Characters',      value: 'A'.repeat(255) },
+      { id: 'bm_str_1000',  title: '1,000 Characters',    value: 'A'.repeat(1000) },
+      { id: 'bm_str_lorem', title: 'Lorem Ipsum',         value: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.' },
+    ]
+  },
+  exploits: {
+    title: 'Exploits & Injections',
+    items: [
+      { id: 'bm_xss_script', title: 'XSS: <script>alert(1)</script>',  value: '<script>alert("BugMagnet")</script>' },
+      { id: 'bm_xss_img',    title: 'XSS: <img onerror>',             value: '<img src=x onerror=alert("BugMagnet")>' },
+      { id: 'bm_xss_svg',    title: 'XSS: <svg onload>',              value: '"><svg/onload=alert("BugMagnet")>' },
+      { id: 'bm_sqli_or',    title: "SQLi: ' OR '1'='1",              value: "' OR '1'='1" },
+      { id: 'bm_sqli_drop',  title: "SQLi: '; DROP TABLE users; --",   value: "'; DROP TABLE users; --" },
+      { id: 'bm_html_h1',    title: 'HTML: <h1>Injection</h1>',        value: '<h1>BugMagnet Test</h1>' },
+    ]
   }
-  if (replayStatus) {
-    await chrome.storage.local.set({ qa_replay_status: replayStatus });
-  }
-  return result;
+};
+
+function setupBugMagnetContextMenus() {
+  if (typeof chrome === 'undefined' || !chrome.contextMenus || !chrome.contextMenus.removeAll) return;
+  chrome.contextMenus.removeAll(function () {
+    try {
+      chrome.contextMenus.create({
+        id: 'bm_root',
+        title: 'Bug Magnet (Test Data)',
+        contexts: ['editable']
+      });
+
+      for (const [catKey, category] of Object.entries(BUG_MAGNET_DATA)) {
+        chrome.contextMenus.create({
+          id: 'bm_cat_' + catKey,
+          parentId: 'bm_root',
+          title: category.title,
+          contexts: ['editable']
+        });
+
+        for (const item of category.items) {
+          chrome.contextMenus.create({
+            id: item.id,
+            parentId: 'bm_cat_' + catKey,
+            title: item.title,
+            contexts: ['editable']
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[QA] Error creating Bug Magnet context menus:', err);
+    }
+  });
+}
+
+// Ensure context menus are created on startup/worker load
+setupBugMagnetContextMenus();
+
+if (typeof chrome !== 'undefined' && chrome.contextMenus && chrome.contextMenus.onClicked) {
+  chrome.contextMenus.onClicked.addListener(async function (info, tab) {
+    if (!info.menuItemId || !String(info.menuItemId).startsWith('bm_')) return;
+    let targetValue = null;
+    for (const cat of Object.values(BUG_MAGNET_DATA)) {
+      const found = cat.items.find(function (i) { return i.id === info.menuItemId; });
+      if (found) { targetValue = found.value; break; }
+    }
+    if (targetValue !== null && tab && tab.id) {
+      try {
+        await chrome.tabs.sendMessage(tab.id, {
+          type: 'BUG_MAGNET_INSERT',
+          value: targetValue
+        });
+        if (chrome.action && chrome.action.setBadgeText) {
+          await chrome.action.setBadgeText({ tabId: tab.id, text: '✓' });
+          if (chrome.action.setBadgeBackgroundColor) {
+            await chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: '#22c55e' });
+          }
+          setTimeout(function () {
+            try { chrome.action.setBadgeText({ tabId: tab.id, text: '' }); } catch (_) {}
+          }, 1500);
+        }
+      } catch (e) {
+        console.warn('[QA] Failed to send Bug Magnet value to tab:', e);
+      }
+    }
+  });
 }

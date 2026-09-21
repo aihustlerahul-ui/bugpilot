@@ -57,7 +57,7 @@ const DEFAULT_SETTINGS: ExtensionSettings = {
   captureNetwork: true,
   capturePerformance: true,
   captureDomHierarchy: true,
-  captureComputedStyles: false,
+  captureComputedStyles: true,
   captureXPath: true,
 
   captureLocalStorage: false,
