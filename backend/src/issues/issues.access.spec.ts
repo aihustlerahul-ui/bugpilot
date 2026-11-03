@@ -183,10 +183,32 @@ describe('IssuesService project access', () => {
       expect(updated).toEqual([{ table: 'issues', patch: { status: 'In Dev' }, ids: ['i1'] }]);
     });
 
-    it('refuses a member, even the reporter, and writes nothing', async () => {
+    it('lets a member set Resolved on its project issue', async () => {
       const { service, updated } = build();
-      await expect(service.updateStatus(MEMBER, 'i1', 'Closed')).rejects.toThrow(NotFoundException);
+      const res = await service.updateStatus(MEMBER, 'i1', 'Resolved');
+      expect(res.status).toBe('Resolved');
+      expect(updated).toHaveLength(1);
+    });
+
+    it('forbids a member from setting In Dev or Closed and writes nothing', async () => {
+      const { service, updated } = build();
+      await expect(service.updateStatus(MEMBER, 'i1', 'In Dev')).rejects.toThrow(ForbiddenException);
+      await expect(service.updateStatus(MEMBER, 'i1', 'Closed')).rejects.toThrow(ForbiddenException);
       expect(updated).toHaveLength(0);
+    });
+
+    it('member of project A cannot read or update status of an issue in project B', async () => {
+      const { service, updated } = build();
+      await expect(service.findOne(MEMBER, 'i2')).rejects.toThrow(NotFoundException);
+      await expect(service.updateStatus(MEMBER, 'i2', 'Resolved')).rejects.toThrow(NotFoundException);
+      expect(updated).toHaveLength(0);
+    });
+
+    it('owner can set any status', async () => {
+      const { service } = build();
+      for (const st of ['Incoming', 'In Dev', 'Resolved', 'Closed']) {
+        expect((await service.updateStatus(OWNER, 'i1', st)).status).toBe(st);
+      }
     });
 
     it('refuses a user from another tenant and writes nothing', async () => {

@@ -655,7 +655,10 @@ export class IssuesService {
     return { ok: true };
   }
 
-  /** Triage is owner-only: members (including the reporter) cannot change status. */
+  /**
+   * Owners may set any status; non-owner project members may only mark an
+   * issue Resolved. Anyone without project access gets 404.
+   */
   async updateStatus(user: AuthUser, issueId: string, status: string) {
     const { data: issue } = await this.supabase.db
       .from('issues')
@@ -664,7 +667,10 @@ export class IssuesService {
       .maybeSingle();
     if (!issue) throw new NotFoundException('Issue not found');
     const role = await this.access.getProjectRole(user, issue.project_id);
-    if (role !== 'owner') throw new NotFoundException('Issue not found');
+    if (!role) throw new NotFoundException('Issue not found');
+    if (role !== 'owner' && status !== 'Resolved') {
+      throw new ForbiddenException('Members can only mark issues as Resolved');
+    }
 
     const { data, error } = await this.supabase.db
       .from('issues')

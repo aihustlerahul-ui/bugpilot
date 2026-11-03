@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { SupabaseAuthGuard } from '../common/guards/supabase-auth.guard';
+import { ApiKeyAllowed } from '../common/decorators/api-key-allowed.decorator';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { IssuesService } from './issues.service';
 import { CreateIssueDto } from './dto/create-issue.dto';
@@ -34,6 +35,7 @@ export class IssuesController {
     return this.issues.getDashboardMetrics(user);
   }
 
+  @ApiKeyAllowed()
   @Get('project/:projectId')
   findByProject(@CurrentUser() user: AuthUser, @Param('projectId') projectId: string) {
     return this.issues.findByProject(user, projectId);
@@ -49,11 +51,13 @@ export class IssuesController {
     return this.issues.resolveStack(dto.file, dto.line, dto.col, dto.stack);
   }
 
+  @ApiKeyAllowed()
   @Get(':id')
   findOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.issues.findOne(user, id);
   }
 
+  @ApiKeyAllowed()
   @Patch(':id/status')
   updateStatus(
     @CurrentUser() user: AuthUser,
