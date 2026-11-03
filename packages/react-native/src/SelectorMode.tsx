@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useBugPilot } from './BugPilotContext';
+import { ProjectBar } from './ProjectBar';
 import { registeredToSelected } from './registry';
 import type { SelectedElementInfo } from './types';
 
@@ -36,7 +37,7 @@ export function SelectorMode() {
       setBusy(true);
       try {
         // Brief paint so user sees highlight; capture app root (overlays sit outside root View).
-        await new Promise((r) => setTimeout(r, 80));
+        await new Promise<void>((r) => setTimeout(() => r(), 80));
         const shot = await screenshotCapture.captureFullWindow();
         setPendingScreenshot(shot);
       } catch {
@@ -73,19 +74,22 @@ export function SelectorMode() {
 
   return (
     <View style={styles.overlay} pointerEvents="box-none" testID="bugpilot-selector">
-      <View style={styles.banner}>
-        <Text style={styles.bannerText}>
-          {busy ? 'Capturing…' : 'Tap a UI region to report a bug'}
-        </Text>
-        <Pressable
-          onPress={closeOverlay}
-          accessibilityRole="button"
-          accessibilityLabel="Cancel bug selector"
-          disabled={busy}
-          testID="bugpilot-selector-cancel"
-        >
-          <Text style={styles.cancel}>Cancel</Text>
-        </Pressable>
+      <View style={styles.top} pointerEvents="box-none">
+        <ProjectBar />
+        <View style={styles.banner}>
+          <Text style={styles.bannerText}>
+            {busy ? 'Capturing…' : 'Tap a UI region to report a bug'}
+          </Text>
+          <Pressable
+            onPress={closeOverlay}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel bug selector"
+            disabled={busy}
+            testID="bugpilot-selector-cancel"
+          >
+            <Text style={styles.cancel}>Cancel</Text>
+          </Pressable>
+        </View>
       </View>
 
       {highlight ? (
@@ -127,11 +131,15 @@ const styles = StyleSheet.create({
     zIndex: 9998,
     elevation: 9998,
   },
-  banner: {
+  top: {
     position: 'absolute',
     top: 56,
     left: 16,
     right: 16,
+    zIndex: 2,
+    elevation: 2,
+  },
+  banner: {
     backgroundColor: '#111827',
     borderRadius: 12,
     paddingHorizontal: 14,
@@ -139,7 +147,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    zIndex: 2,
   },
   bannerText: {
     color: '#F9FAFB',

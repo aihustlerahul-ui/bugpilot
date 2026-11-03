@@ -2,22 +2,17 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useBugPilot } from './BugPilotContext';
 
-declare const __DEV__: boolean | undefined;
-
-function isEnabled(enabled: boolean | undefined): boolean {
-  if (enabled !== undefined) return enabled;
-  return typeof __DEV__ !== 'undefined' ? Boolean(__DEV__) : false;
-}
-
 /**
  * Free-floating entry control (#7 Locked).
  * Extension analogue: side panel "Capture Now" / Alt+Shift+Q.
- * Tap → enables selector mode. Hidden when provider disabled (default __DEV__).
+ * Tap → selector mode when signed in, sign-in sheet when signed out.
+ * Hidden when the overlay is unavailable (disabled — default __DEV__ — or auth
+ * failed to initialise).
  */
 export function FloatingBugButton() {
-  const { config, mode, openSelector, closeOverlay } = useBugPilot();
+  const { overlayAvailable, mode, startCapture, closeOverlay } = useBugPilot();
 
-  if (!isEnabled(config.enabled)) return null;
+  if (!overlayAvailable) return null;
 
   const active = mode !== 'idle';
 
@@ -26,7 +21,7 @@ export function FloatingBugButton() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={active ? 'Cancel bug capture' : 'Report a bug'}
-        onPress={() => (active ? closeOverlay() : openSelector())}
+        onPress={() => (active ? closeOverlay() : startCapture())}
         style={[styles.fab, active && styles.fabActive]}
         testID="bugpilot-fab"
       >

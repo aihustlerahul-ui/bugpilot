@@ -4,7 +4,7 @@
  */
 
 import type { ComponentRegistry } from './registry';
-import type { StorageAdapter } from './auth/types';
+import type { AuthUser, ProjectSummary, StorageAdapter } from './auth/types';
 import type { ScreenshotCapture, ScreenshotResult } from './screenshot/ScreenshotCapture';
 
 export type BugSeverity = 'Low' | 'Medium' | 'High' | 'Critical';
@@ -12,7 +12,11 @@ export type BugSeverity = 'Low' | 'Medium' | 'High' | 'Critical';
 export type BugPilotConfig = {
   /** Nest API origin, e.g. http://localhost:4000 */
   apiUrl: string;
-  /** Target project; when omitted the user picks one after sign-in. */
+  /**
+   * Locks the target project for this host build. When the signed-in user
+   * cannot access it, the picker opens with an error. When omitted the user
+   * picks one after sign-in (last choice remembered per user).
+   */
   projectId?: string;
   /**
    * Override that bypasses the built-in TokenManager (CI / Maestro use).
@@ -79,7 +83,20 @@ export type CreateIssuePayload = {
   metadata?: Record<string, unknown>;
 };
 
-export type BugPilotCaptureMode = 'idle' | 'selecting' | 'form';
+/** `signin` = sign-in sheet shown after a FAB tap while signed out. */
+export type BugPilotCaptureMode = 'idle' | 'signin' | 'selecting' | 'form';
+
+/** Public session info — never carries tokens. */
+export type BugPilotSession = { user: AuthUser };
+
+export type BugPilotAuthStatus = 'loading' | 'signedOut' | 'signedIn';
+
+export type ProjectsState = {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  projects: ProjectSummary[];
+  /** Load error or locked-project error to show above the picker. */
+  error: string | null;
+};
 
 export type BugPilotContextValue = {
   config: BugPilotConfig;
@@ -95,4 +112,26 @@ export type BugPilotContextValue = {
   openSelector: () => void;
   openForm: (el?: SelectedElementInfo) => void;
   closeOverlay: () => void;
+  /** False when disabled by config/__DEV__ or when SDK auth failed to initialise. */
+  overlayAvailable: boolean;
+  /** FAB entry: signed in (or token override) → selector; otherwise sign-in sheet. */
+  startCapture: () => void;
+  authStatus: BugPilotAuthStatus;
+  /** Signed-in user, or null when signed out / using the token override. */
+  session: BugPilotSession | null;
+  /** True when config.getAccessToken overrides the built-in session. */
+  usingTokenOverride: boolean;
+  /** Throws with a user-safe message on failure (shown by the sign-in sheet). */
+  signIn: (email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
+  projects: ProjectsState;
+  reloadProjects: () => void;
+  projectId: string | null;
+  setProjectId: (projectId: string) => void;
+  /** True when config.projectId locks the project and the user can access it. */
+  projectLocked: boolean;
+  /** Token for API calls (override or session). Never throws. */
+  getAccessToken: () => Promise<string | null>;
+  /** Refresh after a 401. Never throws; null when the session is gone. */
+  refreshAfter401: () => Promise<string | null>;
 };

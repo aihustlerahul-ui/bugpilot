@@ -11,6 +11,8 @@ export type CreateIssueOptions = {
   environmentInfo?: Record<string, unknown>;
   screenshot?: ScreenshotResult | null;
   elementScreenshot?: ScreenshotResult | null;
+  /** Injected fetch (tests). Defaults to global fetch. */
+  fetchImpl?: typeof fetch;
 };
 
 /**
@@ -90,12 +92,14 @@ export async function createIssue(opts: CreateIssueOptions): Promise<CreateIssue
   if (!payload.title) {
     return { ok: false, status: 0, message: 'Title is required' };
   }
+  if (!payload.project_id) {
+    return { ok: false, status: 0, message: 'Choose a project' };
+  }
   if (!opts.accessToken?.trim()) {
     return {
       ok: false,
       status: 0,
-      message:
-        'Missing access token — set EXPO_PUBLIC_BUGPILOT_ACCESS_TOKEN (Supabase JWT) or config.getAccessToken()',
+      message: 'Not signed in — sign in to bugPilot (or pass config.getAccessToken())',
     };
   }
 
@@ -106,7 +110,8 @@ export async function createIssue(opts: CreateIssueOptions): Promise<CreateIssue
   };
 
   try {
-    const res = await fetch(`${base}/api/issues`, {
+    const doFetch = opts.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
+    const res = await doFetch(`${base}/api/issues`, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
@@ -117,6 +122,32 @@ export async function createIssue(opts: CreateIssueOptions): Promise<CreateIssue
     }
     const data = await res.json();
     return { ok: true, data };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, status: 0, message };
+  }
+}
+
+export type SubmitIssueOptions = Omit<CreateIssueOptions, 'accessToken'> & {
+  tokens: {
+    getAccessToken(): Promise<string | null>;
+    refreshAfter401(): Promise<string | null>;
+  };
+};
+
+/**
+ * createIssue with the session token; on 401 refreshes once and retries.
+ * Never throws: token-source failures resolve to a failed result.
+ */
+export async function submitIssue(opts: SubmitIssueOptions): Promise<CreateIssueResult> {
+  const { tokens, ...rest } = opts;
+  try {
+    const token = await tokens.getAccessToken();
+    const first = await createIssue({ ...rest, accessToken: token });
+    if (first.ok || first.status !== 401) return first;
+    const next = await tokens.refreshAfter401();
+    if (!next) return first;
+    return await createIssue({ ...rest, accessToken: next });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { ok: false, status: 0, message };
