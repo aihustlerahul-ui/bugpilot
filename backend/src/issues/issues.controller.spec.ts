@@ -3,6 +3,7 @@ import { IssuesController } from './issues.controller';
 import { IssuesService } from './issues.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { ApiKeysService } from '../api-keys/api-keys.service';
+import { CommentsService } from './comments.service';
 import { AccessService } from '../access/access.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 
@@ -18,6 +19,8 @@ describe('IssuesController', () => {
     email: 'test@example.com',
   };
 
+  const comments = { list: jest.fn(), add: jest.fn() };
+
   beforeEach(async () => {
     service = {
       getDashboardMetrics: jest.fn(),
@@ -31,10 +34,20 @@ describe('IssuesController', () => {
         { provide: SupabaseService, useValue: {} },
         { provide: ApiKeysService, useValue: {} },
         { provide: AccessService, useValue: {} },
+        { provide: CommentsService, useValue: comments },
       ],
     }).compile();
 
     controller = module.get<IssuesController>(IssuesController);
+  });
+
+  it('addComment uses source mcp for api_key auth, web otherwise', async () => {
+    await controller.addComment({ ...mockUser, authMethod: 'api_key' }, 'i1', { body: 'x' });
+    expect(comments.add).toHaveBeenLastCalledWith(expect.anything(), 'i1', 'x', 'mcp');
+    await controller.addComment(mockUser, 'i1', { body: 'y' });
+    expect(comments.add).toHaveBeenLastCalledWith(mockUser, 'i1', 'y', 'web');
+    await controller.addComment({ ...mockUser, authMethod: 'jwt' }, 'i1', { body: 'z' });
+    expect(comments.add).toHaveBeenLastCalledWith(expect.anything(), 'i1', 'z', 'web');
   });
 
   it('delegates getDashboardMetrics to IssuesService', async () => {

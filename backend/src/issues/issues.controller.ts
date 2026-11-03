@@ -17,13 +17,18 @@ import {
   ResolveSourceMapDto,
   RetentionCleanupDto,
 } from './dto/retention.dto';
+import { CommentsService } from './comments.service';
+import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 
 @Controller('issues')
 @UseGuards(SupabaseAuthGuard)
 export class IssuesController {
-  constructor(private issues: IssuesService) {}
+  constructor(
+    private issues: IssuesService,
+    private comments: CommentsService,
+  ) {}
 
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateIssueDto) {
@@ -49,6 +54,23 @@ export class IssuesController {
   @Post('resolve-stack')
   resolveStack(@Body() dto: ResolveSourceMapDto) {
     return this.issues.resolveStack(dto.file, dto.line, dto.col, dto.stack);
+  }
+
+  @ApiKeyAllowed()
+  @Get(':id/comments')
+  listComments(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.comments.list(user, id);
+  }
+
+  @ApiKeyAllowed()
+  @Post(':id/comments')
+  addComment(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: CreateCommentDto,
+  ) {
+    const source = user.authMethod === 'api_key' ? 'mcp' : 'web';
+    return this.comments.add(user, id, dto.body, source);
   }
 
   @ApiKeyAllowed()
