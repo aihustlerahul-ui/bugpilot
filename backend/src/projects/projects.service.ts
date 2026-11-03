@@ -3,12 +3,15 @@ import { SupabaseService } from '../supabase/supabase.service'
 import { WorkspacesService } from '../workspaces/workspaces.service'
 import { CreateProjectDto } from './dto/create-project.dto'
 import { UpdateProjectDto } from './dto/update-project.dto'
+import { AccessService } from '../access/access.service'
+import { AuthUser } from '../common/interfaces/auth-user.interface'
 
 @Injectable()
 export class ProjectsService {
   constructor(
     private supabase: SupabaseService,
     private workspaces: WorkspacesService,
+    private access: AccessService,
   ) {}
 
   async create(userId: string, dto: CreateProjectDto) {
@@ -22,18 +25,22 @@ export class ProjectsService {
     return data
   }
 
-  async findAll(userId: string) {
-    const workspace = await this.workspaces.findByOwner(userId)
+  async findAll(user: AuthUser) {
+    return this.access.listAccessibleProjects(user)
+  }
+
+  async findOne(user: AuthUser, projectId: string) {
+    const role = await this.access.assertCanAccessProject(user, projectId)
     const { data, error } = await this.supabase.db
       .from('projects')
       .select('*')
-      .eq('workspace_id', workspace.id)
-      .order('created_at', { ascending: false })
-    if (error) throw new Error(error.message)
-    return data ?? []
+      .eq('id', projectId)
+      .single()
+    if (error) throw new NotFoundException('Project not found')
+    return { ...data, role }
   }
 
-  async findOne(userId: string, projectId: string) {
+  private async findOwned(userId: string, projectId: string) {
     const workspace = await this.workspaces.findByOwner(userId)
     const { data, error } = await this.supabase.db
       .from('projects')
@@ -47,7 +54,7 @@ export class ProjectsService {
 
   async update(userId: string, projectId: string, dto: UpdateProjectDto) {
     const workspace = await this.workspaces.findByOwner(userId)
-    const existing = await this.findOne(userId, projectId)
+    const existing = await this.findOwned(userId, projectId)
 
     const updatePayload: Record<string, any> = {}
     if (dto.name !== undefined) updatePayload.name = dto.name
@@ -74,7 +81,7 @@ export class ProjectsService {
   async remove(userId: string, projectId: string) {
     const workspace = await this.workspaces.findByOwner(userId)
     // verify existence
-    await this.findOne(userId, projectId)
+    await this.findOwned(userId, projectId)
 
     const { error } = await this.supabase.db
       .from('projects')

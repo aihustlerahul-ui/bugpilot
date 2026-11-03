@@ -18,12 +18,12 @@ export class ProjectsController {
 
   @Get()
   findAll(@CurrentUser() user: AuthUser) {
-    return this.projects.findAll(user.id)
+    return this.projects.findAll(user)
   }
 
   @Get(':id')
   findOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.projects.findOne(user.id, id)
+    return this.projects.findOne(user, id)
   }
 
   @Patch(':id')
