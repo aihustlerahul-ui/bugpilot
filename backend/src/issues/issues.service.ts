@@ -10,6 +10,8 @@ import {
 } from './dto/chunk-upload.dto';
 import { SourceMapService } from './source-map.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
+import { AccessService } from '../access/access.service';
+import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { randomUUID } from 'crypto';
 
 interface ChunkSession {
@@ -32,6 +34,7 @@ export class IssuesService {
     private supabase: SupabaseService,
     private sourceMap: SourceMapService,
     private workspaces: WorkspacesService,
+    private access: AccessService,
   ) {}
 
   private cleanupStaleSessions() {
@@ -283,7 +286,7 @@ export class IssuesService {
 
   // ── Source Map Resolution ─────────────────────────────────────────────────
   async resolveIssueSourceMap(userId: string, issueId: string) {
-    const issue = await this.findOne(userId, issueId);
+    const issue = await this.findOneForReporter(userId, issueId);
     const elementInfo = (issue.element_info || {}) as Record<string, any>;
     const reactInfo = elementInfo.react;
 
@@ -389,7 +392,9 @@ export class IssuesService {
     }
   }
 
-  async create(userId: string, dto: CreateIssueDto) {
+  async create(user: AuthUser, dto: CreateIssueDto) {
+    await this.access.assertCanAccessProject(user, dto.project_id);
+    const userId = user.id;
     const timestamp = Date.now();
     const basePath = `${userId}/${dto.project_id}/${timestamp}`;
 
@@ -451,7 +456,8 @@ export class IssuesService {
     return data;
   }
 
-  async findByProject(userId: string, projectId: string) {
+  async findByProject(user: AuthUser, projectId: string) {
+    await this.access.assertCanAccessProject(user, projectId);
     const { data, error } = await this.supabase.db
       .from('issues')
       .select('*')
@@ -461,7 +467,25 @@ export class IssuesService {
     return data ?? [];
   }
 
-  async findOne(userId: string, issueId: string) {
+  async findOne(user: AuthUser, issueId: string) {
+    const { data, error } = await this.supabase.db
+      .from('issues')
+      .select('*')
+      .eq('id', issueId)
+      .single();
+    if (error || !data) throw new NotFoundException('Issue not found');
+
+    const role = await this.access.getProjectRole(user, data.project_id);
+    if (!role) throw new NotFoundException('Issue not found');
+
+    return this.withSignedUrls(data);
+  }
+
+  /**
+   * Reporter-scoped lookup kept for callers that only pass a user id
+   * (integration sync, source-map resolution). Behaviour unchanged.
+   */
+  async findOneForReporter(userId: string, issueId: string) {
     const { data, error } = await this.supabase.db
       .from('issues')
       .select('*')
@@ -469,7 +493,10 @@ export class IssuesService {
       .eq('reporter_id', userId)
       .single();
     if (error) throw new NotFoundException('Issue not found');
+    return this.withSignedUrls(data);
+  }
 
+  private async withSignedUrls(data: any) {
     let replayUrl: string | null = null;
     if (data.replay_storage_path) {
       const { data: signed } = await this.supabase.db.storage
@@ -615,23 +642,8 @@ export class IssuesService {
     return data;
   }
 
-  async getDashboardMetrics(userId: string) {
-    let workspace: { id: string } | null = null;
-    try {
-      workspace = await this.workspaces.findByOwner(userId);
-    } catch {
-      return { total: 0, open: 0, critical: 0, resolved: 0, trend: [], recentIssues: [] };
-    }
-    if (!workspace) {
-      return { total: 0, open: 0, critical: 0, resolved: 0, trend: [], recentIssues: [] };
-    }
-
-    const { data: projects } = await this.supabase.db
-      .from('projects')
-      .select('id, name')
-      .eq('workspace_id', workspace.id);
-
-    const projectList = projects ?? [];
+  async getDashboardMetrics(user: AuthUser) {
+    const projectList = await this.access.listAccessibleProjects(user);
     if (projectList.length === 0) {
       return { total: 0, open: 0, critical: 0, resolved: 0, trend: [], recentIssues: [] };
     }

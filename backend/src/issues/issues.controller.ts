@@ -26,17 +26,17 @@ export class IssuesController {
 
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateIssueDto) {
-    return this.issues.create(user.id, dto);
+    return this.issues.create(user, dto);
   }
 
   @Get('dashboard/metrics')
   getDashboardMetrics(@CurrentUser() user: AuthUser) {
-    return this.issues.getDashboardMetrics(user.id);
+    return this.issues.getDashboardMetrics(user);
   }
 
   @Get('project/:projectId')
   findByProject(@CurrentUser() user: AuthUser, @Param('projectId') projectId: string) {
-    return this.issues.findByProject(user.id, projectId);
+    return this.issues.findByProject(user, projectId);
   }
 
   @Post('retention/cleanup')
@@ -51,7 +51,7 @@ export class IssuesController {
 
   @Get(':id')
   findOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.issues.findOne(user.id, id);
+    return this.issues.findOne(user, id);
   }
 
   @Patch(':id/status')

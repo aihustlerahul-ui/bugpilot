@@ -122,7 +122,7 @@ export class IntegrationsService {
 
   async syncToAzure(userId: string, issueId: string) {
     const workspace = await this.workspaces.findByOwner(userId)
-    const issue = await this.issues.findOne(userId, issueId)
+    const issue = await this.issues.findOneForReporter(userId, issueId)
 
     const { data: integration } = await this.supabase.db
       .from('integrations')
@@ -274,7 +274,7 @@ export class IntegrationsService {
 
   async syncToJira(userId: string, issueId: string) {
     const workspace = await this.workspaces.findByOwner(userId)
-    const issue = await this.issues.findOne(userId, issueId)
+    const issue = await this.issues.findOneForReporter(userId, issueId)
 
     const { data: integration } = await this.supabase.db
       .from('integrations')
@@ -398,7 +398,7 @@ export class IntegrationsService {
 
   async syncToLinear(userId: string, issueId: string) {
     const workspace = await this.workspaces.findByOwner(userId)
-    const issue = await this.issues.findOne(userId, issueId)
+    const issue = await this.issues.findOneForReporter(userId, issueId)
 
     const { data: integration } = await this.supabase.db
       .from('integrations')

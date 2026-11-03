@@ -46,7 +46,7 @@ describe('IssuesController', () => {
 
     const result = await controller.getDashboardMetrics(mockUser);
     expect(result).toBe(expected);
-    expect(service.getDashboardMetrics).toHaveBeenCalledWith('user-123');
+    expect(service.getDashboardMetrics).toHaveBeenCalledWith(mockUser);
   });
 
   it('delegates updateStatus to IssuesService', async () => {

@@ -19,7 +19,7 @@ export class AccessService {
   private async ownedWorkspaceId(userId: string): Promise<string | null> {
     try {
       const ws = await this.workspaces.findByOwner(userId)
-      return ws.id
+      return ws?.id ?? null
     } catch (e) {
       if (e instanceof NotFoundException) return null
       throw e

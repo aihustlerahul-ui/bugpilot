@@ -4,11 +4,18 @@ import { IssuesService } from './issues.service';
 import { SourceMapService } from './source-map.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { AccessService } from '../access/access.service';
 import { ChunkUploadType } from './dto/chunk-upload.dto';
 
 describe('IssuesService', () => {
   const mockWorkspacesService = {
     findByOwner: jest.fn().mockResolvedValue({ id: 'ws-1', name: 'Acme Corp' }),
+  };
+
+  const mockAccessService = {
+    getProjectRole: jest.fn().mockResolvedValue('owner'),
+    assertCanAccessProject: jest.fn().mockResolvedValue('owner'),
+    listAccessibleProjects: jest.fn().mockResolvedValue([]),
   };
 
   const mockSourceMapService = {
@@ -34,6 +41,7 @@ describe('IssuesService', () => {
           { provide: SupabaseService, useValue: supabase },
           { provide: SourceMapService, useValue: mockSourceMapService },
           { provide: WorkspacesService, useValue: mockWorkspacesService },
+          { provide: AccessService, useValue: mockAccessService },
         ],
       }).compile();
       const service = module.get(IssuesService);
@@ -54,6 +62,7 @@ describe('IssuesService', () => {
           { provide: SupabaseService, useValue: supabase },
           { provide: SourceMapService, useValue: mockSourceMapService },
           { provide: WorkspacesService, useValue: mockWorkspacesService },
+          { provide: AccessService, useValue: mockAccessService },
         ],
       }).compile();
       const service = module.get(IssuesService);
@@ -66,14 +75,14 @@ describe('IssuesService', () => {
   describe('findOne', () => {
     it('returns a signed videoUrl when video_storage_path is set', async () => {
       const singleIssue = jest.fn().mockResolvedValue({
-        data: { id: 'issue-1', reporter_id: 'user-1', video_storage_path: 'user-1/proj/1-video.webm' },
+        data: { id: 'issue-1', project_id: 'proj', reporter_id: 'user-1', video_storage_path: 'user-1/proj/1-video.webm' },
         error: null,
       });
       const createSignedUrl = jest.fn().mockResolvedValue({ data: { signedUrl: 'https://signed/video.webm' } });
       const supabase = {
         db: {
           from: jest.fn().mockReturnValue({
-            select: jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ single: singleIssue }) }) }),
+            select: jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ single: singleIssue }) }),
           }),
           storage: { from: jest.fn().mockReturnValue({ createSignedUrl }) },
         },
@@ -85,11 +94,12 @@ describe('IssuesService', () => {
           { provide: SupabaseService, useValue: supabase },
           { provide: SourceMapService, useValue: mockSourceMapService },
           { provide: WorkspacesService, useValue: mockWorkspacesService },
+          { provide: AccessService, useValue: mockAccessService },
         ],
       }).compile();
       const service = module.get(IssuesService);
 
-      const result = await service.findOne('user-1', 'issue-1');
+      const result = await service.findOne({ id: 'user-1', email: 'u@x.com' }, 'issue-1');
       expect(result.videoUrl).toBe('https://signed/video.webm');
       expect(createSignedUrl).toHaveBeenCalledWith('user-1/proj/1-video.webm', 60 * 60);
     });
@@ -115,6 +125,7 @@ describe('IssuesService', () => {
           { provide: SupabaseService, useValue: supabase },
           { provide: SourceMapService, useValue: mockSourceMapService },
           { provide: WorkspacesService, useValue: mockWorkspacesService },
+          { provide: AccessService, useValue: mockAccessService },
         ],
       }).compile();
       const service = module.get(IssuesService);
@@ -168,6 +179,7 @@ describe('IssuesService', () => {
           { provide: SupabaseService, useValue: supabase },
           { provide: SourceMapService, useValue: mockSourceMapService },
           { provide: WorkspacesService, useValue: mockWorkspacesService },
+          { provide: AccessService, useValue: mockAccessService },
         ],
       }).compile();
       const service = module.get(IssuesService);
@@ -204,6 +216,7 @@ describe('IssuesService', () => {
           { provide: SupabaseService, useValue: supabase },
           { provide: SourceMapService, useValue: mockSourceMapService },
           { provide: WorkspacesService, useValue: mockWorkspacesService },
+          { provide: AccessService, useValue: mockAccessService },
         ],
       }).compile();
       const service = module.get(IssuesService);
@@ -264,6 +277,7 @@ describe('IssuesService', () => {
           { provide: SupabaseService, useValue: supabase },
           { provide: SourceMapService, useValue: mockSourceMapService },
           { provide: WorkspacesService, useValue: mockWorkspacesService },
+          { provide: AccessService, useValue: mockAccessService },
         ],
       }).compile();
       const service = module.get(IssuesService);
@@ -296,6 +310,7 @@ describe('IssuesService', () => {
           { provide: SupabaseService, useValue: supabase },
           { provide: SourceMapService, useValue: mockSourceMapService },
           { provide: WorkspacesService, useValue: mockWorkspacesService },
+          { provide: AccessService, useValue: mockAccessService },
         ],
       }).compile();
       const service = module.get(IssuesService);
@@ -312,6 +327,7 @@ describe('IssuesService', () => {
           { provide: SupabaseService, useValue: supabase },
           { provide: SourceMapService, useValue: mockSourceMapService },
           { provide: WorkspacesService, useValue: mockWorkspacesService },
+          { provide: AccessService, useValue: mockAccessService },
         ],
       }).compile();
       const service = module.get(IssuesService);
@@ -343,6 +359,7 @@ describe('IssuesService', () => {
           { provide: SupabaseService, useValue: supabase },
           { provide: SourceMapService, useValue: mockSourceMapService },
           { provide: WorkspacesService, useValue: mockWorkspacesService },
+          { provide: AccessService, useValue: mockAccessService },
         ],
       }).compile();
       const service = module.get(IssuesService);
@@ -368,6 +385,7 @@ describe('IssuesService', () => {
           { provide: SupabaseService, useValue: supabase },
           { provide: SourceMapService, useValue: mockSourceMapService },
           { provide: WorkspacesService, useValue: mockWorkspacesService },
+          { provide: AccessService, useValue: mockAccessService },
         ],
       }).compile();
       const service = module.get(IssuesService);
@@ -389,11 +407,12 @@ describe('IssuesService', () => {
           { provide: SupabaseService, useValue: supabase },
           { provide: SourceMapService, useValue: mockSourceMapService },
           { provide: WorkspacesService, useValue: workspacesMock },
+          AccessService,
         ],
       }).compile();
       const service = module.get(IssuesService);
 
-      const res = await service.getDashboardMetrics('user-1');
+      const res = await service.getDashboardMetrics({ id: 'user-1', email: '' });
       expect(res.total).toBe(0);
       expect(res.open).toBe(0);
       expect(res.recentIssues).toEqual([]);
@@ -419,11 +438,12 @@ describe('IssuesService', () => {
           { provide: SupabaseService, useValue: supabase },
           { provide: SourceMapService, useValue: mockSourceMapService },
           { provide: WorkspacesService, useValue: workspacesMock },
+          AccessService,
         ],
       }).compile();
       const service = module.get(IssuesService);
 
-      const res = await service.getDashboardMetrics('user-1');
+      const res = await service.getDashboardMetrics({ id: 'user-1', email: '' });
       expect(res.total).toBe(0);
       expect(res.recentIssues).toEqual([]);
     });
@@ -469,11 +489,12 @@ describe('IssuesService', () => {
           { provide: SupabaseService, useValue: supabase },
           { provide: SourceMapService, useValue: mockSourceMapService },
           { provide: WorkspacesService, useValue: workspacesMock },
+          AccessService,
         ],
       }).compile();
       const service = module.get(IssuesService);
 
-      const res = await service.getDashboardMetrics('user-1');
+      const res = await service.getDashboardMetrics({ id: 'user-1', email: '' });
       expect(res.total).toBe(4);
       expect(res.open).toBe(2);
       expect(res.critical).toBe(1);

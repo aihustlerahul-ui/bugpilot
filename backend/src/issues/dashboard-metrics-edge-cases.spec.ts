@@ -4,6 +4,7 @@ import { IssuesService } from './issues.service';
 import { SourceMapService } from './source-map.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { AccessService } from '../access/access.service';
 
 describe('IssuesService - getDashboardMetrics Empirical Edge Cases', () => {
   let mockWorkspacesService: { findByOwner: jest.Mock };
@@ -29,6 +30,7 @@ describe('IssuesService - getDashboardMetrics Empirical Edge Cases', () => {
           useValue: { resolveLocation: jest.fn(), resolveStackTrace: jest.fn() },
         },
         { provide: WorkspacesService, useValue: mockWorkspacesService },
+        AccessService,
       ],
     }).compile();
 
@@ -39,7 +41,7 @@ describe('IssuesService - getDashboardMetrics Empirical Edge Cases', () => {
     it('returns zeroes when findByOwner throws NotFoundException', async () => {
       mockWorkspacesService.findByOwner.mockRejectedValue(new NotFoundException('No workspace'));
 
-      const result = await service.getDashboardMetrics('user-no-ws');
+      const result = await service.getDashboardMetrics({ id: 'user-no-ws', email: '' });
       expect(result).toEqual({
         total: 0,
         open: 0,
@@ -53,7 +55,7 @@ describe('IssuesService - getDashboardMetrics Empirical Edge Cases', () => {
     it('returns zeroes when findByOwner returns null', async () => {
       mockWorkspacesService.findByOwner.mockResolvedValue(null);
 
-      const result = await service.getDashboardMetrics('user-null-ws');
+      const result = await service.getDashboardMetrics({ id: 'user-null-ws', email: '' });
       expect(result).toEqual({
         total: 0,
         open: 0,
@@ -72,7 +74,7 @@ describe('IssuesService - getDashboardMetrics Empirical Edge Cases', () => {
         }),
       });
 
-      const result = await service.getDashboardMetrics('user-empty-proj');
+      const result = await service.getDashboardMetrics({ id: 'user-empty-proj', email: '' });
       expect(result).toEqual({
         total: 0,
         open: 0,
@@ -91,7 +93,7 @@ describe('IssuesService - getDashboardMetrics Empirical Edge Cases', () => {
         }),
       });
 
-      const result = await service.getDashboardMetrics('user-null-proj');
+      const result = await service.getDashboardMetrics({ id: 'user-null-proj', email: '' });
       expect(result).toEqual({
         total: 0,
         open: 0,
@@ -132,7 +134,7 @@ describe('IssuesService - getDashboardMetrics Empirical Edge Cases', () => {
         return {};
       });
 
-      const result = await service.getDashboardMetrics('user-1');
+      const result = await service.getDashboardMetrics({ id: 'user-1', email: '' });
       expect(result.total).toBe(0);
       expect(result.open).toBe(0);
       expect(result.critical).toBe(0);
@@ -170,7 +172,7 @@ describe('IssuesService - getDashboardMetrics Empirical Edge Cases', () => {
         return {};
       });
 
-      const result = await service.getDashboardMetrics('user-1');
+      const result = await service.getDashboardMetrics({ id: 'user-1', email: '' });
       expect(result.total).toBe(0);
       expect(result.open).toBe(0);
       expect(result.critical).toBe(0);
@@ -214,7 +216,7 @@ describe('IssuesService - getDashboardMetrics Empirical Edge Cases', () => {
         return {};
       });
 
-      const result = await service.getDashboardMetrics('user-1');
+      const result = await service.getDashboardMetrics({ id: 'user-1', email: '' });
       expect(result.total).toBe(5);
       // Status null and undefined default to 'Incoming' (which is in openStatuses)
       // i-1 (Incoming), i-2 (Incoming), i-3 (In Dev), i-5 (Incoming) -> 4 open
@@ -278,7 +280,7 @@ describe('IssuesService - getDashboardMetrics Empirical Edge Cases', () => {
           return {};
         });
 
-        const result = await service.getDashboardMetrics('user-1');
+        const result = await service.getDashboardMetrics({ id: 'user-1', email: '' });
         expect(result.trend).toHaveLength(7);
 
         const expectedDates = [
@@ -340,7 +342,7 @@ describe('IssuesService - getDashboardMetrics Empirical Edge Cases', () => {
           return {};
         });
 
-        const result = await service.getDashboardMetrics('user-1');
+        const result = await service.getDashboardMetrics({ id: 'user-1', email: '' });
         const expectedDates = [
           '2026-12-27',
           '2026-12-28',
@@ -391,7 +393,7 @@ describe('IssuesService - getDashboardMetrics Empirical Edge Cases', () => {
         return {};
       });
 
-      const result = await service.getDashboardMetrics('user-1');
+      const result = await service.getDashboardMetrics({ id: 'user-1', email: '' });
       expect(result.total).toBe(3);
       expect(result.open).toBe(3);
       // All 7 trend days should count 0 without throwing error

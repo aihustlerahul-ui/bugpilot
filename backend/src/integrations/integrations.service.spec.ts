@@ -39,7 +39,7 @@ describe('IntegrationsService', () => {
   }
 
   const mockIssues = {
-    findOne: jest.fn().mockResolvedValue({
+    findOneForReporter: jest.fn().mockResolvedValue({
       id: 'issue-1',
       title: 'Checkout crash',
       description: 'TypeError on submit',
