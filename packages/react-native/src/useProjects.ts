@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { StorageAdapter } from './auth/types';
 import {
+  LOCKED_PROJECT_UNAVAILABLE,
   loadLastProjectId,
   loadProjects,
   resolveInitialProject,
@@ -99,6 +100,8 @@ export function useProjects({
     (id: string) => {
       if (projectLocked) return;
       setProjectIdState(id);
+      // A valid manual pick resolves the "locked project unavailable" notice.
+      setProjects((p) => (p.error === LOCKED_PROJECT_UNAVAILABLE ? { ...p, error: null } : p));
       if (storage && userKey) void saveLastProjectId(storage, userKey, id);
     },
     [projectLocked, storage, userKey],

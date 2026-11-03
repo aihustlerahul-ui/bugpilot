@@ -10,7 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { submitIssue, type CreateIssueResult } from './api/createIssue';
+import { buildEnvironmentInfo, submitIssue, type CreateIssueResult } from './api/createIssue';
 import { useBugPilot } from './BugPilotContext';
 import { ProjectList, projectNameOf } from './ProjectList';
 import { SignInPanel } from './SignInSheet';
@@ -153,12 +153,12 @@ export function ReportForm() {
         form,
         element: selected,
         routeName,
-        environmentInfo: {
-          platform: 'react-native',
+        environmentInfo: buildEnvironmentInfo({
           os: Platform.OS,
-          osVersion: String(Platform.Version),
-          ...(routeParams ? { routeParams } : {}),
-        },
+          osVersion: Platform.Version,
+          appVersion: config.appVersion,
+          routeParams,
+        }),
         screenshot: pendingScreenshot,
       });
 
@@ -296,6 +296,7 @@ export function ReportForm() {
                 ) : null}
                 <Text style={styles.summaryLine}>
                   Device: {Platform.OS} {String(Platform.Version)}
+                  {config.appVersion?.trim() ? ` · app ${config.appVersion.trim()}` : ''}
                 </Text>
                 <Text style={styles.summaryLine}>Screenshot: {screenshotStatus}</Text>
               </View>

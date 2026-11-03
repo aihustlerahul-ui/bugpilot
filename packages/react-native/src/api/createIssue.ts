@@ -13,7 +13,28 @@ export type CreateIssueOptions = {
   elementScreenshot?: ScreenshotResult | null;
   /** Injected fetch (tests). Defaults to global fetch. */
   fetchImpl?: typeof fetch;
+  /** Deadline for the POST; a hung request resolves to a failed result. */
+  timeoutMs?: number;
 };
+
+export const ISSUE_REQUEST_TIMEOUT_MS = 60_000;
+
+/** browser_info for RN reports: platform, OS, OS version, optional app version. */
+export function buildEnvironmentInfo(opts: {
+  os: string;
+  osVersion: string | number;
+  appVersion?: string;
+  routeParams?: Record<string, unknown>;
+}): Record<string, unknown> {
+  const appVersion = opts.appVersion?.trim();
+  return {
+    platform: 'react-native',
+    os: opts.os,
+    osVersion: String(opts.osVersion),
+    ...(appVersion ? { appVersion } : {}),
+    ...(opts.routeParams ? { routeParams: opts.routeParams } : {}),
+  };
+}
 
 /**
  * Maps RN form + context → extension-compatible POST /api/issues body.
@@ -109,22 +130,38 @@ export async function createIssue(opts: CreateIssueOptions): Promise<CreateIssue
     Authorization: `Bearer ${opts.accessToken.trim()}`,
   };
 
-  try {
-    const doFetch = opts.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
-    const res = await doFetch(`${base}/api/issues`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      return { ok: false, status: res.status, message: text || res.statusText };
+  const doFetch = opts.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<CreateIssueResult>((resolve) => {
+    timer = setTimeout(() => {
+      controller?.abort();
+      resolve({ ok: false, status: 0, message: 'Request timed out' });
+    }, opts.timeoutMs ?? ISSUE_REQUEST_TIMEOUT_MS);
+  });
+  const work = (async (): Promise<CreateIssueResult> => {
+    try {
+      const res = await doFetch(`${base}/api/issues`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        ...(controller ? { signal: controller.signal } : {}),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        return { ok: false, status: res.status, message: text || res.statusText || '' };
+      }
+      const data = await res.json();
+      return { ok: true, data };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, status: 0, message };
     }
-    const data = await res.json();
-    return { ok: true, data };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, status: 0, message };
+  })();
+  try {
+    return await Promise.race([work, deadline]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

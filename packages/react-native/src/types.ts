@@ -26,6 +26,11 @@ export type BugPilotConfig = {
   /** Session persistence (e.g. createSecureStoreAdapter(SecureStore)). */
   storage?: StorageAdapter;
   /**
+   * Host app version shown in the form and sent as browser_info.appVersion,
+   * e.g. Constants.expoConfig?.version. No native dependency needed.
+   */
+  appVersion?: string;
+  /**
    * Overlay gate. Defaults to `__DEV__` when omitted.
    * Pass `true` for QA builds; `false` to force off in development.
    */
@@ -109,7 +114,10 @@ export type BugPilotContextValue = {
   setMode: (mode: BugPilotCaptureMode) => void;
   setSelected: (el: SelectedElementInfo | null) => void;
   setPendingScreenshot: (shot: ScreenshotResult | null) => void;
+  /** Same as startCapture: sign-in sheet when signed out, else selector. */
   openSelector: () => void;
+  /** Internal: selector without auth checks (used right after sign-in). */
+  enterSelector: () => void;
   openForm: (el?: SelectedElementInfo) => void;
   closeOverlay: () => void;
   /** False when disabled by config/__DEV__ or when SDK auth failed to initialise. */

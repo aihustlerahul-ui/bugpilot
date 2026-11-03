@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -31,6 +31,7 @@ export function SignInPanel({ onSignedIn, onCancel }: SignInPanelProps) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const passwordRef = useRef<React.ComponentRef<typeof TextInput>>(null);
 
   const canSubmit = email.trim().length > 0 && password.length > 0 && !loading;
 
@@ -79,10 +80,14 @@ export function SignInPanel({ onSignedIn, onCancel }: SignInPanelProps) {
           textContentType="username"
           autoComplete="email"
           editable={!loading}
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => passwordRef.current?.focus()}
           accessibilityLabel="Email"
           testID="bugpilot-signin-email"
         />
         <TextInput
+          ref={passwordRef}
           style={styles.input}
           placeholder="Password"
           placeholderTextColor="#9097b3"
@@ -127,7 +132,7 @@ export function SignInPanel({ onSignedIn, onCancel }: SignInPanelProps) {
 
 /** Bottom sheet shown on the first FAB tap while signed out. */
 export function SignInSheet() {
-  const { closeOverlay, openSelector } = useBugPilot();
+  const { closeOverlay, enterSelector } = useBugPilot();
   return (
     <Modal visible animationType="slide" transparent onRequestClose={closeOverlay}>
       <KeyboardAvoidingView
@@ -140,7 +145,7 @@ export function SignInSheet() {
           accessibilityLabel="Dismiss sign in"
         />
         <View style={styles.sheet}>
-          <SignInPanel onSignedIn={openSelector} onCancel={closeOverlay} />
+          <SignInPanel onSignedIn={enterSelector} onCancel={closeOverlay} />
         </View>
       </KeyboardAvoidingView>
     </Modal>

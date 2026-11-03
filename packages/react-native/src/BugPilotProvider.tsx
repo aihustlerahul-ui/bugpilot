@@ -85,6 +85,22 @@ function BugPilotOverlays({
   floatingButton: boolean;
 }) {
   if (!enabled) return null;
+  // Boundary wraps the component that performs the lazy requires, so a failed
+  // require or render inside the SDK hides the overlay instead of the host.
+  return (
+    <OverlayErrorBoundary>
+      <OverlayContent mode={mode} floatingButton={floatingButton} />
+    </OverlayErrorBoundary>
+  );
+}
+
+function OverlayContent({
+  mode,
+  floatingButton,
+}: {
+  mode: BugPilotCaptureMode;
+  floatingButton: boolean;
+}) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { SelectorMode } = require('./SelectorMode') as typeof import('./SelectorMode');
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -95,13 +111,13 @@ function BugPilotOverlays({
   const { FloatingBugButton } = require('./FloatingBugButton') as typeof import('./FloatingBugButton');
 
   return (
-    <OverlayErrorBoundary>
+    <>
       {mode === 'signin' ? <SignInSheet /> : null}
       {mode === 'selecting' ? <SelectorMode /> : null}
       {mode === 'form' ? <ReportForm /> : null}
       {/* FAB last so cancel taps are not swallowed by the selector hit layer. */}
       {floatingButton ? <FloatingBugButton /> : null}
-    </OverlayErrorBoundary>
+    </>
   );
 }
 
@@ -218,8 +234,10 @@ export function BugPilotProvider({
     lockedProjectId: config.projectId || undefined,
   });
 
-  const openSelector = useCallback(() => {
+  /** Internal: enter selector mode without auth checks (after sign-in succeeds). */
+  const enterSelector = useCallback(() => {
     if (!overlayAvailable) return;
+    setEngaged(true);
     setSelected(null);
     setPendingScreenshot(null);
     setMode('selecting');
@@ -240,11 +258,15 @@ export function BugPilotProvider({
     setPendingScreenshot(null);
   }, []);
 
+  /**
+   * Public entry (FAB and hosts with their own button): signed in or token
+   * override → selector (and projects load); signed out → sign-in sheet.
+   */
   const startCapture = useCallback(() => {
     if (!overlayAvailable || !kit) return;
     setEngaged(true);
     if (usingTokenOverride || session) {
-      openSelector();
+      enterSelector();
       return;
     }
     // Session may still be restoring: check storage before asking to sign in.
@@ -258,13 +280,13 @@ export function BugPilotProvider({
       if (user) {
         setSession({ user });
         setAuthStatus('signedIn');
-        openSelector();
+        enterSelector();
       } else {
         setAuthStatus('signedOut');
         setMode('signin');
       }
     })();
-  }, [overlayAvailable, kit, usingTokenOverride, session, openSelector]);
+  }, [overlayAvailable, kit, usingTokenOverride, session, enterSelector]);
 
   const signIn = useCallback(
     async (email: string, password: string): Promise<void> => {
@@ -311,7 +333,8 @@ export function BugPilotProvider({
       setMode,
       setSelected,
       setPendingScreenshot,
-      openSelector,
+      openSelector: startCapture,
+      enterSelector,
       openForm,
       closeOverlay,
       overlayAvailable,
@@ -334,7 +357,7 @@ export function BugPilotProvider({
       mode,
       selected,
       pendingScreenshot,
-      openSelector,
+      enterSelector,
       openForm,
       closeOverlay,
       overlayAvailable,

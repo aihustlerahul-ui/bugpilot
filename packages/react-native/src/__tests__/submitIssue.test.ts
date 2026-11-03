@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { submitIssue } from '../api/createIssue';
+import { buildEnvironmentInfo, submitIssue } from '../api/createIssue';
 
 function res(status: number, body: unknown) {
   return {
@@ -89,5 +89,71 @@ describe('submitIssue', () => {
     const r = await submitIssue({ ...base, projectId: '', tokens, fetchImpl });
     expect(r.ok).toBe(false);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe('environment info / app version', () => {
+  it('buildEnvironmentInfo includes appVersion when provided', () => {
+    expect(buildEnvironmentInfo({ os: 'ios', osVersion: '17.4', appVersion: ' 1.4.2 ' })).toEqual({
+      platform: 'react-native',
+      os: 'ios',
+      osVersion: '17.4',
+      appVersion: '1.4.2',
+    });
+  });
+
+  it('buildEnvironmentInfo omits appVersion when absent or blank', () => {
+    expect(buildEnvironmentInfo({ os: 'android', osVersion: 34 })).toEqual({
+      platform: 'react-native',
+      os: 'android',
+      osVersion: '34',
+    });
+    expect(buildEnvironmentInfo({ os: 'ios', osVersion: '17', appVersion: '  ' })).not.toHaveProperty(
+      'appVersion',
+    );
+  });
+
+  it('submitted payload carries browser_info.appVersion', async () => {
+    const fetchImpl = vi.fn(async () => res(201, { id: 'i1' }));
+    const tokens = { getAccessToken: vi.fn(async () => 't1'), refreshAfter401: vi.fn() };
+    await submitIssue({
+      ...base,
+      tokens,
+      fetchImpl: fetchImpl as any,
+      environmentInfo: buildEnvironmentInfo({ os: 'ios', osVersion: '17.4', appVersion: '1.4.2' }),
+    });
+    const body = JSON.parse((fetchImpl.mock.calls[0] as any[])[1].body);
+    expect(body.browser_info).toEqual({
+      platform: 'react-native',
+      os: 'ios',
+      osVersion: '17.4',
+      appVersion: '1.4.2',
+    });
+  });
+});
+
+describe('issue POST deadline', () => {
+  it('a hung POST resolves to a failed result after 60s and aborts', async () => {
+    vi.useFakeTimers();
+    try {
+      let signal: any;
+      const fetchImpl = vi.fn((_u: string, init?: any) => {
+        signal = init?.signal;
+        return new Promise<never>(() => {});
+      });
+      const tokens = { getAccessToken: vi.fn(async () => 't'), refreshAfter401: vi.fn() };
+      let settled: unknown = 'pending';
+      const p = submitIssue({ ...base, tokens, fetchImpl: fetchImpl as any }).then((r) => {
+        settled = r;
+      });
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(settled).toBe('pending');
+      await vi.advanceTimersByTimeAsync(1);
+      await p;
+      expect(settled).toEqual({ ok: false, status: 0, message: 'Request timed out' });
+      expect(signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
