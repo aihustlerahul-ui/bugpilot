@@ -4,6 +4,7 @@
  */
 
 import type { ComponentRegistry } from './registry';
+import type { StorageAdapter } from './auth/types';
 import type { ScreenshotCapture, ScreenshotResult } from './screenshot/ScreenshotCapture';
 
 export type BugSeverity = 'Low' | 'Medium' | 'High' | 'Critical';
@@ -11,9 +12,15 @@ export type BugSeverity = 'Low' | 'Medium' | 'High' | 'Critical';
 export type BugPilotConfig = {
   /** Nest API origin, e.g. http://localhost:4000 */
   apiUrl: string;
-  projectId: string;
-  /** Bearer token for POST /api/issues — auth owned by bugPilot (JWT vs PAT still open). */
-  getAccessToken: () => Promise<string | null>;
+  /** Target project; when omitted the user picks one after sign-in. */
+  projectId?: string;
+  /**
+   * Override that bypasses the built-in TokenManager (CI / Maestro use).
+   * When omitted, tokens come from the signed-in session.
+   */
+  getAccessToken?: () => Promise<string | null>;
+  /** Session persistence (e.g. createSecureStoreAdapter(SecureStore)). */
+  storage?: StorageAdapter;
   /**
    * Overlay gate. Defaults to `__DEV__` when omitted.
    * Pass `true` for QA builds; `false` to force off in development.

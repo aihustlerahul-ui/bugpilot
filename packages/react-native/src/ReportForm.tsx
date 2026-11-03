@@ -101,13 +101,13 @@ export function ReportForm() {
 
     setSubmitting(true);
     try {
-      const token = await config.getAccessToken();
+      const token = (config.getAccessToken ? await config.getAccessToken() : null);
       const routeName = config.getRouteName?.() || selected?.routeName || undefined;
       const routeParams = config.getRouteParams?.();
 
       const result = await createIssue({
         apiUrl: config.apiUrl,
-        projectId: config.projectId,
+        projectId: config.projectId ?? '',
         accessToken: token,
         form,
         element: selected,

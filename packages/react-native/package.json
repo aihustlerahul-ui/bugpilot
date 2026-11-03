@@ -12,14 +12,24 @@
     "README.md"
   ],
   "peerDependencies": {
+    "expo-secure-store": ">=12.0.0",
     "react": ">=18",
     "react-native": ">=0.73",
     "react-native-view-shot": ">=3.8.0"
   },
   "peerDependenciesMeta": {
-    "react": { "optional": false },
-    "react-native": { "optional": false },
-    "react-native-view-shot": { "optional": true }
+    "react": {
+      "optional": false
+    },
+    "react-native": {
+      "optional": false
+    },
+    "react-native-view-shot": {
+      "optional": true
+    },
+    "expo-secure-store": {
+      "optional": true
+    }
   },
   "keywords": [
     "bugpilot",
@@ -33,5 +43,11 @@
     "type": "git",
     "url": "local",
     "directory": "packages/react-native"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^5.1.0"
   }
 }
