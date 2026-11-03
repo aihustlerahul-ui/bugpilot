@@ -4,10 +4,13 @@
  */
 declare module 'react-native-view-shot' {
   import type { RefObject } from 'react';
+  import type { ComponentRef } from 'react';
   import type { View } from 'react-native';
 
+  type ViewHandle = ComponentRef<typeof View>;
+
   export function captureRef(
-    ref: RefObject<View | null> | View,
+    ref: RefObject<ViewHandle | null> | ViewHandle,
     options?: {
       format?: 'png' | 'jpg' | 'webm' | 'raw';
       quality?: number;

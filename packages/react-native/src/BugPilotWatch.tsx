@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef } from 'react';
 import { View, type StyleProp, type ViewStyle } from 'react-native';
 import { useBugPilot } from './BugPilotContext';
+import type { NativeViewHandle } from './nativeView';
 
 export type BugPilotWatchProps = {
   /** Prefer stable Maestro / Detox id — Tallect Track B will add these later. */
@@ -33,7 +34,7 @@ export function BugPilotWatch({
   const { registry } = useBugPilot();
   const reactId = useId();
   const idRef = useRef(`bp-watch-${reactId}`);
-  const viewRef = useRef<View>(null);
+  const viewRef = useRef<NativeViewHandle>(null);
 
   const measureAndUpdate = () => {
     viewRef.current?.measureInWindow((x, y, width, height) => {

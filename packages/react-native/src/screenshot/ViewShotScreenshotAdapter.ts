@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import type { View } from 'react-native';
+import type { NativeViewHandle } from '../nativeView';
 import {
   normalizeScreenshotBase64,
   noopScreenshotCapture,
@@ -10,7 +10,7 @@ import {
 
 type ViewShotModule = {
   captureRef: (
-    ref: RefObject<View | null> | View,
+    ref: RefObject<NativeViewHandle | null> | NativeViewHandle,
     options?: {
       format?: 'png' | 'jpg' | 'webm' | 'raw';
       quality?: number;
@@ -70,7 +70,7 @@ function looksLikeNativeMissing(err: unknown): boolean {
  * Captures the View ref passed from `BugPilotProvider` (in-app UI subtree).
  */
 export function createViewShotScreenshotAdapter(
-  rootRef: RefObject<View | null>,
+  rootRef: RefObject<NativeViewHandle | null>,
 ): ScreenshotCapture {
   const mod = loadViewShot();
   if (!mod?.captureRef) {

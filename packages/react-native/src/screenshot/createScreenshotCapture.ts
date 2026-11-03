@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import type { View } from 'react-native';
+import type { NativeViewHandle } from '../nativeView';
 import { noopScreenshotCapture, type ScreenshotCapture } from './ScreenshotCapture';
 import {
   createViewShotScreenshotAdapter,
@@ -7,7 +7,7 @@ import {
 } from './ViewShotScreenshotAdapter';
 
 export type CreateScreenshotCaptureOptions = {
-  rootRef: RefObject<View | null>;
+  rootRef: RefObject<NativeViewHandle | null>;
   /** Inject a custom capture impl (tests / host override). */
   override?: ScreenshotCapture | null;
 };
