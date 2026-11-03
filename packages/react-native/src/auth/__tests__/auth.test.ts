@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AuthClient } from '../AuthClient';
+import { AuthClient, AuthError } from '../AuthClient';
 import { createMemoryAdapter, createSecureStoreAdapter } from '../SessionStore';
 import { TokenManager } from '../TokenManager';
 import { resolveAccessToken } from '../resolveAccessToken';
@@ -267,5 +267,64 @@ describe('TokenManager resilience', () => {
       expect(await manager.getAccessToken()).toBeNull();
       expect(await storage.getItem('bugpilot.session')).toBeNull();
     }
+  });
+});
+
+describe('AuthClient request timeout', () => {
+  it('rejects a hung request after 15s with a transient error and aborts it', async () => {
+    vi.useFakeTimers();
+    try {
+      let signal: AbortSignal | undefined;
+      const fetchMock = vi.fn((_url: string, init?: any) => {
+        signal = init?.signal;
+        return new Promise<never>(() => {});
+      });
+      const client = new AuthClient('http://api.test', fetchMock as any);
+      const p = client.refresh('r').catch((e) => e);
+      await vi.advanceTimersByTimeAsync(14_999);
+      expect(signal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      const err = await p;
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(AuthError);
+      expect(err.message).toBe('Request timed out');
+      expect(signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a hung refresh does not block a later refresh', async () => {
+    vi.useFakeTimers();
+    try {
+      let call = 0;
+      const fetchMock = vi.fn(async (url: string) => {
+        if (url.endsWith('/refresh')) {
+          call++;
+          if (call === 1) return new Promise<never>(() => {});
+          return res(200, session({ access_token: 'access-2' }));
+        }
+        return res(200, session());
+      });
+      const client = new AuthClient('http://api.test', fetchMock as any);
+      const storage = createMemoryAdapter();
+      const onSignedOut = vi.fn();
+      const manager = new TokenManager(client, storage, onSignedOut);
+      await manager.signIn('qa@example.com', 'pw');
+      const first = manager.refreshAfter401();
+      await vi.advanceTimersByTimeAsync(15_000);
+      await expect(first).resolves.toBeNull();
+      expect(onSignedOut).not.toHaveBeenCalled();
+      await expect(manager.refreshAfter401()).resolves.toBe('access-2');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('listProjects 401 is an AuthError with status 401', async () => {
+    const { client } = setup(() => res(401, {}));
+    const err = await client.listProjects('t').catch((e) => e);
+    expect(err).toBeInstanceOf(AuthError);
+    expect(err.status).toBe(401);
   });
 });
