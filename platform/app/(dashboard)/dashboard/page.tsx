@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
 import type { DashboardMetrics, IssueTriageStatus } from '@/lib/types';
+import { useWorkspaceAccess } from '@/components/useWorkspaceAccess';
 import { SparklineChart } from '@/components/SparklineChart';
 import { TriageStatusBadge } from '@/components/TriageStatusBadge';
 import { OnboardingWizardModal } from '@/components/OnboardingWizardModal';
@@ -50,6 +51,7 @@ const SEVERITY_CONFIG: Record<string, { label: string; cls: string }> = {
 };
 
 export default function DashboardPage() {
+  const { isMemberOnly } = useWorkspaceAccess();
   const queryClient = useQueryClient();
   const [showOnboarding, setShowOnboarding] = React.useState(false);
 
@@ -103,14 +105,16 @@ export default function DashboardPage() {
             <FolderIcon className="w-3.5 h-3.5 text-gray-500" />
             <span>All Projects</span>
           </Link>
-          <Link
-            href="/extension"
-            id="tour-extension-cta"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-xs transition-colors"
-          >
-            <PuzzleIcon className="w-3.5 h-3.5" />
-            <span>Browser Extension</span>
-          </Link>
+          {!isMemberOnly && (
+            <Link
+              href="/extension"
+              id="tour-extension-cta"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-xs transition-colors"
+            >
+              <PuzzleIcon className="w-3.5 h-3.5" />
+              <span>Browser Extension</span>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -244,12 +248,14 @@ export default function DashboardPage() {
               >
                 Go to Projects
               </Link>
-              <Link
-                href="/extension"
-                className="px-4 py-2 text-xs font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-              >
-                Extension Guide
-              </Link>
+              {!isMemberOnly && (
+                <Link
+                  href="/extension"
+                  className="px-4 py-2 text-xs font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                >
+                  Extension Guide
+                </Link>
+              )}
             </div>
           </div>
         ) : (

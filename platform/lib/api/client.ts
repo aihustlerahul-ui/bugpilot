@@ -12,6 +12,15 @@ async function getToken(): Promise<string> {
   return session.access_token
 }
 
+export class ApiError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await getToken()
   const res = await fetch(`${API_URL}/api${path}`, {
@@ -30,7 +39,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    throw new Error(body.message ?? `Request failed: ${res.status}`)
+    throw new ApiError(body.message ?? `Request failed: ${res.status}`, res.status)
   }
   return res.json()
 }

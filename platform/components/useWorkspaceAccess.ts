@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api/client';
+import { api, ApiError } from '@/lib/api/client';
 import type { Workspace } from '@/lib/types';
 
 /**
@@ -8,16 +8,18 @@ import type { Workspace } from '@/lib/types';
  * UI can be hidden instead of erroring.
  */
 export function useWorkspaceAccess() {
-  const { data, isLoading, isError } = useQuery<Workspace>({
+  const { data, isLoading, isError, error } = useQuery<Workspace>({
     queryKey: ['workspace-me'],
     queryFn: () => api.get<Workspace>('/workspaces/me'),
-    retry: false,
+    // A 404 is the definitive "no workspace" answer; do not retry it. Other errors
+    // (5xx, network) are transient: retry a couple of times and keep owner UI meanwhile.
+    retry: (failureCount, err) => !(err instanceof ApiError && err.status === 404) && failureCount < 2,
   });
   return {
     workspace: data,
     isLoading,
     hasWorkspace: Boolean(data),
-    // true only once we know the user has no workspace of their own
-    isMemberOnly: !isLoading && (isError || !data),
+    // true only on a definitive 404 (no workspace of their own)
+    isMemberOnly: !isLoading && !data && isError && error instanceof ApiError && error.status === 404,
   };
 }
