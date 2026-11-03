@@ -84,15 +84,31 @@ function compactRow(i) {
   };
 }
 
+const MAX_ARRAY_ANY = 100;
+const MAX_IMAGES = 3;
+const MAX_IMAGE_TOTAL_BYTES = 3 * 1024 * 1024;
+const MAX_PAYLOAD_CHARS = 200_000;
+const MAX_URL_CHARS = 4096;
+const MAX_TRUNCATED_FIELDS = 20;
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
+/** Mutable so tests can shorten the image-download timeout. */
+export const imageConfig = { timeoutMs: 10000 };
+
+function isHttpUrl(v) {
+  return typeof v === 'string' && v.length <= MAX_URL_CHARS && /^https?:\/\//i.test(v);
+}
+
 function truncateIssue(issue) {
   const cut = [];
   const walk = (val, path) => {
     if (Array.isArray(val)) {
       const key = path[path.length - 1] ?? '';
+      const cap = /console|network/i.test(key) ? MAX_ARRAY : MAX_ARRAY_ANY;
       let arr = val;
-      if (/console|network/i.test(key) && val.length > MAX_ARRAY) {
-        cut.push(`${path.join('.')} (${val.length} -> ${MAX_ARRAY} entries)`);
-        arr = val.slice(0, MAX_ARRAY);
+      if (val.length > cap) {
+        cut.push(`${path.join('.')} (${val.length} -> ${cap} entries)`);
+        arr = val.slice(0, cap);
       }
       return arr.map((v, idx) => walk(v, [...path, String(idx)]));
     }
@@ -101,30 +117,101 @@ function truncateIssue(issue) {
       for (const [k, v] of Object.entries(val)) out[k] = walk(v, [...path, k]);
       return out;
     }
-    if (typeof val === 'string' && val.length > MAX_STRING && !/url$/i.test(path[path.length - 1] ?? '')) {
+    if (typeof val === 'string' && val.length > MAX_STRING) {
+      const key = path[path.length - 1] ?? '';
+      if (/url$/i.test(key) && isHttpUrl(val)) return val;
       cut.push(`${path.join('.')} (${val.length} -> ${MAX_STRING} chars)`);
       return val.slice(0, MAX_STRING);
     }
     return val;
   };
   const out = walk(issue, []);
+
+  // Final total-size guard: omit the largest fields until the payload fits.
+  const protectedKeys = new Set(['id', 'truncated', 'truncatedFields', 'truncatedFieldsCount']);
+  for (let guard = 0; guard < 200; guard++) {
+    if (JSON.stringify(out).length <= MAX_PAYLOAD_CHARS - 2000) break;
+    let best = null;
+    const consider = (holder, key, label) => {
+      const len = JSON.stringify(holder[key])?.length ?? 0;
+      if (!best || len > best.len) best = { holder, key, label, len };
+    };
+    for (const k of Object.keys(out)) {
+      if (protectedKeys.has(k) || typeof out[k] === 'string' && out[k].startsWith('[omitted')) continue;
+      consider(out, k, k);
+      if (k === 'metadata' && out[k] && typeof out[k] === 'object') {
+        for (const mk of Object.keys(out[k])) {
+          if (typeof out[k][mk] === 'string' && out[k][mk].startsWith('[omitted')) continue;
+          consider(out[k], mk, `metadata.${mk}`);
+        }
+      }
+    }
+    if (!best) break;
+    // Prefer replacing the child over the whole metadata object when metadata is the largest.
+    if (best.label === 'metadata') {
+      let child = null;
+      for (const mk of Object.keys(out.metadata)) {
+        if (typeof out.metadata[mk] === 'string' && out.metadata[mk].startsWith('[omitted')) continue;
+        const len = JSON.stringify(out.metadata[mk])?.length ?? 0;
+        if (!child || len > child.len) child = { mk, len };
+      }
+      if (child) best = { holder: out.metadata, key: child.mk, label: `metadata.${child.mk}`, len: child.len };
+    }
+    cut.push(`${best.label} (omitted, ${best.len} chars, payload size guard)`);
+    best.holder[best.key] = `[omitted for size: ${best.len} chars]`;
+  }
+
   if (cut.length) {
     out.truncated = true;
-    out.truncatedFields = cut;
+    out.truncatedFields = cut.slice(0, MAX_TRUNCATED_FIELDS);
+    if (cut.length > MAX_TRUNCATED_FIELDS) out.truncatedFieldsCount = cut.length;
   }
   return out;
 }
 
-async function fetchImage(url) {
+function imageFetchAllowed(url) {
+  let u;
   try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const len = Number(res.headers.get('content-length'));
-    if (len && len > MAX_IMAGE_BYTES) return null;
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length > MAX_IMAGE_BYTES) return null;
-    const mimeType = (res.headers.get('content-type') || '').split(';')[0].trim() || 'image/png';
-    return { type: 'image', data: buf.toString('base64'), mimeType };
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol === 'https:') return true;
+  if (u.protocol !== 'http:') return false;
+  try {
+    return new URL(getConfig().apiUrl).protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+/** Returns {image, bytes} or null. Never throws. No credentials are sent. */
+async function fetchImage(url, maxBytes) {
+  if (!imageFetchAllowed(url)) return null;
+  const signal = AbortSignal.timeout(imageConfig.timeoutMs);
+  try {
+    const res = await fetch(url, { signal });
+    if (!res.ok || !res.body) return null;
+    const mimeType = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (!IMAGE_TYPES.has(mimeType)) {
+      res.body.cancel?.().catch?.(() => {});
+      return null;
+    }
+    const reader = res.body.getReader();
+    const chunks = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(value);
+    }
+    const buf = Buffer.concat(chunks);
+    return { image: { type: 'image', data: buf.toString('base64'), mimeType }, bytes: total };
   } catch {
     return null;
   }
@@ -163,10 +250,17 @@ export const handlers = {
 
     const images = [];
     const asUrls = [];
+    let budget = MAX_IMAGE_TOTAL_BYTES;
     for (const u of unique) {
-      const img = await fetchImage(u);
-      if (img) images.push(img);
-      else asUrls.push(u);
+      if (images.length >= MAX_IMAGES || budget <= 0) {
+        asUrls.push(u);
+        continue;
+      }
+      const got = await fetchImage(u, Math.min(MAX_IMAGE_BYTES, budget));
+      if (got) {
+        images.push(got.image);
+        budget -= got.bytes;
+      } else asUrls.push(u);
     }
     if (asUrls.length) out.screenshotUrls = asUrls;
     return { content: [{ type: 'text', text: JSON.stringify(out, null, 2) }, ...images] };

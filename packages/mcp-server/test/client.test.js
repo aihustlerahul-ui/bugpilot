@@ -69,3 +69,11 @@ test('POST sends JSON body and query params', async () => {
   assert.equal(calls[0].init.body, '{"b":2}');
   assert.equal(calls[0].init.headers['Content-Type'], 'application/json');
 });
+
+test('absolute foreign URL is rejected and fetch not called', async () => {
+  process.env.BUGPILOT_ACCESS_TOKEN = 't';
+  stub();
+  await assert.rejects(() => apiRequest('GET', 'https://evil.test/x'), /relative|origin/);
+  await assert.rejects(() => apiRequest('GET', '//evil.test/x'), /relative|origin/);
+  assert.equal(calls.length, 0);
+});

@@ -121,3 +121,133 @@ test('list_members hits members endpoint', async () => {
   route({ '/api/issues/project/p1/members': [{ id: 'm', name: 'N', email: 'e' }] });
   assert.equal(text(await handlers.list_members({ projectId: 'p1' }))[0].id, 'm');
 });
+
+// ---- fix round 1 ----
+import { imageConfig } from '../src/tools/read.js';
+
+const okIssue = (extra) => ({ id: 'i1', metadata: {}, ...extra });
+function imgRoute(issue, images) {
+  const seen = [];
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    if (u.includes('cdn.test')) {
+      seen.push({ u, init });
+      const h = images[u];
+      return typeof h === 'function' ? h(init) : h.clone ? h.clone() : h;
+    }
+    const body = u.endsWith('/comments') ? [] : issue;
+    return new Response(JSON.stringify(body), { status: 200 });
+  };
+  return seen;
+}
+const png = () => new Response(Buffer.from([1, 2, 3]), { status: 200, headers: { 'content-type': 'image/png' } });
+
+test('more than 3 screenshots: only 3 embedded, rest as URLs; no credentials on image fetch', async () => {
+  const urls = [1, 2, 3, 4, 5].map((n) => `https://cdn.test/${n}.png`);
+  const images = {};
+  for (const u of urls) images[u] = () => png();
+  const seen = imgRoute(okIssue({ metadata: { screenshots: urls.map((url) => ({ url })) } }), images);
+  const r = await handlers.get_issue({ issueId: 'i1' });
+  assert.equal(r.content.filter((c) => c.type === 'image').length, 3);
+  assert.deepEqual(text(r).screenshotUrls, urls.slice(3));
+  for (const s of seen) assert.equal(s.init?.headers, undefined);
+});
+
+test('total byte budget limits embedded images', async () => {
+  const big = () => new Response(Buffer.alloc(1_400_000, 1), { status: 200, headers: { 'content-type': 'image/png' } });
+  const urls = [1, 2, 3].map((n) => `https://cdn.test/${n}.png`);
+  const images = Object.fromEntries(urls.map((u) => [u, big]));
+  imgRoute(okIssue({ screenshot_url: urls[0], element_screenshot_url: urls[1], metadata: { screenshots: [{ url: urls[2] }] } }), images);
+  const r = await handlers.get_issue({ issueId: 'i1' });
+  assert.equal(r.content.filter((c) => c.type === 'image').length, 2);
+  assert.equal(text(r).screenshotUrls.length, 1);
+});
+
+test('lying content-length: streamed body over limit aborts early and falls back to URL', async () => {
+  let pulled = 0;
+  const stream = new ReadableStream({
+    pull(c) { pulled += 500_000; c.enqueue(new Uint8Array(500_000)); },
+  });
+  const u = 'https://cdn.test/s.png';
+  imgRoute(okIssue({ screenshot_url: u }), {
+    [u]: () => new Response(stream, { status: 200, headers: { 'content-type': 'image/png', 'content-length': '10' } }),
+  });
+  const r = await handlers.get_issue({ issueId: 'i1' });
+  assert.equal(r.content.filter((c) => c.type === 'image').length, 0);
+  assert.deepEqual(text(r).screenshotUrls, [u]);
+  assert.ok(pulled <= 4_000_000, `pulled ${pulled}`);
+});
+
+test('hanging image fetch times out and falls back to URL', async () => {
+  const saved = imageConfig.timeoutMs;
+  imageConfig.timeoutMs = 50;
+  try {
+    const u = 'https://cdn.test/h.png';
+    imgRoute(okIssue({ screenshot_url: u }), {
+      [u]: (init) => new Promise((_, rej) => init.signal.addEventListener('abort', () => rej(new Error('aborted')))),
+    });
+    const r = await handlers.get_issue({ issueId: 'i1' });
+    assert.deepEqual(text(r).screenshotUrls, [u]);
+  } finally { imageConfig.timeoutMs = saved; }
+});
+
+test('non-image content types are not embedded', async () => {
+  const a = 'https://cdn.test/a', b = 'https://cdn.test/b';
+  imgRoute(okIssue({ screenshot_url: a, element_screenshot_url: b }), {
+    [a]: () => new Response('<html>', { status: 200, headers: { 'content-type': 'text/html' } }),
+    [b]: () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+  });
+  const r = await handlers.get_issue({ issueId: 'i1' });
+  assert.equal(r.content.filter((c) => c.type === 'image').length, 0);
+  assert.deepEqual(text(r).screenshotUrls, [a, b]);
+});
+
+test('image content-type with charset suffix is accepted', async () => {
+  const u = 'https://cdn.test/a';
+  imgRoute(okIssue({ screenshot_url: u }), { [u]: () => new Response(Buffer.from([1]), { status: 200, headers: { 'content-type': 'image/webp; charset=binary' } }) });
+  const r = await handlers.get_issue({ issueId: 'i1' });
+  assert.equal(r.content.find((c) => c.type === 'image').mimeType, 'image/webp');
+});
+
+test('data: and http: (when API is https/default http?) image URLs are not fetched', async () => {
+  process.env.BUGPILOT_API_URL = 'https://api.test';
+  const seen = imgRoute(okIssue({ screenshot_url: 'data:image/png;base64,AAAA', element_screenshot_url: 'http://cdn.test/x.png' }), {});
+  const r = await handlers.get_issue({ issueId: 'i1' });
+  assert.equal(seen.length, 0);
+  assert.equal(text(r).screenshotUrls.length, 2);
+});
+
+test('10k recordedSteps capped at 100 and flagged', async () => {
+  route({
+    '/api/issues/i1': okIssue({ metadata: { recordedSteps: Array.from({ length: 10000 }, (_, i) => ({ i })) } }),
+    '/api/issues/i1/comments': [],
+  });
+  const r = text(await handlers.get_issue({ issueId: 'i1' }));
+  assert.equal(r.metadata.recordedSteps.length, 100);
+  assert.equal(r.truncated, true);
+});
+
+test('3 MB data: url is cut; payload stays under size guard; truncatedFields capped', async () => {
+  const entries = Array.from({ length: 50 }, (_, i) => ({ url: 'data:text/plain,' + 'x'.repeat(100_000), i }));
+  const meta = { networkTransactions: entries, recordedSteps: Array.from({ length: 100 }, () => ({ t: 'y'.repeat(1999) })) };
+  for (let k = 0; k < 30; k++) meta['f' + k] = 'z'.repeat(5000);
+  route({
+    '/api/issues/i1': okIssue({ description: 'd'.repeat(10), metadata: { ...meta, big: { url: 'data:image/png;base64,' + 'A'.repeat(3_000_000) } } }),
+    '/api/issues/i1/comments': Array.from({ length: 100 }, () => ({ body: 'c'.repeat(1999) })),
+  });
+  const res = await handlers.get_issue({ issueId: 'i1' });
+  const t = res.content[0].text;
+  assert.ok(t.length < 200_000, `len ${t.length}`);
+  const r = JSON.parse(t);
+  assert.ok(r.metadata.big.url.length <= 2000 || String(r.metadata.big).startsWith('[omitted'));
+  assert.ok(r.truncatedFields.length <= 20);
+});
+
+test('long https url is kept, over-4096 is cut', async () => {
+  const ok = 'https://cdn.test/' + 'a'.repeat(3000);
+  const bad = 'https://cdn.test/' + 'a'.repeat(5000);
+  route({ '/api/issues/i1': okIssue({ metadata: { x: { url: ok }, y: { url: bad } } }), '/api/issues/i1/comments': [] });
+  const r = text(await handlers.get_issue({ issueId: 'i1' }));
+  assert.equal(r.metadata.x.url, ok);
+  assert.equal(r.metadata.y.url.length, 2000);
+});

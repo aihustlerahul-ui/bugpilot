@@ -31,7 +31,13 @@ export function getConfig() {
  */
 export async function apiRequest(method, path, opts = {}) {
   const { apiUrl, credential, workspaceId } = getConfig();
-  const url = new URL(path.startsWith('http') ? path : `${apiUrl}${path.startsWith('/') ? '' : '/'}${path}`);
+  if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) {
+    throw new Error('apiRequest path must be a relative API path starting with a single "/"');
+  }
+  const url = new URL(`${apiUrl}${path}`);
+  if (url.origin !== new URL(apiUrl).origin) {
+    throw new Error('apiRequest path must stay on the configured API origin');
+  }
   if (opts.query) {
     for (const [k, v] of Object.entries(opts.query)) {
       if (v != null && v !== '') url.searchParams.set(k, String(v));
