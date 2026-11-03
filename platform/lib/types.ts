@@ -128,6 +128,18 @@ export interface Issue {
   webcamUrl?: string | null
   thumbnailUrl?: string | null
   projectName?: string
+  assignee_member_id?: string | null
+  reporter?: { userId: string; email: string | null; name: string | null; memberId: string | null }
+}
+
+export interface IssueComment {
+  id: string
+  issue_id: string
+  author_user_id: string
+  author_name: string
+  body: string
+  source: 'web' | 'mcp'
+  created_at: string
 }
 
 export interface DashboardMetrics {

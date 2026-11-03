@@ -18,6 +18,7 @@ import { AiVisualAnomalyAnalysis } from '@/components/AiVisualAnomalyAnalysis';
 import { StackTraceView } from '@/components/StackTraceView';
 import { BreadcrumbTimeline, type BreadcrumbItem } from '@/components/BreadcrumbTimeline';
 import type { Issue, IssueTriageStatus, Project } from '@/lib/types';
+import { IssueComments } from '@/components/IssueComments';
 import { PlayIcon } from '@/components/Icons';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -830,6 +831,8 @@ export default function IssueDetailPage() {
 
           {/* AI Screenshot Visual Anomaly Analysis */}
           <AiVisualAnomalyAnalysis issue={issue} />
+
+          <IssueComments issueId={issueId} />
         </div>
 
         {/* RIGHT COLUMN: Tabbed DevTools Inspector (40% width) */}
