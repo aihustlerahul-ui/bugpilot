@@ -228,7 +228,8 @@ export default function IssueDetailPage() {
     queryFn: () => api.get<Project>(`/projects/${projectId}`),
   });
   const isOwner = project?.role !== 'member';
-  // Status changes are owner-only on the API; hide the control until the role is known.
+  // Owners may set any status; members may only set Resolved (via the MCP, not this dashboard),
+  // so the dashboard control is owner-only; hide it until the role is known.
   const canTriage = Boolean(project) && isOwner;
 
   const { data: issue, isLoading, isError } = useQuery<Issue>({

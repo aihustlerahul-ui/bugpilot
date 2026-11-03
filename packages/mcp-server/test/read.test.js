@@ -67,6 +67,23 @@ test('get_issue merges comments', async () => {
   assert.equal(r.id, 'i1');
 });
 
+test('get_issue survives a failing comments call', async () => {
+  route({
+    '/api/issues/i1': { id: 'i1', title: 't', metadata: {} },
+    '/api/issues/i1/comments': new Response('{"message":"relation issue_comments missing Bearer abc.def"}', { status: 500 }),
+  });
+  const r = text(await handlers.get_issue({ issueId: 'i1' }));
+  assert.equal(r.id, 'i1');
+  assert.deepEqual(r.comments, []);
+  assert.ok(r.commentsError);
+  assert.ok(!r.commentsError.includes('abc.def'));
+});
+
+test('get_issue still fails when the issue call fails', async () => {
+  route({ '/api/issues/i1/comments': [] });
+  await assert.rejects(() => handlers.get_issue({ issueId: 'i1' }));
+});
+
 test('get_issue truncates 500 console entries and flags truncated', async () => {
   const consoleErrors = Array.from({ length: 500 }, (_, i) => ({ m: i }));
   route({

@@ -99,7 +99,7 @@ export class IssuesController {
   @ApiKeyAllowed()
   @Patch(':id/assignee')
   assign(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AssignIssueDto) {
-    return this.issues.assign(user, id, dto.memberId ?? null);
+    return this.issues.assign(user, id, dto.memberId);
   }
 
   @Post(':id/replay-token')

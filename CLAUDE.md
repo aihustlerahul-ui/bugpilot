@@ -155,7 +155,7 @@ POST /api/issues
 1. `backend/.env` and `platform/.env.local` are gitignored — never commit secrets
 2. PAT stored encrypted (AES-256-GCM) in DB — never returned to frontend in plaintext
 3. Screenshots in **private** Supabase Storage bucket — accessed via signed URLs only
-4. All API routes validate Supabase JWT via `supabase.auth.getUser(token)` before processing
+4. All API routes validate Supabase JWT via `supabase.auth.getUser(token)` (or a `bp_` API key on `@ApiKeyAllowed()` routes, see rule 6) before processing
 5. Content script uses `!important` on all styles and `qa-` prefix on all class names to avoid conflicts
 6. Personal API keys (`bp_live_...`) are stored as SHA-256 hashes, shown once, and accepted only on routes marked `@ApiKeyAllowed()`; they also require an `X-Workspace-Id` header. Changing the allowed set means updating `common/decorators/api-key-allowlist.spec.ts` deliberately
 

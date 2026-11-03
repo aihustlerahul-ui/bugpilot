@@ -1,4 +1,4 @@
-import { apiGet, getConfig } from '../client.js';
+import { apiGet, getConfig, redactToken } from '../client.js';
 
 const MAX_ARRAY = 50;
 const MAX_STRING = 2000;
@@ -245,7 +245,12 @@ export const handlers = {
   async get_issue(args = {}) {
     if (!args.issueId) throw new Error('issueId is required');
     const id = encodeURIComponent(args.issueId);
-    const [issue, comments] = await Promise.all([apiGet(`/api/issues/${id}`), apiGet(`/api/issues/${id}/comments`)]);
+    const [issueRes, commentsRes] = await Promise.allSettled([apiGet(`/api/issues/${id}`), apiGet(`/api/issues/${id}/comments`)]);
+    if (issueRes.status === 'rejected') throw issueRes.reason;
+    const issue = issueRes.value;
+    const comments = commentsRes.status === 'fulfilled' ? commentsRes.value : [];
+    const commentsError =
+      commentsRes.status === 'rejected' ? redactToken(commentsRes.reason?.message ?? String(commentsRes.reason)) : undefined;
 
     // Bounded, deduped candidate list (O(1) in the number of screenshots).
     const unique = new Set();
@@ -286,6 +291,7 @@ export const handlers = {
       }
     });
     const extra = { comments: Array.isArray(comments) ? comments : [] };
+    if (commentsError) extra.commentsError = commentsError;
     if (screenshotUrls.length) extra.screenshotUrls = screenshotUrls;
     if (rest.length > MAX_SCREENSHOT_URLS) extra.screenshotUrlsMore = rest.length - MAX_SCREENSHOT_URLS;
     const out = truncateIssue({ ...issue, ...extra }, notes);

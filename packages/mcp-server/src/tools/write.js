@@ -71,7 +71,7 @@ export const tools = [
 ];
 
 async function patchAssignee(id, memberId) {
-  // memberId key is always present (explicit null clears); the backend treats a missing key like null.
+  // memberId key is always present (explicit null clears); the backend rejects a missing key (400), so it is never omitted.
   return apiRequest('PATCH', `/api/issues/${id}/assignee`, { body: { memberId } });
 }
 
