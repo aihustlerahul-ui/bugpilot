@@ -20,8 +20,12 @@ export async function middleware(request: NextRequest) {
     },
   )
   const { data: { user } } = await supabase.auth.getUser()
-  const isAuthRoute   = /^\/(login|signup)/.test(request.nextUrl.pathname)
-  const isPublicRoute = /^\/replay\//.test(request.nextUrl.pathname)
+  const path = request.nextUrl.pathname
+  // Signed-in users are sent away from these to /projects.
+  const isAuthRoute   = /^\/(login|signup|forgot-password)(\/|$)/.test(path)
+  // Reachable with or without a session. /accept-invite must stay reachable after the invite
+  // link has created a session, so the user can set a password there.
+  const isPublicRoute = /^\/replay\//.test(path) || /^\/accept-invite(\/|$)/.test(path)
   if (!user && !isAuthRoute && !isPublicRoute) return NextResponse.redirect(new URL('/login', request.url))
   if (user && isAuthRoute) return NextResponse.redirect(new URL('/projects', request.url))
   return supabaseResponse

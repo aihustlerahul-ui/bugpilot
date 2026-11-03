@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api/client';
-import type { Issue, Project, TeamMember, MemberConflict, IssueTriageStatus } from '@/lib/types';
+import type { Issue, Project, TeamMember, MemberConflict, IssueTriageStatus, AddProjectMemberResult, InviteStatus } from '@/lib/types';
 import { MobileBadge, isMobileIssue } from '@/components/MobileInfo';
 import { VideoBadge } from '@/components/VideoBadge';
 import { DiagnosticFilterBar } from '@/components/DiagnosticFilterBar';
@@ -71,6 +71,7 @@ function ProjectPageContent() {
   const [addingMember, setAddingMember] = useState(false);
   const [memberConflict, setMemberConflict] = useState<MemberConflict | null>(null);
   const [memberError, setMemberError] = useState('');
+  const [memberNotice, setMemberNotice] = useState<string | null>(null);
 
   // Settings form states
   const [settingsName, setSettingsName] = useState('');
@@ -124,8 +125,10 @@ function ProjectPageContent() {
     queryFn: () => api.get<Issue[]>(`/issues/project/${projectId}`),
   });
 
-  // Members (invited testers) cannot manage the team or project settings.
+  // Members (invited testers) cannot manage the team or project settings, or triage (change status).
   const isOwner = project?.role !== 'member';
+  // Status changes are owner-only on the API; hide the controls until the role is known.
+  const canTriage = Boolean(project) && isOwner;
 
   const { data: members = [] } = useQuery<TeamMember[]>({
     queryKey: ['project-members', projectId],
@@ -174,8 +177,10 @@ function ProjectPageContent() {
   });
 
   const addMember = useMutation({
-    mutationFn: () => api.post(`/workspaces/members/project/${projectId}`, { name: memberName, email: memberEmail }),
-    onSuccess: () => {
+    mutationFn: () =>
+      api.post<AddProjectMemberResult>(`/workspaces/members/project/${projectId}`, { name: memberName, email: memberEmail }),
+    onSuccess: (result) => {
+      setMemberNotice(inviteNotice(result?.invite));
       qc.invalidateQueries({ queryKey: ['project-members', projectId] });
       qc.invalidateQueries({ queryKey: ['team-members'] });
       setAddingMember(false); setMemberName(''); setMemberEmail(''); setMemberConflict(null);
@@ -349,7 +354,7 @@ function ProjectPageContent() {
               </div>
 
               {/* Floating Bulk Action Bar */}
-              {selectedIssueIds.length > 0 && (
+              {canTriage && selectedIssueIds.length > 0 && (
                 <div className="sticky top-4 z-20 flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50/95 p-3 shadow-lg backdrop-blur-xs">
                   <div className="flex items-center gap-2 text-xs font-semibold text-indigo-900">
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[11px] text-white">
@@ -386,14 +391,16 @@ function ProjectPageContent() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-gray-100 bg-gray-50/80">
-                          <th className="px-3 py-3 w-8 text-center">
-                            <input
-                              type="checkbox"
-                              checked={selectedIssueIds.length === displayIssues.length && displayIssues.length > 0}
-                              onChange={toggleSelectAll}
-                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                            />
-                          </th>
+                          {canTriage && (
+                            <th className="px-3 py-3 w-8 text-center">
+                              <input
+                                type="checkbox"
+                                checked={selectedIssueIds.length === displayIssues.length && displayIssues.length > 0}
+                                onChange={toggleSelectAll}
+                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                              />
+                            </th>
+                          )}
                           <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider w-10">#</th>
                           <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Description</th>
                           <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider hidden md:table-cell">Route</th>
@@ -418,14 +425,16 @@ function ProjectPageContent() {
 
                           return (
                             <tr key={issue.id} className={`hover:bg-gray-50/60 transition-colors group ${isSelected ? 'bg-indigo-50/40' : ''}`}>
-                              <td className="px-3 py-3.5 text-center">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => toggleSelectIssue(issue.id)}
-                                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                />
-                              </td>
+                              {canTriage && (
+                                <td className="px-3 py-3.5 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => toggleSelectIssue(issue.id)}
+                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                  />
+                                </td>
+                              )}
                               <td className="px-4 py-3.5 text-xs text-gray-300 font-mono tabular-nums">{i + 1}</td>
                               <td className="px-4 py-3.5">
                                 <div className="space-y-1">
@@ -478,12 +487,12 @@ function ProjectPageContent() {
                               <td className="px-4 py-3.5 whitespace-nowrap">
                                 <TriageStatusBadge
                                   status={issue.triage_status ?? 'incoming'}
-                                  onChange={(newStatus) => {
+                                  onChange={canTriage ? (newStatus) => {
                                     updateStatusMutation.mutate({
                                       issueId: issue.id,
                                       status: newStatus,
                                     });
-                                  }}
+                                  } : undefined}
                                 />
                               </td>
 
@@ -535,9 +544,9 @@ function ProjectPageContent() {
                 <KanbanBoard
                   issues={displayIssues}
                   projectId={projectId}
-                  onUpdateStatus={(issueId, status) => {
+                  onUpdateStatus={canTriage ? (issueId, status) => {
                     updateStatusMutation.mutate({ issueId, status });
-                  }}
+                  } : undefined}
                 />
               )}
 
@@ -545,9 +554,9 @@ function ProjectPageContent() {
                 <VisualGalleryView
                   issues={displayIssues}
                   projectId={projectId}
-                  onUpdateStatus={(issueId, status) => {
+                  onUpdateStatus={canTriage ? (issueId, status) => {
                     updateStatusMutation.mutate({ issueId, status });
-                  }}
+                  } : undefined}
                 />
               )}
             </div>
@@ -564,7 +573,7 @@ function ProjectPageContent() {
             </p>
             {!addingMember && (
               <button
-                onClick={() => { setAddingMember(true); setMemberError(''); setMemberConflict(null); }}
+                onClick={() => { setAddingMember(true); setMemberError(''); setMemberConflict(null); setMemberNotice(null); }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition-colors shadow-xs"
               >
                 + Add Member
@@ -616,6 +625,19 @@ function ProjectPageContent() {
                   Cancel
                 </button>
               </div>
+            </div>
+          )}
+
+          {memberNotice && (
+            <div role="status" className="flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+              <span>{memberNotice}</span>
+              <button
+                onClick={() => setMemberNotice(null)}
+                className="shrink-0 font-medium text-amber-700 hover:text-amber-900"
+                aria-label="Dismiss"
+              >
+                Dismiss
+              </button>
             </div>
           )}
 
@@ -952,6 +974,16 @@ function ProjectPageContent() {
       )}
     </div>
   );
+}
+
+/** Owner-facing notice for an invite that was not sent, or null when nothing to say. */
+function inviteNotice(invite: InviteStatus | undefined): string | null {
+  if (!invite || invite.sent) return null
+  if (invite.reason === 'already-linked') return 'Already on this project. No new invite was sent.'
+  if (invite.reason === 'already-registered') {
+    return 'Added. They already have an account, so no invite email was sent. They can sign in with their existing password, or use Forgot password.'
+  }
+  return 'Added, but the invite email was not sent. They can use Forgot password, or sign up with this email.'
 }
 
 export default function ProjectPage() {

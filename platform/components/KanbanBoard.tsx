@@ -60,13 +60,14 @@ const SEVERITY_BADGES: Record<string, { label: string; cls: string }> = {
 interface KanbanBoardProps {
   issues: Issue[];
   projectId: string;
-  onUpdateStatus: (issueId: string, status: IssueTriageStatus) => void;
+  /** Omit for a read-only board (e.g. project members, who cannot triage). */
+  onUpdateStatus?: (issueId: string, status: IssueTriageStatus) => void;
 }
 
 interface CardProps {
   issue: Issue;
   projectId: string;
-  onUpdateStatus: (issueId: string, status: IssueTriageStatus) => void;
+  onUpdateStatus?: (issueId: string, status: IssueTriageStatus) => void;
   isOverlay?: boolean;
 }
 
@@ -78,7 +79,7 @@ function KanbanCard({ issue, projectId, onUpdateStatus, isOverlay = false }: Car
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: issue.id, data: { issue } });
+  } = useSortable({ id: issue.id, data: { issue }, disabled: !onUpdateStatus });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -117,8 +118,10 @@ function KanbanCard({ issue, projectId, onUpdateStatus, isOverlay = false }: Car
         <div
           {...attributes}
           {...listeners}
-          className="flex cursor-grab items-center gap-1.5 text-slate-400 hover:text-slate-600 active:cursor-grabbing"
-          title="Drag card"
+          className={`flex items-center gap-1.5 text-slate-400 ${
+            onUpdateStatus ? 'cursor-grab hover:text-slate-600 active:cursor-grabbing' : ''
+          }`}
+          title={onUpdateStatus ? 'Drag card' : undefined}
         >
           <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
             <path d="M5 3a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0 5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0 5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm6-10a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0 5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0 5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z" />
@@ -139,7 +142,8 @@ function KanbanCard({ issue, projectId, onUpdateStatus, isOverlay = false }: Car
           )}
           <select
             value={normalizeTriageStatus(issue.triage_status || issue.status)}
-            onChange={(e) => onUpdateStatus(issue.id, e.target.value as IssueTriageStatus)}
+            disabled={!onUpdateStatus}
+            onChange={(e) => onUpdateStatus?.(issue.id, e.target.value as IssueTriageStatus)}
             className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 focus:border-indigo-500 focus:outline-none"
           >
             {TRIAGE_COLUMNS.map((col) => (
@@ -242,7 +246,7 @@ function KanbanColumnDropZone({
   column: { id: IssueTriageStatus; label: string; bg: string; dot: string };
   issues: Issue[];
   projectId: string;
-  onUpdateStatus: (issueId: string, status: IssueTriageStatus) => void;
+  onUpdateStatus?: (issueId: string, status: IssueTriageStatus) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: column.id,
@@ -325,7 +329,7 @@ export function KanbanBoard({ issues, projectId, onUpdateStatus }: KanbanBoardPr
     }
 
     const currentStatus = normalizeTriageStatus(activeIssue.triage_status || activeIssue.status);
-    if (targetStatus && targetStatus !== currentStatus) {
+    if (onUpdateStatus && targetStatus && targetStatus !== currentStatus) {
       onUpdateStatus(activeIssue.id, targetStatus);
     }
   };

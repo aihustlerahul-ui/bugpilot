@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
-import type { DashboardMetrics, IssueTriageStatus } from '@/lib/types';
+import type { DashboardMetrics, IssueTriageStatus, Project } from '@/lib/types';
 import { useWorkspaceAccess } from '@/components/useWorkspaceAccess';
 import { SparklineChart } from '@/components/SparklineChart';
 import { TriageStatusBadge } from '@/components/TriageStatusBadge';
@@ -60,6 +60,16 @@ export default function DashboardPage() {
     queryFn: () => api.get<DashboardMetrics>('/issues/dashboard/metrics'),
     refetchInterval: 30000,
   });
+
+  // Status changes are owner-only on the API: only offer them for projects the user owns.
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ['projects'],
+    queryFn: () => api.get<Project[]>('/projects'),
+  });
+  const ownedProjectIds = React.useMemo(
+    () => new Set(projects.filter((p) => p.role === 'owner').map((p) => p.id)),
+    [projects],
+  );
 
   const updateStatusMutation = useMutation({
     mutationFn: ({ issueId, status }: { issueId: string; status: IssueTriageStatus }) =>
@@ -353,9 +363,13 @@ export default function DashboardPage() {
 
                     <TriageStatusBadge
                       status={issue.status ?? 'Incoming'}
-                      onStatusChange={(nextStatus) => {
-                        updateStatusMutation.mutate({ issueId: issue.id, status: nextStatus });
-                      }}
+                      onStatusChange={
+                        ownedProjectIds.has(issue.project_id)
+                          ? (nextStatus) => {
+                              updateStatusMutation.mutate({ issueId: issue.id, status: nextStatus });
+                            }
+                          : undefined
+                      }
                       size="sm"
                     />
 

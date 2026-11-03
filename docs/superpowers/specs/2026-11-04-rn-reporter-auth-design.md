@@ -111,6 +111,7 @@ Today every project/issue route resolves the workspace via `findByOwner(userId)`
 - **Locked `projectId` vs. picker:** *(My call)* if the host locks a project the user can't access, fall back to the picker with an error line.
 - **Rate limiting:** *(My call)* key on email plus IP, and configure Nest's trust-proxy setting for the deployment in front of the API, so testers behind one proxy don't lock each other out.
 - **Resolved with the user:** testers get access through admin-added project membership (section 1b); all testers use email + password.
+- **Final review (fix wave):** invited testers set their password on the platform's `/accept-invite` page (also the target of "Forgot password"); member access requires a confirmed email that matches exactly. The hosted Supabase settings this depends on (redirect allow-list, Confirm email and Secure email change ON, custom SMTP) are listed in `docs/mobile-qa/AUTH_SETUP.md` and were not verifiable from the repo.
 
 ## Left to the builder
 

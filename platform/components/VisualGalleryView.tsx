@@ -21,7 +21,8 @@ const SEVERITY_BADGES: Record<string, { label: string; cls: string }> = {
 interface VisualGalleryViewProps {
   issues: Issue[];
   projectId: string;
-  onUpdateStatus: (issueId: string, status: IssueTriageStatus) => void;
+  /** Omit for read-only status badges (e.g. project members, who cannot triage). */
+  onUpdateStatus?: (issueId: string, status: IssueTriageStatus) => void;
 }
 
 export function VisualGalleryView({ issues, projectId, onUpdateStatus }: VisualGalleryViewProps) {
@@ -160,7 +161,7 @@ export function VisualGalleryView({ issues, projectId, onUpdateStatus }: VisualG
 
                   <TriageStatusBadge
                     status={issue.triage_status || 'incoming'}
-                    onChange={(st) => onUpdateStatus(issue.id, st)}
+                    onChange={onUpdateStatus ? (st) => onUpdateStatus(issue.id, st) : undefined}
                     size="sm"
                   />
                 </div>

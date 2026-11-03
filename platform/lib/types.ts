@@ -69,6 +69,15 @@ export interface TeamMember {
   created_at: string
 }
 
+/** Result of the invite email sent when a member is newly linked to a project. */
+export interface InviteStatus {
+  sent: boolean
+  reason?: 'already-registered' | 'already-linked' | 'error'
+}
+
+/** Response of POST /workspaces/members/project/:projectId */
+export type AddProjectMemberResult = TeamMember & { invite?: InviteStatus }
+
 export type MemberConflictCode = 'EMAIL_CONFLICT' | 'NAME_CONFLICT'
 export interface MemberConflict {
   code: MemberConflictCode

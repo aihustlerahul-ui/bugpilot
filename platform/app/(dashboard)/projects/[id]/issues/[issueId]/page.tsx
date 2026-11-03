@@ -227,6 +227,8 @@ export default function IssueDetailPage() {
     queryFn: () => api.get<Project>(`/projects/${projectId}`),
   });
   const isOwner = project?.role !== 'member';
+  // Status changes are owner-only on the API; hide the control until the role is known.
+  const canTriage = Boolean(project) && isOwner;
 
   const { data: issue, isLoading, isError } = useQuery<Issue>({
     queryKey: ['issue', issueId],
@@ -649,7 +651,7 @@ export default function IssueDetailPage() {
             <span className="text-xs font-medium text-slate-500">Triage:</span>
             <TriageStatusBadge
               status={issue.triage_status || 'incoming'}
-              onChange={(st) => updateStatusMutation.mutate(st)}
+              onChange={canTriage ? (st) => updateStatusMutation.mutate(st) : undefined}
             />
           </div>
           <span className={`rounded px-2 py-0.5 text-xs font-semibold ${SEVERITY_CONFIG[issue.severity || 'Medium'] || 'bg-slate-100 text-slate-700'}`}>
