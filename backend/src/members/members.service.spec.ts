@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing'
 import { MembersService } from './members.service'
 import { SupabaseService } from '../supabase/supabase.service'
 import { WorkspacesService } from '../workspaces/workspaces.service'
+import { InviteService } from './invite.service'
 import { BadRequestException, NotFoundException } from '@nestjs/common'
 
 const mockWorkspace = { id: 'ws-1' }
@@ -21,13 +22,16 @@ const makeDb = (overrides: any = {}) => ({
 describe('MembersService', () => {
   let service: MembersService
   let db: any
+  let invites: { sendProjectInvite: jest.Mock }
 
   beforeEach(async () => {
     db = makeDb()
+    invites = { sendProjectInvite: jest.fn().mockResolvedValue({ sent: true }) }
     const module = await Test.createTestingModule({
       providers: [
         MembersService,
         { provide: SupabaseService, useValue: { db } },
+        { provide: InviteService, useValue: invites },
         { provide: WorkspacesService, useValue: { findByOwner: jest.fn().mockResolvedValue(mockWorkspace) } },
       ],
     }).compile()
@@ -52,5 +56,36 @@ describe('MembersService', () => {
     jest.spyOn(service as any, 'findByName').mockResolvedValue(mockMember)
     await expect(service.createMember('user-1', { name: 'Alice', email: 'bob@acme.com' }))
       .rejects.toThrow(BadRequestException)
+  })
+
+  describe('addToProject', () => {
+    const dto = { name: 'Alice', email: 'alice@acme.com' }
+    const stubProject = (upsert: jest.Mock) => {
+      jest.spyOn(service as any, 'assertProjectBelongsToWorkspace').mockResolvedValue(undefined)
+      jest.spyOn(service as any, 'findByEmail').mockResolvedValue(mockMember)
+      jest.spyOn(service as any, 'findByName').mockResolvedValue(mockMember)
+      db.from = jest.fn((table: string) => {
+        if (table === 'project_members') return { upsert }
+        return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { name: 'Proj' } }) }) }) }
+      })
+    }
+
+    it('links the project then sends an invite with the project name', async () => {
+      const upsert = jest.fn().mockResolvedValue({ error: null })
+      stubProject(upsert)
+      const result = await service.addToProject('user-1', 'proj-1', dto)
+      expect(result).toBe(mockMember)
+      expect(upsert).toHaveBeenCalled()
+      expect(invites.sendProjectInvite).toHaveBeenCalledWith('alice@acme.com', 'Proj')
+    })
+
+    it('still returns the member and links the project when the invite fails', async () => {
+      const upsert = jest.fn().mockResolvedValue({ error: null })
+      stubProject(upsert)
+      invites.sendProjectInvite.mockResolvedValue({ sent: false, reason: 'error' })
+      const result = await service.addToProject('user-1', 'proj-1', dto)
+      expect(result).toBe(mockMember)
+      expect(upsert).toHaveBeenCalled()
+    })
   })
 })

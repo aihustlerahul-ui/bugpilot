@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common'
 import { SupabaseService } from '../supabase/supabase.service'
 import { WorkspacesService } from '../workspaces/workspaces.service'
+import { InviteService } from './invite.service'
 import type { CreateMemberDto } from './dto/create-member.dto'
 import type { AddProjectMemberDto } from './dto/add-project-member.dto'
 
@@ -9,6 +10,7 @@ export class MembersService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly workspaces: WorkspacesService,
+    private readonly invites: InviteService,
   ) {}
 
   async listWorkspaceMembers(userId: string) {
@@ -166,6 +168,14 @@ export class MembersService {
     await this.supabase.db
       .from('project_members')
       .upsert({ project_id: projectId, member_id: member.id }, { onConflict: 'project_id,member_id', ignoreDuplicates: true })
+
+    // Best-effort invite; sendProjectInvite never throws and must not affect the result
+    const { data: project } = await this.supabase.db
+      .from('projects')
+      .select('name')
+      .eq('id', projectId)
+      .maybeSingle()
+    await this.invites.sendProjectInvite(member.email, project?.name ?? 'a project')
 
     return member
   }
