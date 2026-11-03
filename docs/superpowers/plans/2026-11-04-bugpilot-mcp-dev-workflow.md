@@ -86,12 +86,12 @@ Each line has its pinning test in the task named in brackets: 1 → Task 2, 2 �
 ### Task 3: Allow keys on read routes; protect `updateStatus`
 
 **Files:**
-- Modify: `backend/src/issues/issues.controller.ts`, `issues.service.ts`, `backend/src/projects/projects.controller.ts`, `backend/src/members/members.controller.ts`, `backend/src/issues/issues.access.spec.ts`
+- Modify: `backend/src/issues/issues.controller.ts`, `issues.service.ts`, `backend/src/projects/projects.controller.ts`, `backend/src/issues/issues.access.spec.ts`
 
 **Interfaces:**
 - Consumes: `ApiKeyAllowed` (Task 2).
 - Produces: `IssuesService.updateStatus(user: AuthUser, issueId: string, status: string)` already takes `AuthUser` and is owner-only on `main`. Change it: role `null` → `NotFoundException('Issue not found')`; role `owner` → any status; role `member` → only `Resolved`, otherwise `ForbiddenException`. Update the comment above it and any existing test that asserts members cannot change status.
-- `@ApiKeyAllowed()` on exactly: `GET issues/project/:projectId`, `GET issues/:id`, `PATCH issues/:id/status`, `GET projects`, `GET projects/:id`, `GET workspaces/members`.
+- `@ApiKeyAllowed()` on exactly: `GET issues/project/:projectId`, `GET issues/:id`, `PATCH issues/:id/status`, `GET projects`, `GET projects/:id`. Do NOT mark `GET workspaces/members` (it resolves the workspace via `findByOwner` and ignores `user.workspaceId`; assignable members come from Task 5's project-scoped route). Before marking any route, confirm its service path authorizes through `AccessService`; a route that doesn't must not get the decorator — report it instead.
 
 - [ ] **Step 1: Write failing tests in `issues.access.spec.ts`**: `member of project A cannot read or update status of an issue in project B` (RF 3); `member can set Resolved on its project's issue`; `member setting In Dev or Closed gets Forbidden`; `owner can set any status`; `stranger gets Issue not found on updateStatus`.
 - [ ] **Step 2: Run** `npx jest src/issues/issues.access` — Expected: FAIL.
