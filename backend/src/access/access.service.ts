@@ -5,6 +5,29 @@ import { AuthUser } from '../common/interfaces/auth-user.interface'
 
 export type ProjectRole = 'owner' | 'member'
 
+/** Columns a member (non-owner) may see on a project. */
+export const MEMBER_PROJECT_COLUMNS = 'id, name, workspace_id, sync_mode, created_at, settings'
+const MEMBER_SETTINGS_KEYS = ['description', 'default_view'] as const
+
+/** Strip a project row down to what a member may see (no owner-only settings). */
+export function toMemberProjectView(p: Record<string, any>): Record<string, any> {
+  const settings: Record<string, any> = {}
+  for (const k of MEMBER_SETTINGS_KEYS) {
+    if (p.settings && p.settings[k] !== undefined) settings[k] = p.settings[k]
+  }
+  return {
+    id: p.id,
+    name: p.name,
+    workspace_id: p.workspace_id,
+    sync_mode: p.sync_mode,
+    created_at: p.created_at,
+    settings,
+  }
+}
+
+// PostgREST pattern wildcards (`*` is treated like `%`) and the escape char.
+const PATTERN_CHARS = /[%_*\\]/
+
 @Injectable()
 export class AccessService {
   constructor(
@@ -26,17 +49,30 @@ export class AccessService {
     }
   }
 
-  private async memberIds(email: string): Promise<string[]> {
-    const normalized = this.normalizeEmail(email)
+  /**
+   * workspace_members ids whose email equals the user's email (case-insensitive).
+   * Only trusted when Supabase has confirmed the email; owner access never comes through here.
+   */
+  private async memberIds(user: AuthUser): Promise<string[]> {
+    if (user.emailVerified !== true) return []
+    const normalized = this.normalizeEmail(user.email)
     if (!normalized) return []
-    // escape ilike wildcards so the email is matched literally
-    const pattern = normalized.replace(/[\\%_]/g, (c) => `\\${c}`)
+
+    // Rows may be stored mixed-case, so keep a case-insensitive match. If the address has no
+    // pattern characters the ilike value is a literal; otherwise escape them, and in every case
+    // re-check exact equality below so no pattern can ever over-match.
+    if (normalized.includes('*')) return [] // `*` cannot be escaped in a PostgREST filter value
+    const value = PATTERN_CHARS.test(normalized)
+      ? normalized.replace(/[\\%_]/g, (c) => `\\${c}`)
+      : normalized
     const { data, error } = await this.supabase.db
       .from('workspace_members')
-      .select('id')
-      .ilike('email', pattern)
+      .select('id, email')
+      .ilike('email', value)
     if (error) throw new Error(error.message)
-    return (data ?? []).map((m: any) => m.id)
+    return (data ?? [])
+      .filter((m: any) => this.normalizeEmail(m.email) === normalized)
+      .map((m: any) => m.id)
   }
 
   async listAccessibleProjects(user: AuthUser): Promise<Array<Record<string, any> & { role: ProjectRole }>> {
@@ -52,7 +88,7 @@ export class AccessService {
       for (const p of data ?? []) result.set(p.id, { ...p, role: 'owner' as const })
     }
 
-    const ids = await this.memberIds(user.email)
+    const ids = await this.memberIds(user)
     if (ids.length) {
       const { data: links, error: linkErr } = await this.supabase.db
         .from('project_members')
@@ -65,10 +101,10 @@ export class AccessService {
       if (projectIds.length) {
         const { data, error } = await this.supabase.db
           .from('projects')
-          .select('*')
+          .select(MEMBER_PROJECT_COLUMNS)
           .in('id', projectIds)
         if (error) throw new Error(error.message)
-        for (const p of data ?? []) result.set(p.id, { ...p, role: 'member' as const })
+        for (const p of data ?? []) result.set(p.id, { ...toMemberProjectView(p), role: 'member' as const })
       }
     }
 
@@ -83,13 +119,17 @@ export class AccessService {
       .select('id, workspace_id')
       .eq('id', projectId)
       .maybeSingle()
-    if (error) throw new Error(error.message)
+    if (error) {
+      // 22P02 = invalid_text_representation (e.g. a non-UUID id): treat as "no such project".
+      if ((error as any).code === '22P02') return null
+      throw new Error(error.message)
+    }
     if (!project) return null
 
     const workspaceId = await this.ownedWorkspaceId(user.id)
     if (workspaceId && project.workspace_id === workspaceId) return 'owner'
 
-    const ids = await this.memberIds(user.email)
+    const ids = await this.memberIds(user)
     if (!ids.length) return null
     const { data: links, error: linkErr } = await this.supabase.db
       .from('project_members')

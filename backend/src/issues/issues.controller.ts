@@ -40,8 +40,8 @@ export class IssuesController {
   }
 
   @Post('retention/cleanup')
-  retentionCleanup(@Body() dto: RetentionCleanupDto) {
-    return this.issues.runRetentionCleanup(dto.retention_days, dto.dry_run);
+  retentionCleanup(@CurrentUser() user: AuthUser, @Body() dto: RetentionCleanupDto) {
+    return this.issues.runRetentionCleanup(user, dto.retention_days, dto.dry_run);
   }
 
   @Post('resolve-stack')
@@ -60,7 +60,7 @@ export class IssuesController {
     @Param('id') id: string,
     @Body() dto: UpdateStatusDto,
   ) {
-    return this.issues.updateStatus(user.id, id, dto.status);
+    return this.issues.updateStatus(user, id, dto.status);
   }
 
   @Post(':id/replay-token')

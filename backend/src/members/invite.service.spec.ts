@@ -26,10 +26,10 @@ describe('InviteService', () => {
     delete process.env.PLATFORM_URL
   })
 
-  it('invites a new address with redirectTo the platform login', async () => {
+  it('invites a new address with redirectTo the platform accept-invite page', async () => {
     invite.mockResolvedValue({ data: {}, error: null })
     const result = await service.sendProjectInvite('new@acme.com', 'Proj')
-    expect(invite).toHaveBeenCalledWith('new@acme.com', { redirectTo: 'https://app.example.com/login' })
+    expect(invite).toHaveBeenCalledWith('new@acme.com', { redirectTo: 'https://app.example.com/accept-invite' })
     expect(result).toEqual({ sent: true })
   })
 
@@ -37,7 +37,14 @@ describe('InviteService', () => {
     delete process.env.PLATFORM_URL
     invite.mockResolvedValue({ data: {}, error: null })
     await service.sendProjectInvite('new@acme.com', 'Proj')
-    expect(invite).toHaveBeenCalledWith('new@acme.com', { redirectTo: 'http://localhost:3000/login' })
+    expect(invite).toHaveBeenCalledWith('new@acme.com', { redirectTo: 'http://localhost:3000/accept-invite' })
+  })
+
+  it('does not double the slash when PLATFORM_URL ends with one', async () => {
+    process.env.PLATFORM_URL = 'https://app.example.com/'
+    invite.mockResolvedValue({ data: {}, error: null })
+    await service.sendProjectInvite('new@acme.com', 'Proj')
+    expect(invite).toHaveBeenCalledWith('new@acme.com', { redirectTo: 'https://app.example.com/accept-invite' })
   })
 
   it('reports error for 422 with an unrelated message', async () => {

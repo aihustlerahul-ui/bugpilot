@@ -31,9 +31,10 @@ describe('IssuesService', () => {
 
   describe('attachVideo', () => {
     it('throws NotFoundException when issue does not belong to user', async () => {
-      const single = jest.fn().mockResolvedValue({ data: null, error: { message: 'not found' } });
-      const update = jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ single }) }) }) });
-      const supabase = { db: { from: jest.fn().mockReturnValue({ update }) } } as unknown as SupabaseService;
+      const maybeSingle = jest.fn().mockResolvedValue({ data: null, error: null });
+      const lookup = { eq: jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ maybeSingle }) }) };
+      const update = jest.fn();
+      const supabase = { db: { from: jest.fn().mockReturnValue({ update, select: jest.fn().mockReturnValue(lookup) }) } } as unknown as SupabaseService;
 
       const module = await Test.createTestingModule({
         providers: [
@@ -49,12 +50,15 @@ describe('IssuesService', () => {
       await expect(
         service.attachVideo('user-1', 'issue-1', { videoStoragePath: 'user-1/project-1/1700-video.webm' }),
       ).rejects.toThrow(NotFoundException);
+      expect(update).not.toHaveBeenCalled();
     });
 
     it('updates video_storage_path and returns the issue', async () => {
       const single = jest.fn().mockResolvedValue({ data: { id: 'issue-1', reporter_id: 'user-1', video_storage_path: 'user-1/project-1/1700-video.webm' }, error: null });
       const update = jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ single }) }) }) });
-      const supabase = { db: { from: jest.fn().mockReturnValue({ update }) } } as unknown as SupabaseService;
+      const maybeSingle = jest.fn().mockResolvedValue({ data: { id: 'issue-1', project_id: 'project-1' }, error: null });
+      const lookup = { eq: jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ maybeSingle }) }) };
+      const supabase = { db: { from: jest.fn().mockReturnValue({ update, select: jest.fn().mockReturnValue(lookup) }) } } as unknown as SupabaseService;
 
       const module = await Test.createTestingModule({
         providers: [
@@ -282,7 +286,9 @@ describe('IssuesService', () => {
       }).compile();
       const service = module.get(IssuesService);
 
-      const result = await service.runRetentionCleanup(14, false);
+      process.env.RETENTION_ADMIN_USER_IDS = 'admin-1';
+      const result = await service.runRetentionCleanup({ id: 'admin-1', email: '' }, 14, false);
+      delete process.env.RETENTION_ADMIN_USER_IDS;
       expect(result.cleanedCount).toBe(1);
       expect(result.freedReplays).toBe(1);
       expect(result.freedVideos).toBe(1);
@@ -346,11 +352,13 @@ describe('IssuesService', () => {
       });
       const update = jest.fn().mockReturnValue({
         eq: jest.fn().mockReturnValue({
-          select: jest.fn().mockReturnValue({ single }),
+          eq: jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ single }) }),
         }),
       });
+      const maybeSingle = jest.fn().mockResolvedValue({ data: { id: 'issue-1', project_id: 'proj-1' }, error: null });
+      const select = jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ maybeSingle }) });
       const supabase = {
-        db: { from: jest.fn().mockReturnValue({ update }) },
+        db: { from: jest.fn().mockReturnValue({ update, select }) },
       } as unknown as SupabaseService;
 
       const module = await Test.createTestingModule({
@@ -364,19 +372,18 @@ describe('IssuesService', () => {
       }).compile();
       const service = module.get(IssuesService);
 
-      const result = await service.updateStatus('user-1', 'issue-1', 'In Dev');
+      const result = await service.updateStatus({ id: 'user-1', email: '' }, 'issue-1', 'In Dev');
+      expect(mockAccessService.getProjectRole).toHaveBeenCalledWith({ id: 'user-1', email: '' }, 'proj-1');
       expect(result.status).toBe('In Dev');
     });
 
     it('throws NotFoundException when issue not found', async () => {
       const single = jest.fn().mockResolvedValue({ data: null, error: { message: 'not found' } });
-      const update = jest.fn().mockReturnValue({
-        eq: jest.fn().mockReturnValue({
-          select: jest.fn().mockReturnValue({ single }),
-        }),
-      });
+      const update = jest.fn();
+      const maybeSingle = jest.fn().mockResolvedValue({ data: null, error: null });
+      const select = jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ maybeSingle }) });
       const supabase = {
-        db: { from: jest.fn().mockReturnValue({ update }) },
+        db: { from: jest.fn().mockReturnValue({ update, select }) },
       } as unknown as SupabaseService;
 
       const module = await Test.createTestingModule({
@@ -390,7 +397,8 @@ describe('IssuesService', () => {
       }).compile();
       const service = module.get(IssuesService);
 
-      await expect(service.updateStatus('user-1', 'issue-missing', 'Resolved')).rejects.toThrow(NotFoundException);
+      await expect(service.updateStatus({ id: 'user-1', email: '' }, 'issue-missing', 'Resolved')).rejects.toThrow(NotFoundException);
+      expect(update).not.toHaveBeenCalled();
     });
   });
 

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { safeFetchJson, SafeFetchOptions, SsrfBlockedError } from './ssrf-guard';
 
 export interface ResolvedLocation {
   originalFile: string;
@@ -13,6 +14,8 @@ export interface ResolvedLocation {
 export class SourceMapService {
   private readonly logger = new Logger(SourceMapService.name);
   private readonly sourceMapCache = new Map<string, { map: any; fetchedAt: number }>();
+  /** Overridable in tests (DNS lookup / fetch). */
+  fetchOptions: SafeFetchOptions = {};
 
   /**
    * Resolve a single minified source location back to original source
@@ -118,17 +121,15 @@ export class SourceMapService {
 
     try {
       const mapUrl = fileUrl.endsWith('.map') ? fileUrl : `${fileUrl}.map`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4000);
-
-      const res = await fetch(mapUrl, { signal: controller.signal });
-      clearTimeout(timeout);
-
-      if (!res.ok) return null;
-      const json = await res.json();
+      // User-supplied URL: SSRF-guarded (public http(s) only, re-checked redirects, size/time caps)
+      const json = await safeFetchJson(mapUrl, { timeoutMs: 4000, maxBytes: 5 * 1024 * 1024, ...this.fetchOptions });
+      if (!json) return null;
       this.sourceMapCache.set(fileUrl, { map: json, fetchedAt: Date.now() });
       return json;
-    } catch {
+    } catch (err) {
+      if (err instanceof SsrfBlockedError) {
+        this.logger.warn(`Refused source map fetch: ${err.message}`);
+      }
       return null;
     }
   }

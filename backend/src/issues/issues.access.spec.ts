@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { IssuesService } from './issues.service';
 import { AccessService } from '../access/access.service';
 
@@ -7,13 +7,17 @@ type Row = Record<string, any>;
 // Minimal in-memory supabase fake supporting select/eq/in/ilike/order/single/maybeSingle/insert.
 function makeDb(tables: Record<string, Row[]>) {
   const inserted: Row[] = [];
+  const updated: Array<{ table: string; patch: Row; ids: string[] }> = [];
   const db = {
     from(table: string) {
       let rows = [...(tables[table] ?? [])];
       let pendingInsert: Row | null = null;
+      let pendingUpdate: Row | null = null;
       const b: any = {
+        update: (patch: Row) => ((pendingUpdate = patch), b),
         select: () => b,
         order: () => b,
+        lt: (k: string, v: any) => ((rows = rows.filter((r) => String(r[k]) < String(v))), b),
         eq: (k: string, v: any) => ((rows = rows.filter((r) => r[k] === v)), b),
         in: (k: string, v: any[]) => ((rows = rows.filter((r) => v.includes(r[k]))), b),
         ilike: (k: string, v: string) => (
@@ -25,14 +29,21 @@ function makeDb(tables: Record<string, Row[]>) {
           return b;
         },
         maybeSingle: () => Promise.resolve({ data: rows[0] ?? null, error: null }),
-        single: () =>
-          Promise.resolve(
+        single: () => {
+          if (pendingUpdate) {
+            const target = rows[0];
+            if (!target) return Promise.resolve({ data: null, error: { message: 'no rows' } });
+            updated.push({ table, patch: pendingUpdate, ids: rows.map((r) => r.id) });
+            return Promise.resolve({ data: { ...target, ...pendingUpdate }, error: null });
+          }
+          return Promise.resolve(
             pendingInsert
               ? { data: pendingInsert, error: null }
               : rows[0]
                 ? { data: rows[0], error: null }
                 : { data: null, error: { message: 'no rows' } },
-          ),
+          );
+        },
         then: (res: any, rej: any) => Promise.resolve({ data: rows, error: null }).then(res, rej),
       };
       return b;
@@ -41,11 +52,11 @@ function makeDb(tables: Record<string, Row[]>) {
       from: () => ({ createSignedUrl: async () => ({ data: null }), upload: async () => ({ error: null }) }),
     },
   };
-  return { db, inserted };
+  return { db, inserted, updated };
 }
 
 const OWNER = { id: 'owner-1', email: 'owner@team.com' };
-const MEMBER = { id: 'member-1', email: 'Jane@Team.com' };
+const MEMBER = { id: 'member-1', email: 'Jane@Team.com', emailVerified: true };
 const STRANGER = { id: 'x-1', email: 'x@else.com' };
 
 function build() {
@@ -61,7 +72,7 @@ function build() {
       { id: 'i2', project_id: 'p2', reporter_id: 'owner-1', status: 'Resolved', severity: 'Low', created_at: '2026-01-04' },
     ],
   };
-  const { db, inserted } = makeDb(tables);
+  const { db, inserted, updated } = makeDb(tables);
   const supabase: any = { db };
   const workspaces: any = {
     findByOwner: jest.fn(async (userId: string) => {
@@ -71,7 +82,7 @@ function build() {
   };
   const access = new AccessService(supabase, workspaces);
   const service = new IssuesService(supabase, {} as any, workspaces, access);
-  return { service, inserted };
+  return { service, inserted, updated };
 }
 
 describe('IssuesService project access', () => {
@@ -161,6 +172,118 @@ describe('IssuesService project access', () => {
     it('stranger gets the empty default', async () => {
       const { service } = build();
       expect((await service.getDashboardMetrics(STRANGER)).total).toBe(0);
+    });
+  });
+
+  describe('updateStatus (I1b)', () => {
+    it('lets the project owner change status', async () => {
+      const { service, updated } = build();
+      const res = await service.updateStatus(OWNER, 'i1', 'In Dev');
+      expect(res.status).toBe('In Dev');
+      expect(updated).toEqual([{ table: 'issues', patch: { status: 'In Dev' }, ids: ['i1'] }]);
+    });
+
+    it('refuses a member, even the reporter, and writes nothing', async () => {
+      const { service, updated } = build();
+      await expect(service.updateStatus(MEMBER, 'i1', 'Closed')).rejects.toThrow(NotFoundException);
+      expect(updated).toHaveLength(0);
+    });
+
+    it('refuses a user from another tenant and writes nothing', async () => {
+      const { service, updated } = build();
+      await expect(service.updateStatus(STRANGER, 'i2', 'Closed')).rejects.toThrow(NotFoundException);
+      expect(updated).toHaveLength(0);
+    });
+
+    it('404s for a missing issue', async () => {
+      const { service } = build();
+      await expect(service.updateStatus(OWNER, 'nope', 'Closed')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('client-supplied storage paths (I1d)', () => {
+    it('create rejects a videoStoragePath outside user/project', async () => {
+      const { service, inserted } = build();
+      for (const videoStoragePath of [
+        'owner-1/p1/1-video.webm',
+        'member-1/p2/1-video.webm',
+        'member-1/p1/../../owner-1/p1/x.webm',
+        'p1/member-1/x.webm',
+      ]) {
+        await expect(service.create(MEMBER, { ...dto, videoStoragePath })).rejects.toThrow(BadRequestException);
+      }
+      expect(inserted).toHaveLength(0);
+    });
+
+    it('create accepts the reporter\'s own path', async () => {
+      const { service, inserted } = build();
+      await service.create(MEMBER, { ...dto, videoStoragePath: 'member-1/p1/1-video.webm' });
+      expect(inserted[0].video_storage_path).toBe('member-1/p1/1-video.webm');
+    });
+
+    it('attachVideo rejects foreign video, webcam or thumbnail paths', async () => {
+      const { service, updated } = build();
+      await expect(
+        service.attachVideo('member-1', 'i1', { videoStoragePath: 'owner-1/p2/x.webm' }),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.attachVideo('member-1', 'i1', {
+          videoStoragePath: 'member-1/p1/x.webm',
+          webcamStoragePath: 'owner-1/p1/cam.webm',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.attachVideo('member-1', 'i1', {
+          videoStoragePath: 'member-1/p1/x.webm',
+          thumbnailStoragePath: 'member-1/p2/t.jpg',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(updated).toHaveLength(0);
+    });
+
+    it('attachVideo accepts paths under the reporter and the issue\'s project', async () => {
+      const { service, updated } = build();
+      await service.attachVideo('member-1', 'i1', {
+        videoStoragePath: 'member-1/p1/x.webm',
+        thumbnailStoragePath: 'member-1/p1/t.jpg',
+      });
+      expect(updated[0].patch).toEqual({
+        video_storage_path: 'member-1/p1/x.webm',
+        thumbnail_storage_path: 'member-1/p1/t.jpg',
+      });
+    });
+
+    it('attachVideo 404s for an issue the user did not report', async () => {
+      const { service } = build();
+      await expect(
+        service.attachVideo('member-1', 'i2', { videoStoragePath: 'member-1/p2/x.webm' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('retention cleanup (I1a)', () => {
+    const OLD = process.env.RETENTION_ADMIN_USER_IDS;
+    afterEach(() => {
+      if (OLD === undefined) delete process.env.RETENTION_ADMIN_USER_IDS;
+      else process.env.RETENTION_ADMIN_USER_IDS = OLD;
+    });
+
+    it('denies everyone when RETENTION_ADMIN_USER_IDS is unset', async () => {
+      delete process.env.RETENTION_ADMIN_USER_IDS;
+      const { service } = build();
+      await expect(service.runRetentionCleanup(OWNER, 14, true)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('denies users not in the allow-list', async () => {
+      process.env.RETENTION_ADMIN_USER_IDS = 'admin-1, admin-2';
+      const { service } = build();
+      await expect(service.runRetentionCleanup(OWNER, 14, true)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('allows an allow-listed user', async () => {
+      process.env.RETENTION_ADMIN_USER_IDS = 'admin-1, owner-1';
+      const { service } = build();
+      await expect(service.runRetentionCleanup(OWNER, 14, true)).resolves.toBeDefined();
     });
   });
 });

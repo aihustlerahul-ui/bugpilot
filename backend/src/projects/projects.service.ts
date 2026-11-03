@@ -3,7 +3,7 @@ import { SupabaseService } from '../supabase/supabase.service'
 import { WorkspacesService } from '../workspaces/workspaces.service'
 import { CreateProjectDto } from './dto/create-project.dto'
 import { UpdateProjectDto } from './dto/update-project.dto'
-import { AccessService } from '../access/access.service'
+import { AccessService, MEMBER_PROJECT_COLUMNS, toMemberProjectView } from '../access/access.service'
 import { AuthUser } from '../common/interfaces/auth-user.interface'
 
 @Injectable()
@@ -33,11 +33,12 @@ export class ProjectsService {
     const role = await this.access.assertCanAccessProject(user, projectId)
     const { data, error } = await this.supabase.db
       .from('projects')
-      .select('*')
+      .select(role === 'member' ? MEMBER_PROJECT_COLUMNS : '*')
       .eq('id', projectId)
       .single()
     if (error) throw new NotFoundException('Project not found')
-    return { ...data, role }
+    const row = data as unknown as Record<string, any>
+    return role === 'member' ? { ...toMemberProjectView(row), role } : { ...row, role }
   }
 
   private async findOwned(userId: string, projectId: string) {

@@ -1,12 +1,19 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common'
+import { Injectable, BadRequestException, Logger, NotFoundException } from '@nestjs/common'
 import { SupabaseService } from '../supabase/supabase.service'
 import { WorkspacesService } from '../workspaces/workspaces.service'
 import { InviteService } from './invite.service'
+
+export interface InviteStatus {
+  sent: boolean
+  reason?: 'already-registered' | 'already-linked' | 'error'
+}
 import type { CreateMemberDto } from './dto/create-member.dto'
 import type { AddProjectMemberDto } from './dto/add-project-member.dto'
 
 @Injectable()
 export class MembersService {
+  private readonly logger = new Logger(MembersService.name)
+
   constructor(
     private readonly supabase: SupabaseService,
     private readonly workspaces: WorkspacesService,
@@ -176,6 +183,7 @@ export class MembersService {
       .from('project_members')
       .upsert({ project_id: projectId, member_id: member.id }, { onConflict: 'project_id,member_id', ignoreDuplicates: true })
 
+    let invite: InviteStatus = { sent: false, reason: 'already-linked' }
     if (!existingLink) {
       // Best-effort: nothing here may fail addToProject after the link exists
       try {
@@ -184,13 +192,15 @@ export class MembersService {
           .select('name')
           .eq('id', projectId)
           .maybeSingle()
-        await this.invites.sendProjectInvite(member.email, project?.name ?? 'a project')
-      } catch {
-        // ignore
+        invite = await this.invites.sendProjectInvite(member.email, project?.name ?? 'a project')
+      } catch (err: any) {
+        // No email addresses or tokens in logs.
+        this.logger.warn(`Project invite failed for project ${projectId}: ${err?.message ?? 'unknown error'}`)
+        invite = { sent: false, reason: 'error' }
       }
     }
 
-    return member
+    return { ...member, invite }
   }
 
   async removeFromProject(userId: string, projectId: string, memberId: string) {

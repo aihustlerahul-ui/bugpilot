@@ -55,6 +55,6 @@ describe('IssuesController', () => {
 
     const result = await controller.updateStatus(mockUser, 'issue-1', { status: 'In Dev' });
     expect(result).toBe(expected);
-    expect(service.updateStatus).toHaveBeenCalledWith('user-123', 'issue-1', 'In Dev');
+    expect(service.updateStatus).toHaveBeenCalledWith(mockUser, 'issue-1', 'In Dev');
   });
 });

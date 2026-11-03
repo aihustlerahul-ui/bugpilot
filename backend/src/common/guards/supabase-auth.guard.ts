@@ -19,7 +19,11 @@ export class SupabaseAuthGuard implements CanActivate {
     const { data: { user }, error } = await this.supabase.db.auth.getUser(token)
     if (error || !user) throw new UnauthorizedException()
 
-    request.user = { id: user.id, email: user.email ?? '' }
+    request.user = {
+      id: user.id,
+      email: user.email ?? '',
+      emailVerified: !!user.email_confirmed_at,
+    }
     return true
   }
 }

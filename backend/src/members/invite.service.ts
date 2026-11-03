@@ -15,9 +15,11 @@ export class InviteService {
   /** Never throws: callers must not fail because an invite could not be sent. */
   async sendProjectInvite(email: string, projectName: string): Promise<InviteResult> {
     try {
-      const platformUrl = process.env.PLATFORM_URL ?? 'http://localhost:3000'
+      const platformUrl = (process.env.PLATFORM_URL ?? 'http://localhost:3000').replace(/\/+$/, '')
+      // The accept-invite page exchanges the invite token and lets the tester set a password.
+      // This URL must be in the Supabase Auth redirect allow-list (see docs/mobile-qa/AUTH_SETUP.md).
       const { error } = await this.supabase.db.auth.admin.inviteUserByEmail(email, {
-        redirectTo: `${platformUrl}/login`,
+        redirectTo: `${platformUrl}/accept-invite`,
       })
       if (!error) return { sent: true }
 

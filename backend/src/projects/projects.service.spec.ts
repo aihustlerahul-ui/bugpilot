@@ -2,7 +2,7 @@ import { NotFoundException } from '@nestjs/common'
 import { ProjectsService } from './projects.service'
 
 const owner = { id: 'u-owner', email: 'owner@x.com' }
-const member = { id: 'u-member', email: 'member@x.com' }
+const member = { id: 'u-member', email: 'member@x.com', emailVerified: true }
 
 function makeSupabase(rows: Record<string, any>) {
   // chainable query builder resolving to a project row by id
@@ -37,7 +37,15 @@ function makeSupabase(rows: Record<string, any>) {
 describe('ProjectsService member access', () => {
   const rows = {
     p1: { id: 'p1', name: 'Own', workspace_id: 'ws1', settings: {} },
-    p2: { id: 'p2', name: 'Shared', workspace_id: 'ws1', settings: {} },
+    p2: {
+      id: 'p2',
+      name: 'Shared',
+      workspace_id: 'ws1',
+      sync_mode: 'manual',
+      created_at: '2026-01-01',
+      settings: { description: 'd', default_view: 'table', azure_pat_hint: 'owner-only' },
+      owner_only_column: 'x',
+    },
   }
   let access: any
   let workspaces: any
@@ -66,7 +74,15 @@ describe('ProjectsService member access', () => {
 
   it('findOne returns a shared project with role for a member', async () => {
     access.assertCanAccessProject.mockResolvedValue('member')
-    await expect(service.findOne(member, 'p2')).resolves.toEqual({ ...rows.p2, role: 'member' })
+    await expect(service.findOne(member, 'p2')).resolves.toEqual({
+      id: 'p2',
+      name: 'Shared',
+      workspace_id: 'ws1',
+      sync_mode: 'manual',
+      created_at: '2026-01-01',
+      settings: { description: 'd', default_view: 'table' },
+      role: 'member',
+    })
   })
 
   it('findOne throws NotFoundException for a project the user cannot access', async () => {

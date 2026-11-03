@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateIssueDto } from './dto/create-issue.dto';
 import { AttachVideoDto } from './dto/attach-video.dto';
@@ -13,6 +13,7 @@ import { WorkspacesService } from '../workspaces/workspaces.service';
 import { AccessService } from '../access/access.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { randomUUID } from 'crypto';
+import { assertOwnedStoragePath } from './storage-path';
 
 interface ChunkSession {
   uploadId: string;
@@ -167,7 +168,19 @@ export class IssuesService {
   }
 
   // ── Data Retention Policy & Cleanup ───────────────────────────────────────
-  async runRetentionCleanup(retentionDays = 14, dryRun = false) {
+  /** Global cleanup touches every tenant: only ids in RETENTION_ADMIN_USER_IDS may run it. */
+  private assertRetentionAdmin(user: AuthUser) {
+    const allowed = (process.env.RETENTION_ADMIN_USER_IDS ?? '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
+    if (!user?.id || !allowed.includes(user.id)) {
+      throw new ForbiddenException('Not allowed to run retention cleanup');
+    }
+  }
+
+  async runRetentionCleanup(user: AuthUser, retentionDays = 14, dryRun = false) {
+    this.assertRetentionAdmin(user);
     const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
     
     // Query issues older than retention policy
@@ -394,6 +407,7 @@ export class IssuesService {
 
   async create(user: AuthUser, dto: CreateIssueDto) {
     await this.access.assertCanAccessProject(user, dto.project_id);
+    assertOwnedStoragePath(dto.videoStoragePath, user.id, dto.project_id);
     const userId = user.id;
     const timestamp = Date.now();
     const basePath = `${userId}/${dto.project_id}/${timestamp}`;
@@ -541,6 +555,17 @@ export class IssuesService {
   }
 
   async attachVideo(userId: string, issueId: string, dto: AttachVideoDto) {
+    const { data: issue } = await this.supabase.db
+      .from('issues')
+      .select('id, project_id')
+      .eq('id', issueId)
+      .eq('reporter_id', userId)
+      .maybeSingle();
+    if (!issue) throw new NotFoundException('Issue not found');
+    for (const path of [dto.videoStoragePath, dto.webcamStoragePath, dto.thumbnailStoragePath]) {
+      assertOwnedStoragePath(path, userId, issue.project_id);
+    }
+
     const patch: { video_storage_path: string; webcam_storage_path?: string; thumbnail_storage_path?: string } = {
       video_storage_path: dto.videoStoragePath,
     };
@@ -630,11 +655,22 @@ export class IssuesService {
     return { ok: true };
   }
 
-  async updateStatus(userId: string, issueId: string, status: string) {
+  /** Triage is owner-only: members (including the reporter) cannot change status. */
+  async updateStatus(user: AuthUser, issueId: string, status: string) {
+    const { data: issue } = await this.supabase.db
+      .from('issues')
+      .select('id, project_id')
+      .eq('id', issueId)
+      .maybeSingle();
+    if (!issue) throw new NotFoundException('Issue not found');
+    const role = await this.access.getProjectRole(user, issue.project_id);
+    if (role !== 'owner') throw new NotFoundException('Issue not found');
+
     const { data, error } = await this.supabase.db
       .from('issues')
       .update({ status })
       .eq('id', issueId)
+      .eq('project_id', issue.project_id)
       .select()
       .single();
 
