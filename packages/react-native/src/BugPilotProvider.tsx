@@ -49,14 +49,14 @@ function createAuthKit(config: BugPilotConfig, onSignedOut: () => void): AuthKit
 
 /** Render failures inside SDK overlays hide the overlay instead of crashing the host. */
 class OverlayErrorBoundary extends Component<{ children: React.ReactNode }, { failed: boolean }> {
-  state = { failed: false };
+  override state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
   }
-  componentDidCatch() {
+  override componentDidCatch() {
     // Intentionally silent: no host crash, no logging of SDK state.
   }
-  render() {
+  override render() {
     return this.state.failed ? null : this.props.children;
   }
 }

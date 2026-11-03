@@ -126,6 +126,8 @@ Do **not** invent CSS/XPath. Do **not** rely on private Fiber APIs for v1.
 
 ## Docs
 
+- `docs/mobile-qa/REACT_NATIVE_INTEGRATION.md` — **how to integrate and use this package**
+- `docs/mobile-qa/AUTH_SETUP.md` — required Supabase settings for tester sign-in
 - `docs/mobile-qa/TRACK_A_PHASE2.md` (this phase)
 - `docs/mobile-qa/TRACK_A_PHASE1.md` (scaffold)
 - `docs/mobile-qa/ARCHITECTURE.md`

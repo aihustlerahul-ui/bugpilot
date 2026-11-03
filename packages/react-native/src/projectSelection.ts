@@ -27,7 +27,7 @@ export function resolveInitialProject(
     return { projectId: null, error: LOCKED_PROJECT_UNAVAILABLE };
   }
   if (projects.length === 0) return { projectId: null };
-  if (projects.length === 1) return { projectId: projects[0].id };
+  if (projects.length === 1 && projects[0]) return { projectId: projects[0].id };
   if (has(lastProjectId)) return { projectId: lastProjectId };
   return { projectId: null };
 }

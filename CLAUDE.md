@@ -37,10 +37,17 @@ project-3/
 │   │   └── settings/   # workspace settings
 │   ├── components/     # ConnectorPanel, etc.
 │   └── lib/api/client.ts  # typed fetch wrapper (get/post/patch)
+├── packages/
+│   ├── react-native/   # @bugpilot/react-native — in-app reporter (FAB → select → form), sign-in, project switch
+│   └── mcp-server/     # read-only MCP wrapper over REST (Track C)
+├── docs/mobile-qa/     # mobile QA architecture, integration guide, auth setup
 ├── backend/src/
 │   ├── issues/         # POST /issues (screenshot upload to Supabase Storage)
 │   ├── projects/       # CRUD /projects
 │   ├── workspaces/     # /workspaces/settings (GET + PATCH, JSONB)
+│   ├── auth/           # public POST /auth/login + /auth/refresh (throttled), used by the RN SDK
+│   ├── access/         # AccessService: owner OR verified-email project member (list/read/create issues)
+│   ├── members/        # team + project members, invite email on add
 │   ├── integrations/   # Azure DevOps PAT encrypt/decrypt, work item creation
 │   └── supabase/       # @Global() SupabaseModule, SupabaseService
 ├── PRODUCT.md          # Product overview — keep updated as features land
@@ -91,6 +98,12 @@ POST /api/issues
 - `GET /api/workspaces/settings` → returns `{ screenshotMode, captureConsole, captureNetwork, multiTabRecording, ... }`
 - `PATCH /api/workspaces/settings` → merges patch into existing settings
 - Extension syncs on sidepanel load AND recording start via `SYNC_SETTINGS` → caches as `qa_ext_settings`
+
+### Mobile (React Native) reporter
+- Package `packages/react-native`; guide: `docs/mobile-qa/REACT_NATIVE_INTEGRATION.md`; Supabase setup: `docs/mobile-qa/AUTH_SETUP.md`
+- Testers sign in inside the app via `POST /api/auth/login`; session in secure storage; project picker from `GET /api/projects`
+- Access: project owners, plus members whose **confirmed** email matches `workspace_members.email` linked via `project_members` (see `backend/src/access`). Members may list/read projects and create/list/read issues in them; settings, integrations, status changes and member management stay owner-only
+- Mobile issues: `metadata.captureSource === 'rn-reporter'`, `route` = screen name, `url` empty, device/app version in `browser_info`, element in `element_info`
 
 ### Multi-tab Recording
 - Enabled per workspace via `settings.multiTabRecording`; toggle in Extension Settings page

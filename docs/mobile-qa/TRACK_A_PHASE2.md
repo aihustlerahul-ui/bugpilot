@@ -71,6 +71,13 @@ EXPO_PUBLIC_BUGPILOT_ACCESS_TOKEN=<Supabase JWT access_token>
 
 Nest must be up. Placeholder project UUID is rejected.
 
+## Update 2026-11-04 — in-app sign-in, project switching, member access
+
+- Auth v1 (env-var JWT) is **superseded**: testers sign in inside the app (`POST /api/auth/login`), sessions persist via a secure-store adapter, projects come from `GET /api/projects`. Env token remains only as a CI override (`getAccessToken`).
+- Backend: `access/`, `auth/`, member invites (`/accept-invite`), authorization fixes from the final review.
+- Integration guide: [REACT_NATIVE_INTEGRATION.md](./REACT_NATIVE_INTEGRATION.md); Supabase settings: [AUTH_SETUP.md](./AUTH_SETUP.md).
+- **Not yet run end to end on a simulator** (needs a real invited tester account). Tallect host wiring in `src/qa/BugPilotDevRoot.tsx` still uses the old env-token pattern and must be updated by that repo's owner (see the guide, section 3).
+
 ## Related
 
 - [TRACK_A_PHASE1.md](./TRACK_A_PHASE1.md)
