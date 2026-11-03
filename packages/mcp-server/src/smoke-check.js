@@ -1,22 +1,28 @@
 /**
- * Optional local smoke — requires BUGPILOT_ACCESS_TOKEN + running Nest.
- * Does not fabricate results; exits non-zero on failure.
+ * Optional live smoke. Needs a running Nest API plus credentials:
+ *   BUGPILOT_API_KEY + BUGPILOT_WORKSPACE_ID (or legacy BUGPILOT_ACCESS_TOKEN).
+ * Read-only. Exits non-zero on failure. Never prints the credential.
  */
-import { apiGet, getConfig } from './client.js';
+import { apiRequest, getConfig } from './client.js';
+
+const count = (v) => (Array.isArray(v) ? v.length : '?');
 
 async function main() {
   const { apiUrl, defaultProjectId } = getConfig();
-  console.log(`GET ${apiUrl}/api/projects …`);
-  const projects = await apiGet('/api/projects');
-  const count = Array.isArray(projects) ? projects.length : '?';
-  console.log(`OK projects=${count}`);
-  if (defaultProjectId) {
-    console.log(`GET issues for ${defaultProjectId} …`);
-    const issues = await apiGet(`/api/issues/project/${encodeURIComponent(defaultProjectId)}`);
-    console.log(`OK issues=${Array.isArray(issues) ? issues.length : '?'}`);
-  } else {
-    console.log('Skip list_issues (BUGPILOT_PROJECT_ID unset)');
+  console.log(`GET ${apiUrl}/api/projects ...`);
+  const projects = await apiRequest('GET', '/api/projects');
+  console.log(`OK projects=${count(projects)}`);
+
+  const projectId = defaultProjectId ?? (Array.isArray(projects) ? projects[0]?.id : undefined);
+  if (!projectId) {
+    console.log('Skip issues/members (no project available; set BUGPILOT_PROJECT_ID)');
+    return;
   }
+  const pid = encodeURIComponent(projectId);
+  const issues = await apiRequest('GET', `/api/issues/project/${pid}`);
+  console.log(`OK issues=${count(issues)}`);
+  const members = await apiRequest('GET', `/api/issues/project/${pid}/members`);
+  console.log(`OK members=${count(members)}`);
 }
 
 main().catch((e) => {

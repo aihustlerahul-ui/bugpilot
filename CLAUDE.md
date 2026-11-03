@@ -121,6 +121,13 @@ POST /api/issues
   - *Stop & attach* → `STOP_AND_ATTACH_REPLAY` → calls `saveRecording` / `saveMultiTabRecording` normally
 - `postIssue` reads `qa_saved_replay` and attaches it if URL matches; clears after successful submit
 
+### AI tool / MCP access
+- Dashboard **AI Tools** page (`/ai-tools`) creates/revokes personal API keys (`backend/src/api-keys`); `SupabaseAuthGuard` routes `bp_` bearer tokens to key auth (confirmed email, `X-Workspace-Id`, workspace access check)
+- `packages/mcp-server` (stdio MCP for Cursor) calls the allowlisted routes with `BUGPILOT_API_KEY` + `BUGPILOT_WORKSPACE_ID`; tools: list/get projects and issues, list_members, add_comment, update_issue_status, assign_issue, assign_to_reporter
+- Non-owner members may only set status `Resolved`; comments carry a source (`mcp` shows an AI badge in `IssueComments.tsx`)
+- Migrations `20261104_api_keys.sql`, `20261104_issue_comments.sql`, `20261104_issue_assignee_member.sql` are run manually in Supabase
+- Live verification (migrations, smoke, Cursor end-to-end) is pending; see `docs/mobile-qa/MCP_SERVER.md`
+
 ---
 
 ## Key Files to Know
@@ -136,6 +143,9 @@ POST /api/issues
 | `backend/src/integrations/encryption.service.ts` | AES-256-GCM encrypt/decrypt for PATs |
 | `platform/lib/api/client.ts` | `get<T>()`, `post<T>()`, `patch<T>()` typed fetch wrappers |
 | `platform/app/(dashboard)/extension/page.tsx` | Extension settings page — screenshot mode, toggles, multi-tab recording |
+| `backend/src/api-keys/` | Personal API key create/list/revoke, SHA-256 hashing, `verify()` |
+| `backend/src/common/guards/supabase-auth.guard.ts` | JWT auth plus `bp_` API-key path (allowlist + workspace header) |
+| `packages/mcp-server/` | MCP server for Cursor: bug read/comment/assign/resolve tools |
 | `platform/components/ReplayPlayer.tsx` | rrweb replay player — single and multi-stream with tab strip |
 
 ---
@@ -147,6 +157,7 @@ POST /api/issues
 3. Screenshots in **private** Supabase Storage bucket — accessed via signed URLs only
 4. All API routes validate Supabase JWT via `supabase.auth.getUser(token)` before processing
 5. Content script uses `!important` on all styles and `qa-` prefix on all class names to avoid conflicts
+6. Personal API keys (`bp_live_...`) are stored as SHA-256 hashes, shown once, and accepted only on routes marked `@ApiKeyAllowed()`; they also require an `X-Workspace-Id` header. Changing the allowed set means updating `common/decorators/api-key-allowlist.spec.ts` deliberately
 
 ---
 
