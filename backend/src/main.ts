@@ -1,9 +1,26 @@
 import { NestFactory } from '@nestjs/core'
 import { AppModule } from './app.module'
 import { ValidationPipe } from '@nestjs/common'
+import { NestExpressApplication } from '@nestjs/platform-express'
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bodyParser: true })
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: true,
+  })
+  // Behind a proxy/load balancer, trust X-Forwarded-For so rate limiting sees real client IPs.
+  const trustProxy = process.env.TRUST_PROXY
+  if (trustProxy) {
+    app.set(
+      'trust proxy',
+      trustProxy === 'true'
+        ? true
+        : trustProxy === 'false'
+          ? false
+          : /^\d+$/.test(trustProxy)
+            ? Number(trustProxy)
+            : trustProxy,
+    )
+  }
   // 220mb accommodates base64-encoded video uploads (see UploadVideoDto.MAX_VIDEO_BASE64_LENGTH)
   app.use(require('express').json({ limit: '220mb' }))
   app.use(require('express').urlencoded({ limit: '220mb', extended: true }))

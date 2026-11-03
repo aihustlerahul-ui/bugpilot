@@ -9,6 +9,7 @@ import { MembersModule } from './members/members.module'
 import { ReplayModule } from './replay/replay.module'
 import { AiModule } from './ai/ai.module'
 import { AccessModule } from './access/access.module'
+import { AuthModule } from './auth/auth.module'
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { AccessModule } from './access/access.module'
     ReplayModule,
     AiModule,
     AccessModule,
+    AuthModule,
   ],
 })
 export class AppModule {}
