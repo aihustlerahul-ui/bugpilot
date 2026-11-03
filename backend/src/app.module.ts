@@ -10,6 +10,7 @@ import { ReplayModule } from './replay/replay.module'
 import { AiModule } from './ai/ai.module'
 import { AccessModule } from './access/access.module'
 import { AuthModule } from './auth/auth.module'
+import { ApiKeysModule } from './api-keys/api-keys.module'
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { AuthModule } from './auth/auth.module'
     AiModule,
     AccessModule,
     AuthModule,
+    ApiKeysModule,
   ],
 })
 export class AppModule {}
