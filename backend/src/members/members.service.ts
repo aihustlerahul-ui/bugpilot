@@ -164,18 +164,31 @@ export class MembersService {
       member = data
     }
 
-    // Link to project (ignore if already linked)
+    // Link to project (ignore if already linked); only invite when the link is new
+    const { data: existingLink } = await this.supabase.db
+      .from('project_members')
+      .select('member_id')
+      .eq('project_id', projectId)
+      .eq('member_id', member.id)
+      .maybeSingle()
+
     await this.supabase.db
       .from('project_members')
       .upsert({ project_id: projectId, member_id: member.id }, { onConflict: 'project_id,member_id', ignoreDuplicates: true })
 
-    // Best-effort invite; sendProjectInvite never throws and must not affect the result
-    const { data: project } = await this.supabase.db
-      .from('projects')
-      .select('name')
-      .eq('id', projectId)
-      .maybeSingle()
-    await this.invites.sendProjectInvite(member.email, project?.name ?? 'a project')
+    if (!existingLink) {
+      // Best-effort: nothing here may fail addToProject after the link exists
+      try {
+        const { data: project } = await this.supabase.db
+          .from('projects')
+          .select('name')
+          .eq('id', projectId)
+          .maybeSingle()
+        await this.invites.sendProjectInvite(member.email, project?.name ?? 'a project')
+      } catch {
+        // ignore
+      }
+    }
 
     return member
   }

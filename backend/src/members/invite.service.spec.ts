@@ -40,8 +40,13 @@ describe('InviteService', () => {
     expect(invite).toHaveBeenCalledWith('new@acme.com', { redirectTo: 'http://localhost:3000/login' })
   })
 
-  it('reports already-registered for status 422', async () => {
-    invite.mockResolvedValue({ data: null, error: { status: 422, message: 'nope' } })
+  it('reports error for 422 with an unrelated message', async () => {
+    invite.mockResolvedValue({ data: null, error: { status: 422, message: 'Signups not allowed' } })
+    expect(await service.sendProjectInvite('a@acme.com', 'Proj')).toEqual({ sent: false, reason: 'error' })
+  })
+
+  it('reports already-registered for 422 with an already-registered message', async () => {
+    invite.mockResolvedValue({ data: null, error: { status: 422, message: 'A user with this email address has already been registered' } })
     expect(await service.sendProjectInvite('a@acme.com', 'Proj')).toEqual({ sent: false, reason: 'already-registered' })
   })
 
@@ -50,9 +55,9 @@ describe('InviteService', () => {
     expect(await service.sendProjectInvite('a@acme.com', 'Proj')).toEqual({ sent: false, reason: 'already-registered' })
   })
 
-  it('reports already-registered when message contains "already"', async () => {
-    invite.mockResolvedValue({ data: null, error: { message: 'User has Already been registered' } })
-    expect(await service.sendProjectInvite('a@acme.com', 'Proj')).toEqual({ sent: false, reason: 'already-registered' })
+  it('reports error when only the message mentions "already" without a 422', async () => {
+    invite.mockResolvedValue({ data: null, error: { message: 'User has already been registered' } })
+    expect(await service.sendProjectInvite('a@acme.com', 'Proj')).toEqual({ sent: false, reason: 'error' })
   })
 
   it('reports error for other Supabase errors', async () => {

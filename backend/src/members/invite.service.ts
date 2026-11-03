@@ -35,10 +35,7 @@ export class InviteService {
   }
 
   private isAlreadyRegistered(error: { status?: number; code?: string; message?: string }): boolean {
-    return (
-      error.status === 422 ||
-      error.code === 'email_exists' ||
-      (error.message ?? '').toLowerCase().includes('already')
-    )
+    if (error.code === 'email_exists') return true
+    return error.status === 422 && /already (been )?registered|already exists/i.test(error.message ?? '')
   }
 }

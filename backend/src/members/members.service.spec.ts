@@ -60,12 +60,12 @@ describe('MembersService', () => {
 
   describe('addToProject', () => {
     const dto = { name: 'Alice', email: 'alice@acme.com' }
-    const stubProject = (upsert: jest.Mock) => {
+    const stubProject = (upsert: jest.Mock, existingLink: any = null) => {
       jest.spyOn(service as any, 'assertProjectBelongsToWorkspace').mockResolvedValue(undefined)
       jest.spyOn(service as any, 'findByEmail').mockResolvedValue(mockMember)
       jest.spyOn(service as any, 'findByName').mockResolvedValue(mockMember)
       db.from = jest.fn((table: string) => {
-        if (table === 'project_members') return { upsert }
+        if (table === 'project_members') return { upsert, select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: existingLink }) }) }) }) }
         return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { name: 'Proj' } }) }) }) }
       })
     }
@@ -86,6 +86,14 @@ describe('MembersService', () => {
       const result = await service.addToProject('user-1', 'proj-1', dto)
       expect(result).toBe(mockMember)
       expect(upsert).toHaveBeenCalled()
+    })
+
+    it('does not re-send the invite when the member is already linked', async () => {
+      const upsert = jest.fn().mockResolvedValue({ error: null })
+      stubProject(upsert, { member_id: 'mem-1' })
+      const result = await service.addToProject('user-1', 'proj-1', dto)
+      expect(result).toBe(mockMember)
+      expect(invites.sendProjectInvite).not.toHaveBeenCalled()
     })
   })
 })
