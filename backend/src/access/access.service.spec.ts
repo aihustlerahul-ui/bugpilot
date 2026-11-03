@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common'
+import { ForbiddenException, NotFoundException } from '@nestjs/common'
 import { AccessService } from './access.service'
 
 type Call = { table: string; filters: Record<string, any> }
@@ -186,6 +186,44 @@ describe('AccessService', () => {
       const s = build({ owner: true })
       expect(await s.getProjectRole({ id: 'u1', email: 'o@x.com', emailVerified: false }, 'p1')).toBe('owner')
       expect((await s.listAccessibleProjects({ id: 'u1', email: '' })).map((p) => p.id)).toEqual(['p1'])
+    })
+  })
+
+  describe('workspace scoping (API keys)', () => {
+    it('listAccessibleProjects with workspaceId excludes other workspaces', async () => {
+      const s = build({ owner: true, memberEmail: 'jane@team.com' })
+      const scoped = await s.listAccessibleProjects({ ...user, workspaceId: 'ws-1' })
+      expect(scoped.map((p) => [p.id, p.role])).toEqual([['p1', 'owner']])
+      const other = await s.listAccessibleProjects({ ...user, workspaceId: 'ws-2' })
+      expect(other.map((p) => [p.id, p.role])).toEqual([['p2', 'member']])
+      expect(await s.listAccessibleProjects({ ...user, workspaceId: 'ws-9' })).toEqual([])
+    })
+
+    it('getProjectRole returns null for a project outside user.workspaceId', async () => {
+      const s = build({ owner: true, memberEmail: 'jane@team.com' })
+      expect(await s.getProjectRole({ ...user, workspaceId: 'ws-1' }, 'p2')).toBeNull()
+      expect(await s.getProjectRole({ ...user, workspaceId: 'ws-1' }, 'p1')).toBe('owner')
+      expect(await s.getProjectRole({ ...user, workspaceId: 'ws-2' }, 'p2')).toBe('member')
+      expect(await s.getProjectRole({ ...user, workspaceId: 'ws-2' }, 'p1')).toBeNull()
+    })
+
+    it('assertWorkspaceAccess allows owner and email-matched member, rejects others', async () => {
+      const owner = build({ owner: true })
+      await expect(owner.assertWorkspaceAccess(user, 'ws-1')).resolves.toBeUndefined()
+      await expect(owner.assertWorkspaceAccess(user, 'ws-2')).rejects.toThrow(ForbiddenException)
+
+      const member = build({ memberEmail: 'jane@team.com' })
+      await expect(member.assertWorkspaceAccess(user, 'ws-2')).resolves.toBeUndefined()
+      const lookup = memberLookups(member)[0]
+      expect(lookup.filters['eq:workspace_id']).toBe('ws-2')
+
+      const stranger = build({ memberEmail: 'other@team.com' })
+      await expect(stranger.assertWorkspaceAccess(user, 'ws-2')).rejects.toThrow(ForbiddenException)
+
+      const unverified = build({ memberEmail: 'jane@team.com' })
+      await expect(
+        unverified.assertWorkspaceAccess({ ...user, emailVerified: false }, 'ws-2'),
+      ).rejects.toThrow(ForbiddenException)
     })
   })
 

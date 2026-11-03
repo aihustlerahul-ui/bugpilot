@@ -6,6 +6,8 @@ import { MembersController } from './members.controller'
 import { MembersService } from './members.service'
 import { MembersThrottlerGuard } from './members-throttler.guard'
 import { SupabaseService } from '../supabase/supabase.service'
+import { ApiKeysService } from '../api-keys/api-keys.service'
+import { AccessService } from '../access/access.service'
 
 // Mirrors the app-wide throttler config registered (globally) by AuthModule.
 const throttlerConfig = ThrottlerModule.forRoot([
@@ -34,6 +36,8 @@ describe('Members invite throttling', () => {
         MembersThrottlerGuard,
         { provide: MembersService, useValue: members },
         { provide: SupabaseService, useValue: { db: { auth: { getUser } } } },
+        { provide: ApiKeysService, useValue: {} },
+        { provide: AccessService, useValue: {} },
       ],
     }).compile()
     app = mod.createNestApplication({ logger: false })

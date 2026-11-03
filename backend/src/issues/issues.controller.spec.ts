@@ -2,6 +2,8 @@ import { Test } from '@nestjs/testing';
 import { IssuesController } from './issues.controller';
 import { IssuesService } from './issues.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { ApiKeysService } from '../api-keys/api-keys.service';
+import { AccessService } from '../access/access.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 
 describe('IssuesController', () => {
@@ -27,6 +29,8 @@ describe('IssuesController', () => {
       providers: [
         { provide: IssuesService, useValue: service },
         { provide: SupabaseService, useValue: {} },
+        { provide: ApiKeysService, useValue: {} },
+        { provide: AccessService, useValue: {} },
       ],
     }).compile();
 

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import { SupabaseService } from '../supabase/supabase.service'
 import { WorkspacesService } from '../workspaces/workspaces.service'
 import { AuthUser } from '../common/interfaces/auth-user.interface'
@@ -53,7 +53,7 @@ export class AccessService {
    * workspace_members ids whose email equals the user's email (case-insensitive).
    * Only trusted when Supabase has confirmed the email; owner access never comes through here.
    */
-  private async memberIds(user: AuthUser): Promise<string[]> {
+  private async memberIds(user: AuthUser, workspaceId?: string): Promise<string[]> {
     if (user.emailVerified !== true) return []
     const normalized = this.normalizeEmail(user.email)
     if (!normalized) return []
@@ -65,21 +65,36 @@ export class AccessService {
     const value = PATTERN_CHARS.test(normalized)
       ? normalized.replace(/[\\%_]/g, (c) => `\\${c}`)
       : normalized
-    const { data, error } = await this.supabase.db
-      .from('workspace_members')
-      .select('id, email')
-      .ilike('email', value)
+    let query = this.supabase.db.from('workspace_members').select('id, email')
+    if (workspaceId) query = query.eq('workspace_id', workspaceId)
+    const { data, error } = await query.ilike('email', value)
     if (error) throw new Error(error.message)
     return (data ?? [])
       .filter((m: any) => this.normalizeEmail(m.email) === normalized)
       .map((m: any) => m.id)
   }
 
+  /** Owner of the workspace, or a (verified-email) member of it; otherwise Forbidden. */
+  async assertWorkspaceAccess(user: AuthUser, workspaceId: string): Promise<void> {
+    if (!workspaceId) throw new ForbiddenException('No access to this workspace')
+    const owned = await this.ownedWorkspaceId(user.id)
+    if (owned && owned === workspaceId) return
+    let ids: string[] = []
+    try {
+      ids = await this.memberIds(user, workspaceId)
+    } catch (e: any) {
+      // e.g. a malformed (non-UUID) workspace id: treat as no access
+      if (e?.message && /uuid/i.test(e.message)) throw new ForbiddenException('No access to this workspace')
+      throw e
+    }
+    if (!ids.length) throw new ForbiddenException('No access to this workspace')
+  }
+
   async listAccessibleProjects(user: AuthUser): Promise<Array<Record<string, any> & { role: ProjectRole }>> {
     const result = new Map<string, Record<string, any> & { role: ProjectRole }>()
 
     const workspaceId = await this.ownedWorkspaceId(user.id)
-    if (workspaceId) {
+    if (workspaceId && (!user.workspaceId || user.workspaceId === workspaceId)) {
       const { data, error } = await this.supabase.db
         .from('projects')
         .select('*')
@@ -104,7 +119,10 @@ export class AccessService {
           .select(MEMBER_PROJECT_COLUMNS)
           .in('id', projectIds)
         if (error) throw new Error(error.message)
-        for (const p of data ?? []) result.set(p.id, { ...toMemberProjectView(p), role: 'member' as const })
+        for (const p of data ?? []) {
+          if (user.workspaceId && p.workspace_id !== user.workspaceId) continue
+          result.set(p.id, { ...toMemberProjectView(p), role: 'member' as const })
+        }
       }
     }
 
@@ -125,6 +143,7 @@ export class AccessService {
       throw new Error(error.message)
     }
     if (!project) return null
+    if (user.workspaceId && project.workspace_id !== user.workspaceId) return null
 
     const workspaceId = await this.ownedWorkspaceId(user.id)
     if (workspaceId && project.workspace_id === workspaceId) return 'owner'
