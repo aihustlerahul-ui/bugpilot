@@ -621,19 +621,23 @@ export function ReplayPlayer({ replayUrl, issueTitle, markers = [], onTimeUpdate
     }
 
     load()
+    const multiReplayers = multiReplayersRef.current;
+    const multiContainers = multiContainersRef.current;
+    const streamOffsets = streamOffsetsRef.current;
+    const streamDurations = streamDurationsRef.current;
     return () => {
       cancelled = true
       stopTimeSync()
-      multiReplayersRef.current.forEach(r => { try { r.pause() } catch { /* */ } })
-      multiReplayersRef.current.clear()
-      multiContainersRef.current.clear()
-      streamOffsetsRef.current.clear()
-      streamDurationsRef.current.clear()
+      multiReplayers.forEach(r => { try { r.pause() } catch { /* */ } })
+      multiReplayers.clear()
+      multiContainers.clear()
+      streamOffsets.clear()
+      streamDurations.clear()
       setStreamWarnings(new Map())
       try { replayerRef.current?.pause() } catch { /* ignore */ }
       replayerRef.current = null
     }
-  }, [replayUrl, stopTimeSync, syncCurrentTime, recomputeScale, setTime, updateActiveTabForMs])
+  }, [replayUrl, stopTimeSync, syncCurrentTime, recomputeScale, setTime, updateActiveTabForMs, setActiveTab])
 
   useEffect(() => {
     if (!recorded.w) return

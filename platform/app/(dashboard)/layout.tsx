@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher';
 import { CollapsibleProjects } from '@/components/CollapsibleProjects';
+import { ProjectSwitcher } from '@/components/ProjectSwitcher';
 import {
   LayoutDashboardIcon,
   UsersIcon,
@@ -119,8 +120,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         {/* Top Header Bar */}
         <header className="h-14 bg-white border-b border-gray-200 px-8 flex items-center justify-between shrink-0 sticky top-0 z-20">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">BugPilot Platform</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">BugPilot</span>
+            <span className="text-gray-300">/</span>
+            <ProjectSwitcher />
           </div>
           <div className="flex items-center gap-3">
             <ProductTourButton />
@@ -132,3 +135,4 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     </div>
   );
 }
+

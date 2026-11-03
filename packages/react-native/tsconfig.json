@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "esModuleInterop": true,
+    "lib": ["ES2020"],
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["src/**/*", "src/shims/**/*.d.ts"]
+}

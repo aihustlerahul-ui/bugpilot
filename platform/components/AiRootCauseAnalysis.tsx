@@ -8,6 +8,36 @@ interface AiRootCauseAnalysisProps {
   className?: string;
 }
 
+function formatDomBreadcrumb(raw: unknown): string {
+  if (!raw) return '';
+  if (typeof raw === 'string') return raw;
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item) => {
+        if (!item) return '';
+        if (typeof item === 'string') return item;
+        if (typeof item === 'object') {
+          const obj = item as { tag?: string; id?: string; classes?: string[] | string; role?: string; nthOfType?: number };
+          let str = obj.tag || 'element';
+          if (obj.id) str += `#${obj.id}`;
+          if (Array.isArray(obj.classes) && obj.classes.length > 0) {
+            str += `.${obj.classes.join('.')}`;
+          } else if (typeof obj.classes === 'string' && obj.classes) {
+            str += `.${obj.classes}`;
+          }
+          if (obj.nthOfType && obj.nthOfType > 1) {
+            str += `:nth-of-type(${obj.nthOfType})`;
+          }
+          return str;
+        }
+        return String(item);
+      })
+      .filter(Boolean)
+      .join(' > ');
+  }
+  return typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
+}
+
 export function AiRootCauseAnalysis({ issue, className = '' }: AiRootCauseAnalysisProps) {
   const [activeTab, setActiveTab] = useState<'rca' | 'playwright'>('rca');
   const [copiedPrompt, setCopiedPrompt] = useState(false);
@@ -16,62 +46,177 @@ export function AiRootCauseAnalysis({ issue, className = '' }: AiRootCauseAnalys
 
   const meta = issue.metadata || {};
   const elementInfo = (issue.element_info || {}) as {
-    react?: { componentName?: string };
+    react?: { componentName?: string; componentTree?: string[]; props?: Record<string, unknown>; source?: { file?: string; line?: number; col?: number } };
     reactComponentName?: string;
     reactSource?: { fileName?: string; lineNumber?: number; columnNumber?: number };
     cssSelector?: string;
+    selector?: string;
+    xpath?: string;
+    hierarchy?: string;
+    domBreadcrumb?: string;
+    tag?: string;
+    tagName?: string;
+    id?: string;
+    text?: string;
+    textContent?: string;
+    classList?: string[];
   };
-  const reactComp = elementInfo.react?.componentName || elementInfo.reactComponentName || 'UnknownComponent';
-  const sourceLine = elementInfo.reactSource?.fileName
-    ? `${elementInfo.reactSource.fileName}:${elementInfo.reactSource.lineNumber}`
+
+  const reactComp = typeof (elementInfo.react?.componentName || elementInfo.reactComponentName) === 'string'
+    ? (elementInfo.react?.componentName || elementInfo.reactComponentName)
+    : '';
+  const reactTree: string[] = Array.isArray(elementInfo.react?.componentTree)
+    ? elementInfo.react.componentTree.map((t) => (typeof t === 'string' ? t : JSON.stringify(t)))
+    : [];
+  const reactSource = elementInfo.reactSource || (elementInfo.react?.source ? { fileName: elementInfo.react.source.file, lineNumber: elementInfo.react.source.line } : null);
+  const sourceLine = reactSource?.fileName
+    ? `${reactSource.fileName}:${reactSource.lineNumber || 1}`
     : null;
+  const cssSelector = typeof (elementInfo.cssSelector || elementInfo.selector) === 'string' ? (elementInfo.cssSelector || elementInfo.selector) : '';
+  const xpath = typeof elementInfo.xpath === 'string' ? elementInfo.xpath : '';
+  const domHierarchy = formatDomBreadcrumb(elementInfo.domBreadcrumb || elementInfo.hierarchy);
+  const elementTag = typeof (elementInfo.tagName || elementInfo.tag) === 'string' ? (elementInfo.tagName || elementInfo.tag) : '';
+  const elementText = typeof (elementInfo.text || elementInfo.textContent) === 'string' ? (elementInfo.text || elementInfo.textContent) : '';
+  const elementClasses: string[] = Array.isArray(elementInfo.classList)
+    ? elementInfo.classList.map((c) => (typeof c === 'string' ? c : JSON.stringify(c)))
+    : typeof elementInfo.classList === 'string'
+    ? [elementInfo.classList]
+    : [];
+  const elementId = typeof elementInfo.id === 'string' ? elementInfo.id : '';
 
   const consoleErrors = meta.consoleErrors || [];
-  const networkErrors = (meta.networkTransactions || []).filter((tx) => {
+  const networkTx = meta.networkTransactions || [];
+  const networkErrors = networkTx.filter((tx) => {
     const s = typeof tx.status === 'number' ? tx.status : parseInt(String(tx.status), 10);
     return !isNaN(s) && s >= 400;
   });
+  const recentSuccessfulCalls = networkTx.filter((tx) => {
+    const s = typeof tx.status === 'number' ? tx.status : parseInt(String(tx.status), 10);
+    return !isNaN(s) && s < 400;
+  }).slice(-5);
 
   const primaryError =
     consoleErrors[0]?.message ||
-    (networkErrors[0] ? `${networkErrors[0].method} ${networkErrors[0].url} failed with ${networkErrors[0].status}` : 'UI Render Exception');
+    (networkErrors[0] ? `${networkErrors[0].method} ${networkErrors[0].url} failed with ${networkErrors[0].status}` : 'UI State Mismatch');
 
   const rootCauseSummary =
     networkErrors.length > 0
-      ? `The component <${reactComp}> failed during data hydration because an upstream API endpoint returned HTTP ${networkErrors[0].status}. The client application did not gracefully handle the error response, triggering a cascading render failure.`
+      ? `The component ${reactComp ? `<${reactComp}>` : 'target element'} failed during data hydration because upstream API endpoint \`${networkErrors[0].url}\` returned HTTP ${networkErrors[0].status}. The application did not handle the error response gracefully.`
       : consoleErrors.length > 0
-      ? `An unhandled JavaScript runtime error occurred in <${reactComp}>: "${primaryError.slice(0, 120)}". The error caused React component tree unmounting or state corruption.`
-      : `The element ${elementInfo.cssSelector || '<' + reactComp + '>'} experienced an unexpected layout or state mismatch on route "${issue.route || issue.url || '/'}".`;
+      ? `An unhandled JavaScript runtime error occurred in ${reactComp ? `<${reactComp}>` : 'the client'}: "${primaryError.slice(0, 120)}". The error caused React component tree unmounting or state corruption.`
+      : `The element \`${cssSelector || (reactComp ? `<${reactComp}>` : 'target element')}\` experienced a UI logic, state management, or data-mapping mismatch on route "${issue.route || issue.url || '/'}".`;
 
   const suggestedFixSnippet = sourceLine
     ? `// ${sourceLine}\n- const items = data.items.map(i => i.title);\n+ const items = data?.items?.map(i => i.title) ?? [];`
     : `// Safe error boundary & null-check pattern\n- return <div>{data.result}</div>;\n+ return data?.result ? <div>{data.result}</div> : <SkeletonLoader />;`;
 
-  const domContext = meta.domContext || null;
-  const recordedSteps: Array<{ action?: string; type?: string; label?: string; selector?: string; value?: string }> = meta.recordedSteps || [];
+  const recordedSteps: Array<{ action?: string; type?: string; label?: string; selector?: string; targetTag?: string; text?: string; value?: string; url?: string; route?: string }> = meta.recordedSteps || [];
+  const navHistory = meta.navigationHistory || [];
 
-  const cursorAiPrompt = `You are debugging a verified bug in BugPilot.
+  const screenshots: Array<{ label: string; src: string }> = [];
+  if (issue.element_screenshot_url) screenshots.push({ label: 'Element Screenshot', src: issue.element_screenshot_url });
+  if (issue.screenshot_url) screenshots.push({ label: 'Full Page Screenshot', src: issue.screenshot_url });
+  if (Array.isArray(meta.screenshots)) {
+    meta.screenshots.forEach((s: { label?: string; url?: string; src?: string }, idx: number) => {
+      const src = s.url || s.src;
+      if (src && !screenshots.some((x) => x.src === src)) {
+        screenshots.push({ label: s.label || `Screenshot ${idx + 1}`, src });
+      }
+    });
+  }
 
-### Bug Overview
-- Title: ${issue.title || issue.description}
-- URL / Route: ${issue.url || issue.route || 'N/A'}
-- React Component: <${reactComp}>
-- Source File: ${sourceLine || 'N/A'}
-- Severity: ${issue.severity || 'Medium'}
-${domContext ? `- 50-Token DOM Context: ${domContext.rawSummary || JSON.stringify(domContext)}` : ''}
+  const sections: string[] = [];
+  sections.push(`### 🐛 Bug Report: ${issue.title || issue.description}`);
+  sections.push(`- **Target URL / Route**: \`${issue.url || issue.route || 'N/A'}\``);
+  if (issue.route && issue.url && issue.route !== issue.url) sections.push(`- **Route Pattern**: \`${issue.route}\``);
+  sections.push(`- **Severity**: ${issue.severity || 'Medium'}`);
+  if (issue.triage_status) sections.push(`- **Triage Status**: ${issue.triage_status}`);
 
-### Telemetry Signals
-- Console Errors:
-${consoleErrors.map((e) => `  - [${e.level.toUpperCase()}] ${e.message}`).join('\n') || '  (None logged)'}
+  sections.push(`\n### 📝 Description\n${issue.description || '(No description provided)'}`);
+  if (meta.expectedResult || meta.actualResult) {
+    if (meta.expectedResult) sections.push(`- **Expected Result**: ${meta.expectedResult}`);
+    if (meta.actualResult) sections.push(`- **Actual Result**: ${meta.actualResult}`);
+  }
 
-- Failed Network Calls:
-${networkErrors.map((n) => `  - ${n.method} ${n.url} -> ${n.status}`).join('\n') || '  (None logged)'}
+  if (screenshots.length > 0) {
+    const shotLines = screenshots.map((s) => `- **${s.label}**: ![${s.label}](${s.src})\n  Direct URL: ${s.src}`);
+    sections.push(`\n### 🖼️ Screenshots & Visual Evidence\n${shotLines.join('\n')}`);
+  }
 
-### Diagnostic Root Cause
-${rootCauseSummary}
+  const targetElementLines: string[] = [];
+  if (reactComp) targetElementLines.push(`- **React Component**: \`<${reactComp}>\``);
+  if (reactTree.length > 0) targetElementLines.push(`- **Component Hierarchy**: \`${reactTree.join(' > ')}\``);
+  if (sourceLine) targetElementLines.push(`- **Source Location**: \`${sourceLine}\``);
+  if (cssSelector) targetElementLines.push(`- **CSS Selector**: \`${cssSelector}\``);
+  if (xpath) targetElementLines.push(`- **XPath**: \`${xpath}\``);
+  if (domHierarchy) targetElementLines.push(`- **DOM Tree Path**: \`${domHierarchy}\``);
+  if (elementTag || elementId || elementClasses.length > 0 || elementText) {
+    const attrs = [
+      elementTag ? `tag: <${elementTag}>` : '',
+      elementId ? `id: #${elementId}` : '',
+      elementClasses.length > 0 ? `class: .${elementClasses.join('.')}` : '',
+      elementText ? `text: "${elementText.slice(0, 80)}"` : '',
+    ].filter(Boolean).join(' | ');
+    targetElementLines.push(`- **Element Attributes**: \`${attrs}\``);
+  }
+  if (targetElementLines.length > 0) {
+    sections.push(`\n### 🎯 Target Element & DOM Context\n${targetElementLines.join('\n')}`);
+  }
 
-### Task
-Please inspect ${sourceLine || reactComp} and provide a minimal, bug-free patch addressing the root cause.`;
+  const reproLines: string[] = [];
+  if (recordedSteps.length > 0) {
+    recordedSteps.forEach((s, idx) => {
+      if (s.type === 'input') {
+        reproLines.push(`${idx + 1}. [Input] Typed \`${s.value && s.value !== '***' ? s.value : '***'}\` into \`${s.selector || s.targetTag || 'input'}\``);
+      } else if (s.type === 'navigate' || s.url) {
+        reproLines.push(`${idx + 1}. [Navigate] Navigated to \`${s.url || s.route}\``);
+      } else {
+        reproLines.push(`${idx + 1}. [Click] Clicked \`${s.selector || s.targetTag || 'element'}\`${s.text ? ` ("${s.text.slice(0, 40)}")` : ''}`);
+      }
+    });
+  } else if (navHistory.length > 0) {
+    navHistory.forEach((nav, idx) => {
+      reproLines.push(`${idx + 1}. [Navigate] Navigated to \`${nav.url}\``);
+    });
+  }
+  if (reproLines.length > 0) {
+    sections.push(`\n### 🐾 Flight Recorder (Reproduction Steps)\n${reproLines.join('\n')}`);
+  }
+
+  const netLines: string[] = [];
+  if (networkErrors.length > 0) {
+    netLines.push('**Failed Network Calls (>= 400):**');
+    networkErrors.forEach((t) => {
+      netLines.push(`- \`${t.method || 'GET'} ${t.url}\` -> **HTTP ${t.status}** (${t.duration || 0}ms)${t.error ? ` [Error: ${t.error}]` : ''}`);
+    });
+  }
+  if (recentSuccessfulCalls.length > 0) {
+    netLines.push('**Recent API Transactions (200 OK):**');
+    recentSuccessfulCalls.forEach((t) => {
+      let line = `- \`${t.method || 'GET'} ${t.url}\` -> HTTP ${t.status} (${t.duration || 0}ms)`;
+      if (t.responseBody) {
+        const bodyStr = typeof t.responseBody === 'string' ? t.responseBody : JSON.stringify(t.responseBody);
+        line += `\n  - Response body: \`${bodyStr.slice(0, 160)}\``;
+      }
+      netLines.push(line);
+    });
+  }
+  if (netLines.length > 0) {
+    sections.push(`\n### 🌐 Network Activity\n${netLines.join('\n')}`);
+  }
+
+  if (consoleErrors.length > 0) {
+    const errLines = consoleErrors.map((e) => `- [${(e.level || 'ERROR').toUpperCase()}] ${e.message}`);
+    sections.push(`\n### ⚠️ Console Logs & Errors\n${errLines.join('\n')}`);
+  }
+
+  sections.push(`\n### 💡 Diagnostic Analysis & Hypothesis\n${rootCauseSummary}`);
+  sections.push(`\n### 🛠️ Task for Cursor / Copilot
+1. Locate the component corresponding to \`${sourceLine || reactComp || cssSelector || issue.route || 'the target element'}\`.
+2. Review state handling and data flow for the target element.
+3. Apply a minimal, bug-free fix patch addressing the root cause.`);
+
+  const cursorAiPrompt = sections.join('\n');
 
   const dynamicStepStatements = recordedSteps.length > 0
     ? recordedSteps.map((s, i) => {
@@ -97,8 +242,30 @@ ${dynamicStepStatements}
   });
 });`;
 
-  const handleCopyPrompt = () => {
-    navigator.clipboard.writeText(cursorAiPrompt);
+  const handleCopyPrompt = async () => {
+    try {
+      if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+        const html = `
+          <h2>🐛 Bug Report: ${issue.title || issue.description}</h2>
+          <p><b>Target URL:</b> ${issue.url || issue.route || 'N/A'}</p>
+          <p><b>Severity:</b> ${issue.severity || 'Medium'}</p>
+          ${screenshots.map((s) => `<div><p><b>${s.label}:</b></p><img src="${s.src}" alt="${s.label}" style="max-width: 600px; border-radius: 8px; margin: 8px 0;" /></div>`).join('')}
+          <pre style="white-space: pre-wrap; font-family: monospace;">${cursorAiPrompt}</pre>
+        `;
+        const textBlob = new Blob([cursorAiPrompt], { type: 'text/plain' });
+        const htmlBlob = new Blob([html], { type: 'text/html' });
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/plain': textBlob,
+            'text/html': htmlBlob,
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(cursorAiPrompt);
+      }
+    } catch {
+      await navigator.clipboard.writeText(cursorAiPrompt);
+    }
     setCopiedPrompt(true);
     setTimeout(() => setCopiedPrompt(false), 2000);
   };

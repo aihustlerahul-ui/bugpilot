@@ -529,17 +529,34 @@ function ExtensionConnectionBadge() {
   const [status, setStatus] = useState<'checking' | 'connected' | 'not_connected'>('checking')
 
   useEffect(() => {
-    const timer = setTimeout(() => setStatus('not_connected'), 500)
+    let isConnected = false
     function onMessage(e: MessageEvent) {
       if (e.data?.type === 'QA_REPORTER_PONG') {
-        clearTimeout(timer)
+        isConnected = true
         setStatus('connected')
-        window.removeEventListener('message', onMessage)
       }
     }
+
     window.addEventListener('message', onMessage)
     window.postMessage({ type: 'QA_REPORTER_PING' }, '*')
-    return () => { clearTimeout(timer); window.removeEventListener('message', onMessage) }
+
+    const retryInterval = setInterval(() => {
+      if (!isConnected) {
+        window.postMessage({ type: 'QA_REPORTER_PING' }, '*')
+      }
+    }, 250)
+
+    const timer = setTimeout(() => {
+      if (!isConnected) {
+        setStatus('not_connected')
+      }
+    }, 1500)
+
+    return () => {
+      clearTimeout(timer)
+      clearInterval(retryInterval)
+      window.removeEventListener('message', onMessage)
+    }
   }, [])
 
   if (status === 'checking') return <span className="text-xs text-gray-400">Checking…</span>

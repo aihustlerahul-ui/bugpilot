@@ -1183,7 +1183,7 @@
 
   window.addEventListener('message', function (e) {
     if (e.data && e.data.type === 'QA_REPORTER_PING') {
-      if (document.querySelector('meta[name="qa-reporter-platform"]')) return;
+      if (!document.querySelector('meta[name="qa-reporter-platform"]')) return;
       window.postMessage({ type: 'QA_REPORTER_PONG', version: '2.1.0' }, '*');
     }
   });
@@ -2723,7 +2723,11 @@
                 chrome.runtime.sendMessage({ type: 'REQUEST_VIDEO_ATTACH', issueId: res.result.id });
               }
               closeModal();
-              showNotification('Issue submitted successfully!', 'success');
+              if (res.result && res.result.queued) {
+                showNotification('Saved offline (queued for sync).', 'warning');
+              } else {
+                showNotification('Issue submitted successfully!', 'success');
+              }
             } else {
               closeModal();
               showNotification('Saved locally. Submit failed: ' + ((res && res.error) || 'unknown error'), 'error');

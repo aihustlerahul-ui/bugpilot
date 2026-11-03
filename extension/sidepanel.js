@@ -293,9 +293,15 @@ async function refreshBufferUI() {
       btnRetrySync.disabled = true;
       btnRetrySync.textContent = 'Syncing…';
       try {
-        await chrome.runtime.sendMessage({ type: 'RETRY_PENDING_SYNC' });
-        showToast('Background sync triggered');
-      } catch (_) {}
+        const resp = await chrome.runtime.sendMessage({ type: 'RETRY_PENDING_SYNC' });
+        if (resp && resp.remaining === 0) {
+          showToast('✓ All pending issues synced successfully!', 'success');
+        } else {
+          showToast(`Sync attempted. ${resp?.remaining ?? ''} issue(s) still offline.`, 'warning');
+        }
+      } catch (err) {
+        showToast('Sync error: ' + (err?.message || 'unknown'), 'error');
+      }
       await refreshBufferUI();
     });
   }
@@ -365,6 +371,9 @@ async function populateProjects(projects) {
     const { qa_selected_project } = await chrome.storage.local.get(['qa_selected_project']);
     if (qa_selected_project && projects.some(p => p.id === qa_selected_project.id)) {
       projectSelect.value = qa_selected_project.id;
+    } else if (projects.length === 1) {
+      projectSelect.value = projects[0].id;
+      await chrome.storage.local.set({ qa_selected_project: { id: projects[0].id, name: projects[0].name } });
     }
   }
 
@@ -549,6 +558,9 @@ async function startRecording() {
   const projectId = projectSelect.value;
   if (!projectId) { showToast('Please select a project first.', 'error'); return; }
 
+  const projectName = projectSelect.options[projectSelect.selectedIndex]?.textContent || '';
+  await chrome.storage.local.set({ qa_selected_project: { id: projectId, name: projectName } });
+
   btnToggleRecording.disabled = true;
   try {
     await chrome.runtime.sendMessage({ type: 'SYNC_SETTINGS' });
@@ -606,12 +618,19 @@ btnSubmitAll.addEventListener('click', async () => {
     const res = await chrome.runtime.sendMessage({ type: 'SUBMIT_ALL', issues });
     if (!res.ok) { showToast('Submit failed: ' + res.error, 'error'); return; }
 
-    const succeeded = res.results.filter(r => r.ok).length;
+    const queued    = res.results.filter(r => r.ok && r.result?.queued).length;
+    const succeeded = res.results.filter(r => r.ok && !r.result?.queued).length;
     const failed    = res.results.filter(r => !r.ok).length;
 
     if (failed === 0) {
       await chrome.storage.local.set({ qa_buffered_issues: [] });
-      showToast(`✓ ${succeeded} issue${succeeded !== 1 ? 's' : ''} submitted!`);
+      if (queued > 0 && succeeded === 0) {
+        showToast(`Saved offline (${queued} queued for sync)`, 'warning');
+      } else if (queued > 0) {
+        showToast(`✓ ${succeeded} submitted, ${queued} queued offline`);
+      } else {
+        showToast(`✓ ${succeeded} issue${succeeded !== 1 ? 's' : ''} submitted!`);
+      }
     } else {
       const failedIssues = issues.filter((_, i) => !res.results[i].ok);
       await chrome.storage.local.set({ qa_buffered_issues: failedIssues });

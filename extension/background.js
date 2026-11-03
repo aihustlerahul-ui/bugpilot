@@ -204,13 +204,16 @@ async function enqueuePendingSyncIssue(issue, errorReason) {
 }
 
 async function processPendingSyncQueue() {
-  const { qa_pending_sync_queue = [] } = await chrome.storage.local.get(['qa_pending_sync_queue']);
+  const { qa_pending_sync_queue = [], qa_selected_project } = await chrome.storage.local.get(['qa_pending_sync_queue', 'qa_selected_project']);
   if (!qa_pending_sync_queue.length) return;
 
   console.log('[QA] Processing pending sync queue:', qa_pending_sync_queue.length, 'items');
   const remaining = [];
   for (const item of qa_pending_sync_queue) {
     try {
+      if (!item.issue.projectId && !item.issue.project_id && qa_selected_project?.id) {
+        item.issue.projectId = qa_selected_project.id;
+      }
       await postIssue(item.issue, { skipQueueFallback: true });
       console.log('[QA] Successfully synced pending issue:', item.id);
     } catch (err) {
@@ -1014,13 +1017,21 @@ async function handleUploadAndAttachVideo(message, sendResponse) {
 
 // ── GET_RECENT_ISSUES ─────────────────────────────────────────────────────────
 async function handleGetRecentIssues(message, sendResponse) {
-  const { qa_token: token } = await chrome.storage.local.get(['qa_token']);
+  let { qa_token: token } = await chrome.storage.local.get(['qa_token']);
   try {
-    const res = await fetch(`${API_URL}/api/issues/project/${message.projectId}`, {
+    let res = await fetch(`${API_URL}/api/issues/project/${message.projectId}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
+    if (res.status === 401) {
+      token = await tryRefreshToken();
+      if (token) {
+        res = await fetch(`${API_URL}/api/issues/project/${message.projectId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+    }
     const issues = await res.json();
-    sendResponse({ ok: true, issues: issues.slice(0, 10) });
+    sendResponse({ ok: true, issues: Array.isArray(issues) ? issues.slice(0, 10) : [] });
   } catch (err) {
     sendResponse({ ok: false, error: err.message });
   }
@@ -1376,7 +1387,7 @@ async function postIssue(issue, options = {}) {
   // issue happens to be posted first.
   let replayData = null;
   let replayStatus = null;
-  const { qa_saved_replay } = await chrome.storage.local.get(['qa_saved_replay']);
+  const { qa_saved_replay, qa_selected_project } = await chrome.storage.local.get(['qa_saved_replay', 'qa_selected_project']);
   if (qa_saved_replay?.data && issue?.url) {
     const urlsToCheck = qa_saved_replay.version === 2
       ? (qa_saved_replay.urls || [])
@@ -1388,9 +1399,14 @@ async function postIssue(issue, options = {}) {
     }
   }
 
-  const { qa_token: token } = await chrome.storage.local.get(['qa_token']);
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  // Ensure projectId is populated if missing
+  const effectiveProjectId = issue.projectId || issue.project_id || qa_selected_project?.id;
+
+  let { qa_token: token } = await chrome.storage.local.get(['qa_token']);
+  const getHeaders = () => ({
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  });
 
   // Map camelCase extension fields → snake_case API fields
   const element = issue.element || issue.elementInfo || issue.element_info || {};
@@ -1427,7 +1443,7 @@ async function postIssue(issue, options = {}) {
   const sanitizedMetadata = SanitizationEngine.sanitizeObject(rawMetadata);
 
   const payload = {
-    project_id:   issue.projectId || issue.project_id,
+    project_id:   effectiveProjectId,
     title:        SanitizationEngine.sanitizeString(issue.title),
     description:  SanitizationEngine.sanitizeString(issue.title + (issue.description ? '\n\n' + issue.description : '')),
     severity:     issue.severity || 'Medium',
@@ -1446,11 +1462,22 @@ async function postIssue(issue, options = {}) {
   };
 
   try {
-    const res = await fetch(`${API_URL}/api/issues`, {
+    let res = await fetch(`${API_URL}/api/issues`, {
       method: 'POST',
-      headers,
+      headers: getHeaders(),
       body: JSON.stringify(payload),
     });
+
+    if (res.status === 401) {
+      token = await tryRefreshToken();
+      if (token) {
+        res = await fetch(`${API_URL}/api/issues`, {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify(payload),
+        });
+      }
+    }
 
     if (res.status === 401) throw new Error('Unauthorized — please sign in again');
     if (!res.ok) {

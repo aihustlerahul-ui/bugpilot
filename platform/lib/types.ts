@@ -2,7 +2,22 @@ export type SyncStatus = 'pending' | 'synced' | 'failed'
 export type SyncMode = 'auto' | 'manual'
 
 export interface Workspace { id: string; name: string; owner_id: string; created_at: string }
-export interface Project { id: string; workspace_id: string; name: string; sync_mode: SyncMode; created_at: string }
+
+export interface ProjectSettings {
+  default_view?: 'table' | 'kanban' | 'gallery'
+  description?: string
+  [key: string]: unknown
+}
+
+export interface Project {
+  id: string
+  workspace_id: string
+  name: string
+  sync_mode: SyncMode
+  settings?: ProjectSettings
+  created_at: string
+}
+
 
 export interface NetworkTransaction {
   id?: string
