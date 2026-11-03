@@ -35,6 +35,7 @@ export class AuthClient {
       body: JSON.stringify({ email, password }),
     }, async (res) => {
       if (res.status === 401) throw new Error('Invalid email or password');
+      if (res.status === 429) throw new Error('Too many attempts. Try again in a minute.');
       if (!res.ok) throw new Error(`Sign-in failed (HTTP ${res.status})`);
       return (await res.json()) as AuthSession;
     });

@@ -57,6 +57,13 @@ describe('AuthClient', () => {
     expect(err.message).not.toContain('secret');
   });
 
+  it('login 429 tells the user to wait instead of a raw HTTP code', async () => {
+    const { client } = setup(() => res(429, { message: 'ThrottlerException: Too Many Requests' }));
+    const err = await client.login('qa@example.com', 'secret').catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toBe('Too many attempts. Try again in a minute.');
+  });
+
   it('listProjects sends bearer token', async () => {
     const { fetchMock, client } = setup(() => res(200, [{ id: 'p1', name: 'P', extra: 1 }]));
     await expect(client.listProjects('tok')).resolves.toEqual([{ id: 'p1', name: 'P' }]);
