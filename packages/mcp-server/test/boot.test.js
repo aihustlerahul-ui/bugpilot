@@ -32,7 +32,7 @@ test('server boots over stdio and lists tools', async () => {
     const res = await rpc(2, 'tools/list', {});
     const names = res.result.tools.map((t) => t.name);
     console.log('TOOLS:', names.join(', '));
-    assert.deepEqual(names.sort(), ['get_issue', 'get_project', 'list_issues', 'list_members', 'list_projects']);
+    assert.deepEqual(names.sort(), ['add_comment', 'assign_issue', 'assign_to_reporter', 'get_issue', 'get_project', 'list_issues', 'list_members', 'list_projects', 'update_issue_status']);
   } finally {
     child.kill();
   }

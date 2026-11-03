@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * @bugpilot/mcp-server — MCP over Nest issues/projects APIs.
+ * @bugpilot/mcp-server — MCP over Nest issues/projects APIs (read tools plus
+ * add_comment, update_issue_status, assign_issue, assign_to_reporter write tools).
  *
  * Auth: BUGPILOT_API_KEY (+ BUGPILOT_WORKSPACE_ID) preferred; BUGPILOT_ACCESS_TOKEN fallback.
  * Env: BUGPILOT_API_URL (default http://localhost:4000), BUGPILOT_PROJECT_ID (optional default).
@@ -14,9 +15,10 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { getConfig, redactToken } from './client.js';
 import { tools as readTools, handlers as readHandlers } from './tools/read.js';
+import { tools as writeTools, handlers as writeHandlers } from './tools/write.js';
 
-const TOOLS = [...readTools];
-const HANDLERS = { ...readHandlers };
+const TOOLS = [...readTools, ...writeTools];
+const HANDLERS = { ...readHandlers, ...writeHandlers };
 
 function jsonResult(data) {
   return {
@@ -73,7 +75,7 @@ async function main() {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error(`[bugpilot-mcp] ready (tools: ${TOOLS.map((t) => t.name).join(', ')})`);
+  console.error(`[bugpilot-mcp] ready (read + write tools: ${TOOLS.map((t) => t.name).join(', ')})`);
 }
 
 main().catch((err) => {
