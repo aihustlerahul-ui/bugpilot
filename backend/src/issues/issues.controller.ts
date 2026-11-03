@@ -19,6 +19,7 @@ import {
 } from './dto/retention.dto';
 import { CommentsService } from './comments.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
+import { AssignIssueDto } from './dto/assign-issue.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 
@@ -38,6 +39,12 @@ export class IssuesController {
   @Get('dashboard/metrics')
   getDashboardMetrics(@CurrentUser() user: AuthUser) {
     return this.issues.getDashboardMetrics(user);
+  }
+
+  @ApiKeyAllowed()
+  @Get('project/:projectId/members')
+  listAssignableMembers(@CurrentUser() user: AuthUser, @Param('projectId') projectId: string) {
+    return this.issues.listAssignableMembers(user, projectId);
   }
 
   @ApiKeyAllowed()
@@ -87,6 +94,12 @@ export class IssuesController {
     @Body() dto: UpdateStatusDto,
   ) {
     return this.issues.updateStatus(user, id, dto.status);
+  }
+
+  @ApiKeyAllowed()
+  @Patch(':id/assignee')
+  assign(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AssignIssueDto) {
+    return this.issues.assign(user, id, dto.memberId ?? null);
   }
 
   @Post(':id/replay-token')

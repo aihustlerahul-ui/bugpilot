@@ -492,7 +492,94 @@ export class IssuesService {
     const role = await this.access.getProjectRole(user, data.project_id);
     if (!role) throw new NotFoundException('Issue not found');
 
-    return this.withSignedUrls(data);
+    const withUrls = await this.withSignedUrls(data);
+    const reporter = await this.resolveReporter(data);
+    return { ...withUrls, reporter };
+  }
+
+  /** Reporter identity for the detail view; never throws (lookup failures yield nulls). */
+  private async resolveReporter(issue: any): Promise<{
+    userId: string;
+    email: string | null;
+    name: string | null;
+    memberId: string | null;
+  }> {
+    const reporter = { userId: issue.reporter_id, email: null as string | null, name: null as string | null, memberId: null as string | null };
+    try {
+      const { data, error } = await this.supabase.db.auth.admin.getUserById(issue.reporter_id);
+      const u = data?.user;
+      if (error || !u) return reporter;
+      reporter.email = u.email ?? null;
+      const meta = (u.user_metadata ?? {}) as Record<string, unknown>;
+      const name = meta.full_name ?? meta.name;
+      reporter.name = typeof name === 'string' && name ? name : null;
+      if (reporter.email) {
+        const members = await this.workspaceMembersForProject(issue.project_id);
+        const wanted = reporter.email.toLowerCase();
+        reporter.memberId = members.find((m) => (m.email ?? '').toLowerCase() === wanted)?.id ?? null;
+      }
+    } catch {
+      /* keep whatever was resolved */
+    }
+    return reporter;
+  }
+
+  private async workspaceMembersForProject(
+    projectId: string,
+  ): Promise<Array<{ id: string; name: string; email: string }>> {
+    const { data: project } = await this.supabase.db
+      .from('projects')
+      .select('workspace_id')
+      .eq('id', projectId)
+      .maybeSingle();
+    if (!project?.workspace_id) return [];
+    const { data, error } = await this.supabase.db
+      .from('workspace_members')
+      .select('id, name, email')
+      .eq('workspace_id', project.workspace_id);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((m: any) => ({ id: m.id, name: m.name, email: m.email }));
+  }
+
+  async listAssignableMembers(user: AuthUser, projectId: string) {
+    await this.access.assertCanAccessProject(user, projectId);
+    return this.workspaceMembersForProject(projectId);
+  }
+
+  /** Any user with project access (owner or member) may assign. null clears. */
+  async assign(user: AuthUser, issueId: string, memberId: string | null) {
+    const { data: issue } = await this.supabase.db
+      .from('issues')
+      .select('id, project_id, metadata')
+      .eq('id', issueId)
+      .maybeSingle();
+    if (!issue) throw new NotFoundException('Issue not found');
+    const role = await this.access.getProjectRole(user, issue.project_id);
+    if (!role) throw new NotFoundException('Issue not found');
+
+    let name: string | null = null;
+    if (memberId) {
+      const members = await this.workspaceMembersForProject(issue.project_id);
+      const member = members.find((m) => m.id === memberId);
+      if (!member) {
+        const names = members.map((m) => m.name).join(', ') || 'none';
+        throw new BadRequestException(
+          `Member is not in this project's workspace. Assignable members: ${names}`,
+        );
+      }
+      name = member.name;
+    }
+
+    const meta = (issue.metadata || {}) as Record<string, unknown>;
+    const { data, error } = await this.supabase.db
+      .from('issues')
+      .update({ assignee_member_id: memberId, metadata: { ...meta, assignee: name } })
+      .eq('id', issueId)
+      .eq('project_id', issue.project_id)
+      .select()
+      .single();
+    if (error || !data) throw new NotFoundException('Issue not found');
+    return data;
   }
 
   /**

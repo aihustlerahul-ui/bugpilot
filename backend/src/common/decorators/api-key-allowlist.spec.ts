@@ -39,8 +39,10 @@ describe('API key allowlist', () => {
     expect(found.sort()).toEqual(
       [
         'IssuesController.addComment',
+        'IssuesController.assign',
         'IssuesController.findByProject',
         'IssuesController.findOne',
+        'IssuesController.listAssignableMembers',
         'IssuesController.listComments',
         'IssuesController.updateStatus',
         'ProjectsController.findAll',
