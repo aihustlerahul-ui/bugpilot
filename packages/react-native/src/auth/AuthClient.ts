@@ -2,6 +2,16 @@ import type { AuthSession, ProjectSummary } from './types';
 
 type FetchLike = typeof fetch;
 
+/** Definitive rejection by the server (HTTP 400/401). Anything else is transient. */
+export class AuthError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'AuthError';
+    this.status = status;
+  }
+}
+
 export class AuthClient {
   private readonly base: string;
   private readonly fetchImpl: FetchLike;
@@ -28,6 +38,9 @@ export class AuthClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
+    if (res.status === 400 || res.status === 401) {
+      throw new AuthError('Session expired', res.status);
+    }
     if (!res.ok) throw new Error(`Session refresh failed (HTTP ${res.status})`);
     return (await res.json()) as AuthSession;
   }

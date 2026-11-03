@@ -16,7 +16,11 @@ import {
   getLastViewShotFailure,
   isViewShotAvailable,
 } from './screenshot/ViewShotScreenshotAdapter';
+import { resolveAccessToken } from './auth/resolveAccessToken';
 import type { BugSeverity, ReportFormValues } from './types';
+
+// TODO(Task 7): replace with the real TokenManager from the provider.
+const NO_MANAGER = { getAccessToken: async (): Promise<string | null> => null };
 
 const SEVERITIES: BugSeverity[] = ['Low', 'Medium', 'High', 'Critical'];
 
@@ -101,7 +105,7 @@ export function ReportForm() {
 
     setSubmitting(true);
     try {
-      const token = (config.getAccessToken ? await config.getAccessToken() : null);
+      const token = await resolveAccessToken(config, NO_MANAGER);
       const routeName = config.getRouteName?.() || selected?.routeName || undefined;
       const routeParams = config.getRouteParams?.();
 

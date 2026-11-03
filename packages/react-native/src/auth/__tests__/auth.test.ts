@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AuthClient } from '../AuthClient';
 import { createMemoryAdapter, createSecureStoreAdapter } from '../SessionStore';
 import { TokenManager } from '../TokenManager';
+import { resolveAccessToken } from '../resolveAccessToken';
 import type { AuthSession } from '../types';
 
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -172,14 +173,99 @@ describe('adapters', () => {
   });
 });
 
-describe('config override', () => {
-  it('config.getAccessToken override bypasses the manager', async () => {
-    const { manager, fetchMock } = setup(() => res(200, session()));
-    const config: { getAccessToken?: () => Promise<string | null> } = {
-      getAccessToken: async () => 'override-token',
-    };
-    const resolve = () => (config.getAccessToken ? config.getAccessToken() : manager.getAccessToken());
-    expect(await resolve()).toBe('override-token');
-    expect(fetchMock).not.toHaveBeenCalled();
+describe('resolveAccessToken', () => {
+  const mgr = (t: string | null) => ({ getAccessToken: vi.fn(async () => t) });
+  it('override bypasses the manager', async () => {
+    const m = mgr('m');
+    expect(await resolveAccessToken({ getAccessToken: async () => 'o' }, m)).toBe('o');
+    expect(m.getAccessToken).not.toHaveBeenCalled();
+  });
+  it('uses the manager when no override', async () => {
+    expect(await resolveAccessToken({}, mgr('m'))).toBe('m');
+  });
+  it('override throwing yields null', async () => {
+    const m = mgr('m');
+    const cfg = { getAccessToken: async (): Promise<string | null> => { throw new Error('x'); } };
+    expect(await resolveAccessToken(cfg, m)).toBeNull();
+    expect(m.getAccessToken).not.toHaveBeenCalled();
+  });
+});
+
+describe('TokenManager resilience', () => {
+  it('network failure and 500 keep the session and do not sign out; later refresh succeeds', async () => {
+    let mode: 'net' | '500' | 'ok' = 'net';
+    const { manager, onSignedOut } = setup((url) => {
+      if (url.endsWith('/login')) return res(200, session({ expires_at: nowSec() - 5 }));
+      if (mode === 'net') throw new Error('network down');
+      if (mode === '500') return res(500, {});
+      return res(200, session({ access_token: 'access-2', refresh_token: 'refresh-2' }));
+    });
+    await manager.signIn('qa@example.com', 'pw');
+    expect(await manager.getAccessToken()).toBeNull();
+    mode = '500';
+    expect(await manager.getAccessToken()).toBeNull();
+    expect(onSignedOut).not.toHaveBeenCalled();
+    expect(await manager.getUser()).not.toBeNull();
+    mode = 'ok';
+    expect(await manager.getAccessToken()).toBe('access-2');
+  });
+
+  it('400 and 401 sign out exactly once', async () => {
+    for (const status of [400, 401]) {
+      const { manager, onSignedOut } = setup((url) =>
+        url.endsWith('/login') ? res(200, session({ expires_at: nowSec() - 5 })) : res(status, {}),
+      );
+      await manager.signIn('qa@example.com', 'pw');
+      expect(await manager.getAccessToken()).toBeNull();
+      expect(onSignedOut).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('refreshes at exactly 60s remaining but not at 61s', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(1_000_000_000_000));
+    const now = 1_000_000_000;
+    let n = 0;
+    const { manager, fetchMock } = setup((url) =>
+      url.endsWith('/login')
+        ? res(200, session({ expires_at: now + 60 }))
+        : res(200, session({ access_token: `r${++n}`, expires_at: now + 3600 })),
+    );
+    await manager.signIn('qa@example.com', 'pw');
+    expect(await manager.getAccessToken()).toBe('r1');
+    vi.useRealTimers();
+    const b = setup((url) =>
+      url.endsWith('/login') ? res(200, session({ expires_at: nowSec() + 62 })) : res(200, session()),
+    );
+    await b.manager.signIn('qa@example.com', 'pw');
+    expect(await b.manager.getAccessToken()).toBe('access-1');
+    expect(b.fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls.filter((c) => c[0].endsWith('/refresh'))).toHaveLength(1);
+  });
+
+  it('refresh in flight when signOut runs does not write the session back', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const { manager, storage } = setup(async (url) => {
+      if (url.endsWith('/login')) return res(200, session({ expires_at: nowSec() - 5 }));
+      await gate;
+      return res(200, session({ access_token: 'access-2' }));
+    });
+    await manager.signIn('qa@example.com', 'pw');
+    const p = manager.getAccessToken();
+    await new Promise((r) => setTimeout(r, 0));
+    await manager.signOut();
+    release();
+    expect(await p).toBeNull();
+    expect(await storage.getItem('bugpilot.session')).toBeNull();
+  });
+
+  it('discards corrupt or invalid stored sessions', async () => {
+    const { manager, storage } = setup(() => res(200, session()));
+    for (const blob of ['{not json', JSON.stringify({ access_token: 'a', refresh_token: 1, expires_at: 5 }), JSON.stringify({ access_token: 'a', refresh_token: 'r', expires_at: 'x' })]) {
+      await storage.setItem('bugpilot.session', blob);
+      expect(await manager.getAccessToken()).toBeNull();
+      expect(await storage.getItem('bugpilot.session')).toBeNull();
+    }
   });
 });
