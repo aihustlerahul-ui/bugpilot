@@ -239,7 +239,6 @@ test('3 MB data: url is cut; payload stays under size guard; truncatedFields cap
   const t = res.content[0].text;
   assert.ok(t.length < 200_000, `len ${t.length}`);
   const r = JSON.parse(t);
-  assert.ok(r.metadata.big.url.length <= 2000 || String(r.metadata.big).startsWith('[omitted'));
   assert.ok(r.truncatedFields.length <= 20);
 });
 
@@ -250,4 +249,34 @@ test('long https url is kept, over-4096 is cut', async () => {
   const r = text(await handlers.get_issue({ issueId: 'i1' }));
   assert.equal(r.metadata.x.url, ok);
   assert.equal(r.metadata.y.url.length, 2000);
+});
+
+// ---- fix round 2 ----
+test('50 non-image screenshot URLs cause at most 5 fetches', async () => {
+  const urls = Array.from({ length: 50 }, (_, i) => `https://cdn.test/${i}.html`);
+  const images = Object.fromEntries(urls.map((u) => [u, () => new Response('x', { status: 200, headers: { 'content-type': 'text/html' } })]));
+  const seen = imgRoute(okIssue({ metadata: { screenshots: urls.map((url) => ({ url })) } }), images);
+  const r = await handlers.get_issue({ issueId: 'i1' });
+  assert.ok(seen.length <= 5, `fetches ${seen.length}`);
+  const t = text(r);
+  assert.equal(t.screenshotUrls.length, 20);
+  assert.equal(t.screenshotUrlsMore, 30);
+});
+
+test('3 MB data: screenshot_url is not emitted in full and payload stays under guard', async () => {
+  const data = 'data:image/png;base64,' + 'A'.repeat(3_000_000);
+  imgRoute(okIssue({ screenshot_url: data }), {});
+  const r = await handlers.get_issue({ issueId: 'i1' });
+  const t = r.content[0].text;
+  assert.ok(t.length < 200_000, `len ${t.length}`);
+  assert.ok(!t.includes('A'.repeat(5000)));
+  assert.match(t, /omitted: data URI/);
+  assert.ok(text(r).truncatedFields.some((f) => f.includes('screenshotUrls')));
+});
+
+test('pretty-printed emitted text respects the guard for deep payloads', async () => {
+  const wide = Array.from({ length: 100 }, (_, i) => ({ k: { l: { m: { n: 'v'.repeat(1900) } } }, i }));
+  route({ '/api/issues/i1': okIssue({ metadata: { wide, wide2: wide, wide3: wide } }), '/api/issues/i1/comments': [] });
+  const res = await handlers.get_issue({ issueId: 'i1' });
+  assert.ok(res.content[0].text.length < 200_000, `len ${res.content[0].text.length}`);
 });

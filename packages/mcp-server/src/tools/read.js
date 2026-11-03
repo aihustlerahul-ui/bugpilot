@@ -86,6 +86,9 @@ function compactRow(i) {
 
 const MAX_ARRAY_ANY = 100;
 const MAX_IMAGES = 3;
+const MAX_FETCH_ATTEMPTS = 5;
+const MAX_CANDIDATES = 200;
+const MAX_SCREENSHOT_URLS = 20;
 const MAX_IMAGE_TOTAL_BYTES = 3 * 1024 * 1024;
 const MAX_PAYLOAD_CHARS = 200_000;
 const MAX_URL_CHARS = 4096;
@@ -99,8 +102,8 @@ function isHttpUrl(v) {
   return typeof v === 'string' && v.length <= MAX_URL_CHARS && /^https?:\/\//i.test(v);
 }
 
-function truncateIssue(issue) {
-  const cut = [];
+function truncateIssue(issue, notes = []) {
+  const cut = [...notes];
   const walk = (val, path) => {
     if (Array.isArray(val)) {
       const key = path[path.length - 1] ?? '';
@@ -130,10 +133,10 @@ function truncateIssue(issue) {
   // Final total-size guard: omit the largest fields until the payload fits.
   const protectedKeys = new Set(['id', 'truncated', 'truncatedFields', 'truncatedFieldsCount']);
   for (let guard = 0; guard < 200; guard++) {
-    if (JSON.stringify(out).length <= MAX_PAYLOAD_CHARS - 2000) break;
+    if (JSON.stringify(out, null, 2).length <= MAX_PAYLOAD_CHARS - 2000) break;
     let best = null;
     const consider = (holder, key, label) => {
-      const len = JSON.stringify(holder[key])?.length ?? 0;
+      const len = JSON.stringify(holder[key], null, 2)?.length ?? 0;
       if (!best || len > best.len) best = { holder, key, label, len };
     };
     for (const k of Object.keys(out)) {
@@ -241,28 +244,49 @@ export const handlers = {
     if (!args.issueId) throw new Error('issueId is required');
     const id = encodeURIComponent(args.issueId);
     const [issue, comments] = await Promise.all([apiGet(`/api/issues/${id}`), apiGet(`/api/issues/${id}/comments`)]);
-    const out = truncateIssue({ ...issue, comments: Array.isArray(comments) ? comments : [] });
 
-    const urls = [];
-    for (const u of [issue.screenshot_url, issue.element_screenshot_url]) if (u) urls.push(u);
-    for (const s of issue.metadata?.screenshots ?? []) if (s?.url) urls.push(s.url);
-    const unique = [...new Set(urls)];
+    // Bounded, deduped candidate list (O(1) in the number of screenshots).
+    const unique = new Set();
+    const add = (u) => {
+      if (typeof u === 'string' && u && unique.size < MAX_CANDIDATES) unique.add(u);
+    };
+    add(issue.screenshot_url);
+    add(issue.element_screenshot_url);
+    const shots = Array.isArray(issue.metadata?.screenshots) ? issue.metadata.screenshots : [];
+    for (let i = 0; i < shots.length && unique.size < MAX_CANDIDATES; i++) add(shots[i]?.url);
 
     const images = [];
-    const asUrls = [];
+    const rest = [];
     let budget = MAX_IMAGE_TOTAL_BYTES;
+    let attempts = 0;
     for (const u of unique) {
-      if (images.length >= MAX_IMAGES || budget <= 0) {
-        asUrls.push(u);
+      if (images.length >= MAX_IMAGES || budget <= 0 || attempts >= MAX_FETCH_ATTEMPTS || !imageFetchAllowed(u)) {
+        rest.push(u);
         continue;
       }
+      attempts++;
       const got = await fetchImage(u, Math.min(MAX_IMAGE_BYTES, budget));
       if (got) {
         images.push(got.image);
         budget -= got.bytes;
-      } else asUrls.push(u);
+      } else rest.push(u);
     }
-    if (asUrls.length) out.screenshotUrls = asUrls;
+
+    const notes = [];
+    const screenshotUrls = [];
+    rest.forEach((u, i) => {
+      if (screenshotUrls.length >= MAX_SCREENSHOT_URLS) return;
+      if (isHttpUrl(u)) screenshotUrls.push(u);
+      else {
+        const kind = /^data:/i.test(u) ? 'data URI' : u.length > MAX_URL_CHARS ? 'long URL' : 'non-http URL';
+        screenshotUrls.push(`[omitted: ${kind}, ${u.length} chars]`);
+        notes.push(`screenshotUrls[${screenshotUrls.length - 1}] (${kind}, ${u.length} chars omitted)`);
+      }
+    });
+    const extra = { comments: Array.isArray(comments) ? comments : [] };
+    if (screenshotUrls.length) extra.screenshotUrls = screenshotUrls;
+    if (rest.length > MAX_SCREENSHOT_URLS) extra.screenshotUrlsMore = rest.length - MAX_SCREENSHOT_URLS;
+    const out = truncateIssue({ ...issue, ...extra }, notes);
     return { content: [{ type: 'text', text: JSON.stringify(out, null, 2) }, ...images] };
   },
   async list_members(args = {}) {
