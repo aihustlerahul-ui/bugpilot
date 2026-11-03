@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api/client';
+import { MobileInfo, MobileBadge, isMobileIssue } from '@/components/MobileInfo';
 import { SyncButton } from '@/components/SyncButton';
 import { ReplayPlayer, type ReplayMarker } from '@/components/ReplayPlayer';
 import { VideoPlayer } from '@/components/VideoPlayer';
@@ -16,7 +17,7 @@ import { AiRootCauseAnalysis } from '@/components/AiRootCauseAnalysis';
 import { AiVisualAnomalyAnalysis } from '@/components/AiVisualAnomalyAnalysis';
 import { StackTraceView } from '@/components/StackTraceView';
 import { BreadcrumbTimeline, type BreadcrumbItem } from '@/components/BreadcrumbTimeline';
-import type { Issue, IssueTriageStatus } from '@/lib/types';
+import type { Issue, IssueTriageStatus, Project } from '@/lib/types';
 import { PlayIcon } from '@/components/Icons';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -220,6 +221,13 @@ export default function IssueDetailPage() {
 
   const qc = useQueryClient();
 
+  // Role comes from the cached project; members cannot use owner-only integrations.
+  const { data: project } = useQuery<Project>({
+    queryKey: ['project', projectId],
+    queryFn: () => api.get<Project>(`/projects/${projectId}`),
+  });
+  const isOwner = project?.role !== 'member';
+
   const { data: issue, isLoading, isError } = useQuery<Issue>({
     queryKey: ['issue', issueId],
     queryFn: () => api.get<Issue>(`/issues/${issueId}`),
@@ -390,6 +398,7 @@ export default function IssueDetailPage() {
   }
 
   const meta = issue.metadata || {};
+  const isMobile = isMobileIssue(issue);
   const hasReplay = Boolean(issue.replayUrl || issue.replay_storage_path);
   const hasVideo = Boolean(issue.videoUrl || issue.video_storage_path);
 
@@ -629,6 +638,7 @@ export default function IssueDetailPage() {
             </Link>
             <span className="text-slate-300">/</span>
             <span className="text-xs font-mono font-semibold text-slate-400">#{issue.id.slice(0, 8)}</span>
+            {isMobile && <MobileBadge />}
           </div>
           <h1 className="text-xl font-bold text-slate-900">{issue.title || issue.description}</h1>
         </div>
@@ -645,11 +655,13 @@ export default function IssueDetailPage() {
           <span className={`rounded px-2 py-0.5 text-xs font-semibold ${SEVERITY_CONFIG[issue.severity || 'Medium'] || 'bg-slate-100 text-slate-700'}`}>
             {issue.severity || 'Medium'}
           </span>
-          <SyncButton
-            issueId={issue.id}
-            projectId={projectId}
-            currentStatus={issue.sync_status}
-          />
+          {isOwner && (
+            <SyncButton
+              issueId={issue.id}
+              projectId={projectId}
+              currentStatus={issue.sync_status}
+            />
+          )}
         </div>
       </div>
 
@@ -820,6 +832,8 @@ export default function IssueDetailPage() {
 
         {/* RIGHT COLUMN: Tabbed DevTools Inspector (40% width) */}
         <div className="lg:col-span-5 space-y-4" id="tour-devtools-tabs">
+          {isMobile && <MobileInfo issue={issue} />}
+
           {/* Inspector Tab Selector */}
           <div className="flex border-b border-slate-200 overflow-x-auto">
             {[
@@ -978,6 +992,7 @@ export default function IssueDetailPage() {
           {/* Tab 5: Environment & Performance Specs */}
           {activeInspectorTab === 'env' && (
             <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-xs text-xs">
+              {!isMobile && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <span className="font-semibold text-slate-500">Browser:</span>
@@ -998,17 +1013,25 @@ export default function IssueDetailPage() {
                   <p className="font-mono text-slate-800">{String(browserInfo.devicePixelRatio ?? 1)}x</p>
                 </div>
               </div>
+              )}
 
               <div className="border-t border-slate-100 pt-3 space-y-2">
-                <div>
-                  <span className="font-semibold text-slate-500">Target URL:</span>
-                  <a href={issue.url || '#'} target="_blank" rel="noreferrer" className="mt-0.5 block font-mono text-indigo-600 underline truncate">
-                    {issue.url || '—'}
-                  </a>
-                </div>
+                {issue.url ? (
+                  <div>
+                    <span className="font-semibold text-slate-500">Target URL:</span>
+                    <a href={issue.url} target="_blank" rel="noreferrer" className="mt-0.5 block font-mono text-indigo-600 underline truncate">
+                      {issue.url}
+                    </a>
+                  </div>
+                ) : !isMobile ? (
+                  <div>
+                    <span className="font-semibold text-slate-500">Target URL:</span>
+                    <p className="mt-0.5 font-mono text-slate-700">—</p>
+                  </div>
+                ) : null}
                 {issue.route && issue.route !== issue.url && (
                   <div>
-                    <span className="font-semibold text-slate-500">Route Pattern:</span>
+                    <span className="font-semibold text-slate-500">{isMobile ? 'Screen:' : 'Route Pattern:'}</span>
                     <p className="mt-0.5 font-mono text-slate-700">{issue.route}</p>
                   </div>
                 )}

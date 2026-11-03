@@ -6,6 +6,7 @@ import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api/client';
 import type { Issue, Project, TeamMember, MemberConflict, IssueTriageStatus } from '@/lib/types';
+import { MobileBadge, isMobileIssue } from '@/components/MobileInfo';
 import { VideoBadge } from '@/components/VideoBadge';
 import { DiagnosticFilterBar } from '@/components/DiagnosticFilterBar';
 import { TriageStatusBadge } from '@/components/TriageStatusBadge';
@@ -39,6 +40,11 @@ const SEVERITY_CONFIG: Record<string, { label: string; cls: string }> = {
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function safePathname(url: string | null | undefined): string {
+  if (!url) return '—';
+  try { return new URL(url).pathname; } catch { return url; }
 }
 
 function parseConflict(err: Error): MemberConflict | null {
@@ -118,10 +124,18 @@ function ProjectPageContent() {
     queryFn: () => api.get<Issue[]>(`/issues/project/${projectId}`),
   });
 
+  // Members (invited testers) cannot manage the team or project settings.
+  const isOwner = project?.role !== 'member';
+
   const { data: members = [] } = useQuery<TeamMember[]>({
     queryKey: ['project-members', projectId],
     queryFn: () => api.get<TeamMember[]>(`/workspaces/members/project/${projectId}`),
+    enabled: Boolean(project) && isOwner,
+    retry: false,
   });
+
+  // A member who lands on ?tab=settings|members falls back to the issues tab.
+  const visibleTab = isOwner ? activeTab : 'issues';
 
   // Optimistic update status mutation
   const updateStatusMutation = useMutation({
@@ -238,7 +252,7 @@ function ProjectPageContent() {
         </div>
 
         {/* View Switcher Tabs when on issues */}
-        {activeTab === 'issues' && issues.length > 0 && (
+        {visibleTab === 'issues' && issues.length > 0 && (
           <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-xs" id="tour-view-switcher">
             <button
               onClick={() => setViewMode('table')}
@@ -294,12 +308,12 @@ function ProjectPageContent() {
 
       {/* Top-level tabs */}
       <div className="flex gap-0 border-b border-gray-200">
-        {(['issues', 'members', 'settings'] as const).map(tab => (
+        {(isOwner ? (['issues', 'members', 'settings'] as const) : (['issues'] as const)).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors capitalize ${
-              activeTab === tab
+              visibleTab === tab
                 ? 'border-indigo-600 text-indigo-600 font-semibold'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
@@ -315,7 +329,7 @@ function ProjectPageContent() {
 
 
       {/* Issues tab */}
-      {activeTab === 'issues' && (
+      {visibleTab === 'issues' && (
         <>
           {!isLoading && issues.length === 0 && !isError && (
             <div className="text-center py-20 border border-dashed border-gray-200 rounded-xl bg-white">
@@ -428,6 +442,7 @@ function ProjectPageContent() {
 
                                   {/* Telemetry diagnostic chips */}
                                   <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                    {isMobileIssue(issue) && <MobileBadge />}
                                     {reactComp && (
                                       <span className="inline-flex items-center gap-1 font-mono text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 ring-1 ring-purple-200">
                                         <LayersIcon className="w-2.5 h-2.5" />
@@ -455,7 +470,7 @@ function ProjectPageContent() {
 
                               <td className="px-4 py-3.5 text-xs text-gray-400 font-mono hidden md:table-cell">
                                 <span className="truncate max-w-[140px] block" title={issue.route ?? issue.url ?? ''}>
-                                  {issue.route || (issue.url ? new URL(issue.url).pathname : '—')}
+                                  {issue.route || safePathname(issue.url)}
                                 </span>
                               </td>
 
@@ -541,7 +556,7 @@ function ProjectPageContent() {
       )}
 
       {/* Members tab */}
-      {activeTab === 'members' && (
+      {visibleTab === 'members' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-500">
@@ -636,7 +651,7 @@ function ProjectPageContent() {
       )}
 
       {/* Settings tab */}
-      {activeTab === 'settings' && (
+      {visibleTab === 'settings' && (
 
         <div className="max-w-4xl space-y-6 animate-in fade-in-50 duration-150">
           {settingsSavedSuccess && (

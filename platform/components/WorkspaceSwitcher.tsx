@@ -2,19 +2,14 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api/client';
-import type { Workspace } from '@/lib/types';
+import { useWorkspaceAccess } from '@/components/useWorkspaceAccess';
 import { ChevronDownIcon, CheckIcon, SparklesIcon } from '@/components/Icons';
 
 export function WorkspaceSwitcher() {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { data: workspace, isLoading } = useQuery<Workspace>({
-    queryKey: ['workspace-me'],
-    queryFn: () => api.get<Workspace>('/workspaces/me'),
-  });
+  const { workspace, isLoading, isMemberOnly } = useWorkspaceAccess();
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -28,7 +23,7 @@ export function WorkspaceSwitcher() {
     }
   }, [isOpen]);
 
-  const workspaceName = workspace?.name || 'Workspace';
+  const workspaceName = isMemberOnly ? 'Shared workspace' : workspace?.name || 'Workspace';
   const initial = workspaceName.charAt(0).toUpperCase();
 
   return (
@@ -47,9 +42,15 @@ export function WorkspaceSwitcher() {
               {isLoading ? 'Loading…' : workspaceName}
             </div>
             <div className="text-[10px] text-gray-500 flex items-center gap-1 leading-tight mt-0.5">
-              <span>Pro Plan</span>
-              <span className="text-gray-300">•</span>
-              <span className="text-emerald-600 font-medium">Active</span>
+              {isMemberOnly ? (
+                <span>Shared with you</span>
+              ) : (
+                <>
+                  <span>Pro Plan</span>
+                  <span className="text-gray-300">•</span>
+                  <span className="text-emerald-600 font-medium">Active</span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -68,6 +69,7 @@ export function WorkspaceSwitcher() {
             </div>
           </div>
 
+          {!isMemberOnly && (
           <div className="p-1">
             <Link
               href="/settings/integrations"
@@ -86,6 +88,7 @@ export function WorkspaceSwitcher() {
               <span>Manage Connectors</span>
             </Link>
           </div>
+          )}
         </div>
       )}
     </div>

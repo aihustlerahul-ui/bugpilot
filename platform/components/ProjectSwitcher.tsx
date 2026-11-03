@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
 import type { Project } from '@/lib/types';
+import { useWorkspaceAccess } from '@/components/useWorkspaceAccess';
 import {
   FolderIcon,
   ChevronDownIcon,
@@ -20,6 +21,7 @@ export function ProjectSwitcher() {
   const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
+  const { isMemberOnly } = useWorkspaceAccess();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -165,16 +167,18 @@ export function ProjectSwitcher() {
                       <span className="truncate">{p.name}</span>
                     </Link>
 
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Link
-                        href={`/projects/${p.id}?tab=settings`}
-                        onClick={() => setIsOpen(false)}
-                        className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-200/50 rounded"
-                        title="Project Settings"
-                      >
-                        <SettingsIcon className="w-3 h-3" />
-                      </Link>
-                    </div>
+                    {p.role !== 'member' && (
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Link
+                          href={`/projects/${p.id}?tab=settings`}
+                          onClick={() => setIsOpen(false)}
+                          className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-200/50 rounded"
+                          title="Project Settings"
+                        >
+                          <SettingsIcon className="w-3 h-3" />
+                        </Link>
+                      </div>
+                    )}
                   </div>
                 );
               })
@@ -224,14 +228,16 @@ export function ProjectSwitcher() {
             </div>
           ) : (
             <div className="p-1 space-y-0.5">
-              <button
-                type="button"
-                onClick={() => setIsCreating(true)}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-indigo-600 hover:bg-indigo-50 font-medium rounded-lg transition-colors"
-              >
-                <PlusIcon className="w-3.5 h-3.5" />
-                <span>New Project</span>
-              </button>
+              {!isMemberOnly && (
+                <button
+                  type="button"
+                  onClick={() => setIsCreating(true)}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-indigo-600 hover:bg-indigo-50 font-medium rounded-lg transition-colors"
+                >
+                  <PlusIcon className="w-3.5 h-3.5" />
+                  <span>New Project</span>
+                </button>
+              )}
               <Link
                 href="/projects?all=true"
                 onClick={() => setIsOpen(false)}

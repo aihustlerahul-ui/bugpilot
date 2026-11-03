@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api/client';
 import type { Project } from '@/lib/types';
+import { useWorkspaceAccess } from '@/components/useWorkspaceAccess';
 import { PlusIcon, SettingsIcon, FolderIcon } from '@/components/Icons';
 
 function ProjectsContent() {
@@ -32,6 +33,10 @@ function ProjectsContent() {
       router.replace(`/projects/${targetProject.id}`);
     }
   }, [isLoading, showAll, projects, router]);
+
+  const { isMemberOnly } = useWorkspaceAccess();
+  // Members (shared projects only) cannot create projects or edit project settings.
+  const canCreate = !isMemberOnly;
 
   const createProject = useMutation({
     mutationFn: (name: string) => api.post<Project>('/projects', { name, sync_mode: 'manual' }),
@@ -73,16 +78,18 @@ function ProjectsContent() {
             Manage your QA projects, default views, and issue capture pipelines.
           </p>
         </div>
-        <button
-          onClick={() => setCreating(true)}
-          className="inline-flex items-center gap-1.5 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shadow-xs"
-        >
-          <PlusIcon className="w-4 h-4" />
-          <span>New Project</span>
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => setCreating(true)}
+            className="inline-flex items-center gap-1.5 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shadow-xs"
+          >
+            <PlusIcon className="w-4 h-4" />
+            <span>New Project</span>
+          </button>
+        )}
       </div>
 
-      {creating && (
+      {canCreate && creating && (
         <div className="bg-white border border-indigo-100 rounded-xl p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-semibold text-gray-900">Create New Project</h3>
           <div className="flex gap-3">
@@ -129,15 +136,19 @@ function ProjectsContent() {
           </div>
           <h3 className="text-base font-semibold text-gray-900">No projects yet</h3>
           <p className="text-sm text-gray-500 max-w-sm mx-auto">
-            Create your first project to start reporting bugs directly from your browser extension.
+            {canCreate
+              ? 'Create your first project to start reporting bugs directly from your browser extension.'
+              : 'No projects have been shared with you yet. Ask the project owner to invite you.'}
           </p>
-          <button
-            onClick={() => setCreating(true)}
-            className="inline-flex items-center gap-1.5 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-xs"
-          >
-            <PlusIcon className="w-4 h-4" />
-            <span>Create First Project</span>
-          </button>
+          {canCreate && (
+            <button
+              onClick={() => setCreating(true)}
+              className="inline-flex items-center gap-1.5 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-xs"
+            >
+              <PlusIcon className="w-4 h-4" />
+              <span>Create First Project</span>
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -160,13 +171,15 @@ function ProjectsContent() {
                     {p.name}
                   </Link>
 
-                  <Link
-                    href={`/projects/${p.id}?tab=settings`}
-                    className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                    title="Project Settings"
-                  >
-                    <SettingsIcon className="w-4 h-4" />
-                  </Link>
+                  {p.role !== 'member' && (
+                    <Link
+                      href={`/projects/${p.id}?tab=settings`}
+                      className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                      title="Project Settings"
+                    >
+                      <SettingsIcon className="w-4 h-4" />
+                    </Link>
+                  )}
                 </div>
 
                 {p.settings?.description && (

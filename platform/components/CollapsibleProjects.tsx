@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
 import type { Project } from '@/lib/types';
+import { useWorkspaceAccess } from '@/components/useWorkspaceAccess';
 import { FolderIcon, ChevronRightIcon, PlusIcon } from '@/components/Icons';
 
 export function CollapsibleProjects() {
@@ -17,6 +18,8 @@ export function CollapsibleProjects() {
     queryKey: ['projects'],
     queryFn: () => api.get<Project[]>('/projects'),
   });
+
+  const { isMemberOnly } = useWorkspaceAccess();
 
   return (
     <div className="space-y-1">
@@ -75,13 +78,15 @@ export function CollapsibleProjects() {
             })
           )}
 
-          <Link
-            href="/projects"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors mt-1"
-          >
-            <PlusIcon className="w-3 h-3" />
-            <span>New Project</span>
-          </Link>
+          {!isMemberOnly && (
+            <Link
+              href="/projects"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors mt-1"
+            >
+              <PlusIcon className="w-3 h-3" />
+              <span>New Project</span>
+            </Link>
+          )}
         </div>
       )}
     </div>

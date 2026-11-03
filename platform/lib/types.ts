@@ -14,6 +14,7 @@ export interface Project {
   workspace_id: string
   name: string
   sync_mode: SyncMode
+  role?: 'owner' | 'member'
   settings?: ProjectSettings
   created_at: string
 }
@@ -36,6 +37,7 @@ export interface NetworkTransaction {
 }
 
 export interface IssueMetadata {
+  captureSource?: 'rn-reporter' | string
   is_pinned?: boolean
   pinned?: boolean
   retention_cleaned_at?: string

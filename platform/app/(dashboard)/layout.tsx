@@ -14,6 +14,7 @@ import {
   PuzzleIcon,
   LogOutIcon,
 } from '@/components/Icons';
+import { useWorkspaceAccess } from '@/components/useWorkspaceAccess';
 import { ProductTourButton } from '@/components/ProductTourButton';
 import '../driver.css';
 
@@ -21,6 +22,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
   const supabase = createClient();
+  // Invited testers have no workspace of their own: hide owner-only navigation.
+  const { isMemberOnly } = useWorkspaceAccess();
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -60,6 +63,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {/* Collapsible Projects Tree */}
           <CollapsibleProjects />
 
+          {!isMemberOnly && (
+            <>
           {/* Team */}
           <Link
             href="/team"
@@ -102,6 +107,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             />
             <span>Extension</span>
           </Link>
+            </>
+          )}
         </nav>
 
         {/* Footer / User Sign Out */}
