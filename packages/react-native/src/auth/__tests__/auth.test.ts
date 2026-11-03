@@ -253,7 +253,7 @@ describe('TokenManager resilience', () => {
     });
     await manager.signIn('qa@example.com', 'pw');
     const p = manager.getAccessToken();
-    await new Promise((r) => setTimeout(r, 0));
+    await new Promise<void>((r) => setTimeout(() => r(), 0));
     await manager.signOut();
     release();
     expect(await p).toBeNull();
