@@ -1,7 +1,7 @@
 {
   "name": "@bugpilot/mcp-server",
   "version": "0.1.0",
-  "description": "Read-only bugPilot MCP server — list/get projects and issues",
+  "description": "bugPilot MCP server — projects, issues, comments",
   "license": "UNLICENSED",
   "private": true,
   "type": "module",
@@ -11,7 +11,8 @@
   "main": "./src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "smoke": "node src/smoke-check.js"
+    "smoke": "node src/smoke-check.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=20"
