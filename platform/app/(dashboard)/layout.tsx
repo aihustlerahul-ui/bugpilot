@@ -12,6 +12,7 @@ import {
   UsersIcon,
   Link2Icon,
   PuzzleIcon,
+  SparklesIcon,
   LogOutIcon,
 } from '@/components/Icons';
 import { useWorkspaceAccess } from '@/components/useWorkspaceAccess';
@@ -34,6 +35,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isTeamActive = pathname.startsWith('/team');
   const isConnectorsActive = pathname.startsWith('/connectors');
   const isExtensionActive = pathname.startsWith('/extension');
+  const isAiToolsActive = pathname.startsWith('/ai-tools');
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -62,6 +64,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* Collapsible Projects Tree */}
           <CollapsibleProjects />
+
+          {/* AI tools (visible to members too: developers connect their IDE here) */}
+          <Link
+            href="/ai-tools"
+            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
+              isAiToolsActive
+                ? 'bg-blue-50 text-blue-700 font-semibold'
+                : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 font-medium'
+            }`}
+          >
+            <SparklesIcon
+              className={`w-4 h-4 ${isAiToolsActive ? 'text-blue-600' : 'text-gray-400'}`}
+            />
+            <span>AI Tools</span>
+          </Link>
 
           {!isMemberOnly && (
             <>

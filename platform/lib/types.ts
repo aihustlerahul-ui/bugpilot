@@ -138,3 +138,13 @@ export interface DashboardMetrics {
   trend: { date: string; count: number }[]
   recentIssues: Issue[]
 }
+
+/** Row of GET /api-keys. The plaintext key is only returned once by POST /api-keys. */
+export interface ApiKeyRow {
+  id: string
+  name: string
+  keyPrefix: string
+  lastUsedAt: string | null
+  revokedAt: string | null
+  createdAt: string
+}
