@@ -12,8 +12,11 @@ import type { ContextOptions } from './context/types';
 export type BugSeverity = 'Low' | 'Medium' | 'High' | 'Critical';
 
 export type BugPilotConfig = {
-  /** Nest API origin, e.g. http://localhost:4000 */
-  apiUrl: string;
+  /**
+   * API origin. Optional: defaults to the hosted bugPilot API. Set it only to
+   * self-host or use a local backend, e.g. http://localhost:4000.
+   */
+  apiUrl?: string;
   /**
    * Locks the target project for this host build. When the signed-in user
    * cannot access it, the picker opens with an error. When omitted the user

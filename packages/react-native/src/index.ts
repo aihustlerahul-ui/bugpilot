@@ -29,6 +29,8 @@ export type { SecureStoreLike } from './auth/SessionStore';
 export { resolveAccessToken } from './auth/resolveAccessToken';
 export type { AuthSession, AuthUser, ProjectSummary, StorageAdapter } from './auth/types';
 
+export { DEFAULT_API_URL, resolveApiUrl } from './apiUrl';
+
 export { BugPilot, BugPilotWatch, watch } from './BugPilotWatch';
 export type { BugPilotWatchProps, WatchOptions } from './BugPilotWatch';
 

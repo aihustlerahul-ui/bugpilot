@@ -85,7 +85,8 @@ export function BugPilotRoot({ children }: { children: React.ReactNode }) {
   return (
     <BugPilotProvider
       config={{
-        apiUrl: process.env.EXPO_PUBLIC_BUGPILOT_API_URL ?? 'http://localhost:4000',
+        // apiUrl is optional: it defaults to the hosted bugPilot API.
+        // Set it only to self-host or use a local backend (http://localhost:4000).
         storage,                                   // omit → memory only
         appVersion: Constants.expoConfig?.version, // shown in the form, sent to the dashboard
         getRouteName: () => navigationRef.getCurrentRoute()?.name,
@@ -120,7 +121,7 @@ Notes:
 
 | Key | Required | Meaning |
 | --- | --- | --- |
-| `apiUrl` | yes | Backend origin. |
+| `apiUrl` | no | Backend origin. Defaults to the hosted bugPilot API; override to self-host or for a local backend. |
 | `storage` | no | Session persistence. `createSecureStoreAdapter(SecureStore)` or any `{ getItem, setItem, removeItem }`. Default: memory. |
 | `appVersion` | no | Shown in the form; sent as `browser_info.appVersion`. |
 | `projectId` | no | Lock the build to one project (skips the picker). If the signed-in user cannot access it, the picker opens with an error. |

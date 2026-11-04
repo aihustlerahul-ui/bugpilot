@@ -13,6 +13,7 @@ import { resolveAccessToken } from './auth/resolveAccessToken';
 import { createMemoryAdapter } from './auth/SessionStore';
 import { TokenManager } from './auth/TokenManager';
 import type { StorageAdapter } from './auth/types';
+import { resolveApiUrl } from './apiUrl';
 import { BugPilotContext } from './BugPilotContext';
 import { ContextCollector } from './context/ContextCollector';
 import { collectDeviceInfo, loadOptionalModules, type OptionalModules } from './context/deviceInfo';
@@ -49,7 +50,7 @@ type AuthKit = { client: AuthClient; manager: TokenManager; storage: StorageAdap
 function createAuthKit(config: BugPilotConfig, onSignedOut: () => void): AuthKit | null {
   try {
     const storage = config.storage ?? createMemoryAdapter();
-    const client = new AuthClient(config.apiUrl);
+    const client = new AuthClient(resolveApiUrl(config.apiUrl));
     const manager = new TokenManager(client, storage, onSignedOut);
     return { client, manager, storage };
   } catch {
@@ -191,7 +192,7 @@ export function BugPilotProvider({
   if (!collectorRef.current) {
     collectorRef.current = new ContextCollector({
       getOptions: () => configRef.current.context,
-      apiUrl: config.apiUrl,
+      apiUrl: resolveApiUrl(config.apiUrl),
       getRouteName: () => configRef.current.getRouteName?.(),
       resolveTap: (x, y) => {
         const hit = registryRef.current.hitTest(x, y);

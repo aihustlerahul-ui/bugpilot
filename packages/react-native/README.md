@@ -54,7 +54,6 @@ import { BugPilotProvider, createSecureStoreAdapter } from '@bugpilot/react-nati
 // Gate with __DEV__ (or a QA build flag) so release builds never ship the overlay
 <BugPilotProvider
   config={{
-    apiUrl: process.env.EXPO_PUBLIC_BUGPILOT_API_URL ?? 'http://localhost:4000',
     storage: createSecureStoreAdapter(SecureStore), // omit → memory (sign in each launch)
     appVersion: Constants.expoConfig?.version,
     enabled: __DEV__,
@@ -73,7 +72,7 @@ sheet when signed out, otherwise selector mode, and loads the project list.
 
 | Key | Meaning |
 | --- | --- |
-| `apiUrl` | Nest API origin (required). Login/refresh go through `POST /api/auth/login` and `/api/auth/refresh`. |
+| `apiUrl` | Optional. Defaults to the hosted bugPilot API; set only to self-host or use a local backend (e.g. `http://localhost:4000`). |
 | `storage` | Session persistence (`StorageAdapter`), e.g. `createSecureStoreAdapter(SecureStore)`. Default: memory. `expo-secure-store` is an optional peer; the host passes it in. |
 | `appVersion` | Host app version, shown in the form and sent as `browser_info.appVersion`. |
 | `projectId` | Locks the project for this build. If the signed-in user can't access it, the picker opens with an error. |
@@ -115,7 +114,6 @@ privacy-filtered context so a developer can reproduce the bug without asking:
 
 ```tsx
 config={{
-  apiUrl,
   context: {
     filmstrip: true, // opt in: rolling screenshots
     maxRequests: 30,

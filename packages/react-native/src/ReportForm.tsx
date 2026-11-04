@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { resolveApiUrl } from './apiUrl';
 import { buildEnvironmentInfo, submitIssue, type CreateIssueResult } from './api/createIssue';
 import { useBugPilot } from './BugPilotContext';
 import { ProjectList, projectNameOf } from './ProjectList';
@@ -163,7 +164,7 @@ export function ReportForm() {
       const context = await contextCollector.snapshot();
 
       const result = await submitIssue({
-        apiUrl: config.apiUrl,
+        apiUrl: resolveApiUrl(config.apiUrl),
         projectId,
         tokens: { getAccessToken, refreshAfter401 },
         form,
