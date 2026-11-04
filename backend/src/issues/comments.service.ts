@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { NotificationsService } from '../notifications/notifications.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AccessService } from '../access/access.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
@@ -18,6 +19,7 @@ export class CommentsService {
   constructor(
     private supabase: SupabaseService,
     private access: AccessService,
+    @Optional() private notifications?: NotificationsService,
   ) {}
 
   private async assertAccess(user: AuthUser, issueId: string) {
@@ -62,6 +64,7 @@ export class CommentsService {
       .select()
       .single();
     if (error || !data) throw new Error(error?.message ?? 'Failed to add comment');
+    void this.notifications?.notifyComment(user, issueId, body);
     return data as IssueComment;
   }
 }

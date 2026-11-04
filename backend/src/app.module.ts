@@ -11,6 +11,7 @@ import { AiModule } from './ai/ai.module'
 import { AccessModule } from './access/access.module'
 import { AuthModule } from './auth/auth.module'
 import { ApiKeysModule } from './api-keys/api-keys.module'
+import { NotificationsModule } from './notifications/notifications.module'
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ApiKeysModule } from './api-keys/api-keys.module'
     AccessModule,
     AuthModule,
     ApiKeysModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

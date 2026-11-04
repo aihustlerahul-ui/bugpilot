@@ -130,6 +130,18 @@ export interface Issue {
   projectName?: string
   assignee_member_id?: string | null
   reporter?: { userId: string; email: string | null; name: string | null; memberId: string | null }
+  history?: IssueEvent[]
+}
+
+export interface IssueEvent {
+  id: string
+  issue_id: string
+  event_type: 'status' | 'assignee'
+  from_value: string | null
+  to_value: string | null
+  actor_name: string
+  source: 'web' | 'mcp'
+  created_at: string
 }
 
 export interface IssueComment {

@@ -183,7 +183,7 @@ function ProjectPageContent() {
       setMemberNotice(inviteNotice(result?.invite));
       qc.invalidateQueries({ queryKey: ['project-members', projectId] });
       qc.invalidateQueries({ queryKey: ['team-members'] });
-      setAddingMember(false); setMemberName(''); setMemberEmail(''); setMemberConflict(null);
+      setAddingMember(false); setMemberName(''); setMemberEmail(''); setMemberConflict(null); setNewPerson(false);
     },
     onError: (err: Error) => {
       const c = parseConflict(err);
@@ -191,6 +191,17 @@ function ProjectPageContent() {
       setMemberError(err.message);
     },
   });
+
+  // Project members are picked from the workspace team (Team page), not typed in.
+  const { data: teamMembers = [] } = useQuery<TeamMember[]>({
+    queryKey: ['team-members'],
+    queryFn: () => api.get<TeamMember[]>('/workspaces/members'),
+    enabled: isOwner,
+  });
+  const availableTeam = teamMembers.filter(t => !members.some(m => m.id === t.id));
+  // Free-text entry creates the Team member and links them here; shown when asked for or when nobody is left to pick.
+  const [newPerson, setNewPerson] = useState(false);
+  const showNewPerson = newPerson || availableTeam.length === 0;
 
   const removeMember = useMutation({
     mutationFn: (memberId: string) => api.delete(`/workspaces/members/project/${projectId}/${memberId}`),
@@ -573,7 +584,7 @@ function ProjectPageContent() {
             </p>
             {!addingMember && (
               <button
-                onClick={() => { setAddingMember(true); setMemberError(''); setMemberConflict(null); setMemberNotice(null); }}
+                onClick={() => { setAddingMember(true); setNewPerson(false); setMemberName(''); setMemberEmail(''); setMemberError(''); setMemberConflict(null); setMemberNotice(null); }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition-colors shadow-xs"
               >
                 + Add Member
@@ -585,22 +596,59 @@ function ProjectPageContent() {
           {addingMember && (
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
               <h3 className="text-sm font-semibold text-gray-900">Add Team Member</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <input
-                  type="text"
-                  placeholder="Full name"
-                  value={memberName}
-                  onChange={e => setMemberName(e.target.value)}
-                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <input
-                  type="email"
-                  placeholder="Email address"
+              {showNewPerson ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      placeholder="Full name"
+                      value={memberName}
+                      onChange={e => setMemberName(e.target.value)}
+                      className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <input
+                      type="email"
+                      placeholder="Email address"
+                      value={memberEmail}
+                      onChange={e => setMemberEmail(e.target.value)}
+                      className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    They&apos;ll be added to your Team page and to this project, and invited by email.
+                  </p>
+                </>
+              ) : (
+                <select
                   value={memberEmail}
-                  onChange={e => setMemberEmail(e.target.value)}
-                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+                  onChange={e => {
+                    const m = availableTeam.find(t => t.email === e.target.value);
+                    setMemberName(m?.name ?? '');
+                    setMemberEmail(m?.email ?? '');
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">Select a team member…</option>
+                  {availableTeam.map(t => (
+                    <option key={t.id} value={t.email}>
+                      {t.name} ({t.email})
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {availableTeam.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewPerson(v => !v);
+                    setMemberName(''); setMemberEmail(''); setMemberConflict(null); setMemberError('');
+                  }}
+                  className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                >
+                  {showNewPerson ? '← Pick from your team' : '+ Add someone new'}
+                </button>
+              )}
 
               {memberError && (
                 <p className="text-xs text-red-600">{memberError}</p>

@@ -1,4 +1,5 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { NotificationsService } from '../notifications/notifications.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateIssueDto } from './dto/create-issue.dto';
 import { AttachVideoDto } from './dto/attach-video.dto';
@@ -14,6 +15,7 @@ import { AccessService } from '../access/access.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { randomUUID } from 'crypto';
 import { assertOwnedStoragePath } from './storage-path';
+import { listIssueEvents, recordIssueEvent } from './issue-events';
 
 interface ChunkSession {
   uploadId: string;
@@ -36,6 +38,7 @@ export class IssuesService {
     private sourceMap: SourceMapService,
     private workspaces: WorkspacesService,
     private access: AccessService,
+    @Optional() private notifications?: NotificationsService,
   ) {}
 
   private cleanupStaleSessions() {
@@ -494,7 +497,8 @@ export class IssuesService {
 
     const withUrls = await this.withSignedUrls(data);
     const reporter = await this.resolveReporter(data);
-    return { ...withUrls, reporter };
+    const history = await listIssueEvents(this.supabase.db, issueId);
+    return { ...withUrls, reporter, history };
   }
 
   /** Reporter identity for the detail view; never throws (lookup failures yield nulls). */
@@ -558,6 +562,7 @@ export class IssuesService {
     if (!role) throw new NotFoundException('Issue not found');
 
     let name: string | null = null;
+    let assigneeEmail: string | null = null;
     if (memberId) {
       const members = await this.workspaceMembersForProject(issue.project_id);
       const member = members.find((m) => m.id === memberId);
@@ -568,6 +573,7 @@ export class IssuesService {
         );
       }
       name = member.name;
+      assigneeEmail = member.email;
     }
 
     const meta = (issue.metadata || {}) as Record<string, unknown>;
@@ -579,6 +585,9 @@ export class IssuesService {
       .select()
       .single();
     if (error || !data) throw new NotFoundException('Issue not found');
+    const previous = typeof meta.assignee === 'string' ? meta.assignee : null;
+    await recordIssueEvent(this.supabase.db, user, issueId, 'assignee', previous, name);
+    if (assigneeEmail && previous !== name) void this.notifications?.notifyAssigned(user, issueId, assigneeEmail);
     return data;
   }
 
@@ -749,7 +758,7 @@ export class IssuesService {
   async updateStatus(user: AuthUser, issueId: string, status: string) {
     const { data: issue } = await this.supabase.db
       .from('issues')
-      .select('id, project_id')
+      .select('id, project_id, status')
       .eq('id', issueId)
       .maybeSingle();
     if (!issue) throw new NotFoundException('Issue not found');
@@ -768,6 +777,8 @@ export class IssuesService {
       .single();
 
     if (error || !data) throw new NotFoundException('Issue not found');
+    await recordIssueEvent(this.supabase.db, user, issueId, 'status', issue.status ?? 'Incoming', status);
+    void this.notifications?.notifyStatusChanged(user, issueId, issue.status ?? 'Incoming', status);
     return data;
   }
 

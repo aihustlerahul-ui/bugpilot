@@ -19,6 +19,8 @@ import { StackTraceView } from '@/components/StackTraceView';
 import { BreadcrumbTimeline, type BreadcrumbItem } from '@/components/BreadcrumbTimeline';
 import type { Issue, IssueTriageStatus, Project } from '@/lib/types';
 import { IssueComments } from '@/components/IssueComments';
+import { CollapsibleText } from '@/components/CollapsibleText';
+import { IssueHistory } from '@/components/IssueHistory';
 import { PlayIcon } from '@/components/Icons';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -213,7 +215,7 @@ export default function IssueDetailPage() {
   const issueId = routeParams?.issueId || '';
 
   const [activeMediaTab, setActiveMediaTab] = useState<'replay' | 'video' | 'screenshots'>('replay');
-  const [activeInspectorTab, setActiveInspectorTab] = useState<'dom' | 'console' | 'network' | 'breadcrumbs' | 'env'>('dom');
+  const [activeInspectorTab, setActiveInspectorTab] = useState<'dom' | 'console' | 'network' | 'breadcrumbs' | 'env' | 'comments' | 'history'>('dom');
   const [currentReplayMs, setCurrentReplayMs] = useState(0);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [copiedCursor, setCopiedCursor] = useState(false);
@@ -236,6 +238,17 @@ export default function IssueDetailPage() {
     queryKey: ['issue', issueId],
     queryFn: () => api.get<Issue>(`/issues/${issueId}`),
     enabled: Boolean(issueId),
+  });
+
+  const { data: assignable = [] } = useQuery<{ id: string; name: string; email: string }[]>({
+    queryKey: ['assignable', projectId],
+    queryFn: () => api.get(`/issues/project/${projectId}/members`),
+    enabled: Boolean(projectId),
+  });
+
+  const assignMutation = useMutation({
+    mutationFn: (memberId: string | null) => api.patch(`/issues/${issueId}/assignee`, { memberId }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['issue', issueId] }),
   });
 
   const updateStatusMutation = useMutation({
@@ -645,6 +658,39 @@ export default function IssueDetailPage() {
             {isMobile && <MobileBadge />}
           </div>
           <h1 className="text-xl font-bold text-slate-900">{issue.title || issue.description}</h1>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+            <span>
+              Reported by{' '}
+              <span className="font-semibold text-slate-700">
+                {issue.reporter?.name || issue.reporter?.email || 'Unknown'}
+              </span>
+            </span>
+            <label className="flex items-center gap-1.5">
+              Assigned to
+              <select
+                value={issue.assignee_member_id ?? ''}
+                disabled={assignMutation.isPending}
+                onChange={(e) => assignMutation.mutate(e.target.value || null)}
+                className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+              >
+                <option value="">Unassigned</option>
+                {!issue.assignee_member_id && issue.metadata?.assignee && (
+                  <option value="" disabled>
+                    {issue.metadata.assignee} (legacy)
+                  </option>
+                )}
+                {assignable.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+              {assignMutation.isError && (
+                <span className="text-red-600">{(assignMutation.error as Error).message}</span>
+              )}
+            </label>
+            <span>Created {new Date(issue.created_at).toLocaleString()}</span>
+          </div>
         </div>
 
         {/* Triage & Sync Controls */}
@@ -652,7 +698,7 @@ export default function IssueDetailPage() {
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-medium text-slate-500">Triage:</span>
             <TriageStatusBadge
-              status={issue.triage_status || 'incoming'}
+              status={issue.status || issue.triage_status || 'Incoming'}
               onChange={canTriage ? (st) => updateStatusMutation.mutate(st) : undefined}
             />
           </div>
@@ -804,7 +850,7 @@ export default function IssueDetailPage() {
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
             <div>
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Bug Description</h3>
-              <p className="mt-1.5 text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">{issue.description}</p>
+              <CollapsibleText text={issue.description ?? ''} className="mt-1.5 text-sm text-slate-800 leading-relaxed" />
             </div>
 
             {(meta.expectedResult || meta.actualResult) && (
@@ -833,7 +879,6 @@ export default function IssueDetailPage() {
           {/* AI Screenshot Visual Anomaly Analysis */}
           <AiVisualAnomalyAnalysis issue={issue} />
 
-          <IssueComments issueId={issueId} />
         </div>
 
         {/* RIGHT COLUMN: Tabbed DevTools Inspector (40% width) */}
@@ -843,6 +888,8 @@ export default function IssueDetailPage() {
           {/* Inspector Tab Selector */}
           <div className="flex border-b border-slate-200 overflow-x-auto">
             {[
+              { id: 'comments', label: 'Comments' },
+              { id: 'history', label: `History (${(issue.history?.length ?? 0) + 1})` },
               { id: 'dom', label: 'DOM & React' },
               { id: 'console', label: `Console (${meta.consoleErrors?.length ?? 0})` },
               { id: 'network', label: `Network (${meta.networkTransactions?.length ?? 0})` },
@@ -851,7 +898,7 @@ export default function IssueDetailPage() {
             ].map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveInspectorTab(tab.id as 'dom' | 'console' | 'network' | 'breadcrumbs' | 'env')}
+                onClick={() => setActiveInspectorTab(tab.id as 'dom' | 'console' | 'network' | 'breadcrumbs' | 'env' | 'comments' | 'history')}
                 className={`px-3 py-2 text-xs font-semibold border-b-2 -mb-px whitespace-nowrap transition-colors ${
                   activeInspectorTab === tab.id
                     ? 'border-indigo-600 text-indigo-600'
@@ -862,6 +909,9 @@ export default function IssueDetailPage() {
               </button>
             ))}
           </div>
+
+          {activeInspectorTab === 'comments' && <IssueComments issueId={issueId} />}
+          {activeInspectorTab === 'history' && <IssueHistory issue={issue} />}
 
           {/* Tab 1: DOM & React Inspection + Stack Trace */}
           {activeInspectorTab === 'dom' && (

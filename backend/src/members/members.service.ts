@@ -1,4 +1,5 @@
-import { Injectable, BadRequestException, Logger, NotFoundException } from '@nestjs/common'
+import { Injectable, BadRequestException, Logger, NotFoundException, Optional } from '@nestjs/common'
+import { NotificationsService } from '../notifications/notifications.service'
 import { SupabaseService } from '../supabase/supabase.service'
 import { WorkspacesService } from '../workspaces/workspaces.service'
 import { InviteService } from './invite.service'
@@ -18,6 +19,7 @@ export class MembersService {
     private readonly supabase: SupabaseService,
     private readonly workspaces: WorkspacesService,
     private readonly invites: InviteService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   async listWorkspaceMembers(userId: string) {
@@ -193,6 +195,10 @@ export class MembersService {
           .eq('id', projectId)
           .maybeSingle()
         invite = await this.invites.sendProjectInvite(member.email, project?.name ?? 'a project')
+        // Supabase's invite only reaches brand-new users; tell everyone else (and anyone whose invite failed).
+        if (!invite.sent) {
+          void this.notifications?.notifyAddedToProject(userId, member.email, project?.name ?? 'a project', projectId)
+        }
       } catch (err: any) {
         // No email addresses or tokens in logs.
         this.logger.warn(`Project invite failed for project ${projectId}: ${err?.message ?? 'unknown error'}`)

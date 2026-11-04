@@ -13,10 +13,12 @@ import {
   Link2Icon,
   PuzzleIcon,
   SparklesIcon,
+  SmartphoneIcon,
   LogOutIcon,
 } from '@/components/Icons';
 import { useWorkspaceAccess } from '@/components/useWorkspaceAccess';
 import { ProductTourButton } from '@/components/ProductTourButton';
+import { UserMenu } from '@/components/UserMenu';
 import '../driver.css';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -28,6 +30,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   async function handleSignOut() {
     await supabase.auth.signOut();
+    try {
+      sessionStorage.removeItem('qa_token');
+    } catch {
+      /* storage can be unavailable */
+    }
     router.push('/login');
   }
 
@@ -36,6 +43,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isConnectorsActive = pathname.startsWith('/connectors');
   const isExtensionActive = pathname.startsWith('/extension');
   const isAiToolsActive = pathname.startsWith('/ai-tools');
+  const isMobileActive = pathname.startsWith('/mobile');
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -124,6 +132,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             />
             <span>Extension</span>
           </Link>
+
+          {/* Mobile bug reporter guide */}
+          <Link
+            href="/mobile"
+            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
+              isMobileActive
+                ? 'bg-blue-50 text-blue-700 font-semibold'
+                : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 font-medium'
+            }`}
+          >
+            <SmartphoneIcon
+              className={`w-4 h-4 ${isMobileActive ? 'text-blue-600' : 'text-gray-400'}`}
+            />
+            <span>Mobile</span>
+          </Link>
             </>
           )}
         </nav>
@@ -151,6 +174,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
           <div className="flex items-center gap-3">
             <ProductTourButton />
+            <UserMenu />
           </div>
         </header>
 

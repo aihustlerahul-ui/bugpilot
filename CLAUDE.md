@@ -127,6 +127,8 @@ POST /api/issues
 - Non-owner members may only set status `Resolved`; comments carry a source (`mcp` shows an AI badge in `IssueComments.tsx`)
 - Migrations `20261104_api_keys.sql`, `20261104_issue_comments.sql`, `20261104_issue_assignee_member.sql` are run manually in Supabase
 - Live verification (migrations, smoke, Cursor end-to-end) is pending; see `docs/mobile-qa/MCP_SERVER.md`
+- Email notifications (`backend/src/notifications`, Resend via `RESEND_API_KEY` + `RESEND_FROM`; skipped if unset): added to project (when the Supabase invite didn't go), bug assigned, status changed, new comment. Best-effort and fire-and-forget; recipients come only from the DB (reporter, assignee), never the actor
+- Issue history (`issue_events`, migration `20261105_issue_events.sql`) records status/assignee changes; returned as `history` on `GET /issues/:id`; `20261104_issue_comments_compat.sql` fixes DBs that already had an older `issue_comments` table
 
 ---
 
