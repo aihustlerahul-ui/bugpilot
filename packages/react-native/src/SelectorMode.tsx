@@ -1,7 +1,8 @@
 import React, { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { useBugPilot } from './BugPilotContext';
 import { ProjectBar } from './ProjectBar';
+import type { NativeViewHandle } from './nativeView';
 import { registeredToSelected } from './registry';
 import type { SelectedElementInfo } from './types';
 
@@ -27,12 +28,13 @@ export function SelectorMode() {
     registry,
     screenshotCapture,
     setPendingScreenshot,
+    setPendingElementScreenshot,
   } = useBugPilot();
   const [highlight, setHighlight] = useState<Highlight | null>(null);
   const [busy, setBusy] = useState(false);
 
   const finishSelect = useCallback(
-    async (selected: SelectedElementInfo, box: Highlight) => {
+    async (selected: SelectedElementInfo, box: Highlight, target?: NativeViewHandle | null) => {
       setHighlight(box);
       setBusy(true);
       try {
@@ -40,14 +42,20 @@ export function SelectorMode() {
         await new Promise<void>((r) => setTimeout(() => r(), 80));
         const shot = await screenshotCapture.captureFullWindow();
         setPendingScreenshot(shot);
+        let crop = null;
+        if (target && screenshotCapture.captureElement) {
+          crop = await screenshotCapture.captureElement(target).catch(() => null);
+        }
+        setPendingElementScreenshot(crop);
       } catch {
         setPendingScreenshot(null);
+        setPendingElementScreenshot(null);
       } finally {
         setBusy(false);
         openForm(selected);
       }
     },
-    [openForm, screenshotCapture, setPendingScreenshot],
+    [openForm, screenshotCapture, setPendingScreenshot, setPendingElementScreenshot],
   );
 
   const onSelectAt = (pageX: number, pageY: number) => {
@@ -68,13 +76,13 @@ export function SelectorMode() {
             width: 48,
             height: 48,
           };
-      void finishSelect(selected, box);
+      void finishSelect(selected, box, hit?.ref);
     });
   };
 
   return (
     <View style={styles.overlay} pointerEvents="box-none" testID="bugpilot-selector">
-      <View style={styles.top} pointerEvents="box-none">
+      <View style={[styles.top, { top: topInset() }]} pointerEvents="box-none">
         <ProjectBar />
         <View style={styles.banner}>
           <Text style={styles.bannerText}>
@@ -119,6 +127,11 @@ export function SelectorMode() {
       />
     </View>
   );
+}
+
+/** Below the notch on iOS; below the status bar on Android (edge-to-edge safe). */
+function topInset(): number {
+  return Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) + 12 : 56;
 }
 
 const styles = StyleSheet.create({

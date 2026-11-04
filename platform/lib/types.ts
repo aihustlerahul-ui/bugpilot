@@ -38,6 +38,7 @@ export interface NetworkTransaction {
 
 export interface IssueMetadata {
   captureSource?: 'rn-reporter' | string
+  mobile?: { collected?: string[]; extra?: Record<string, unknown>; navigation?: { routeName?: string | null } } | null
   is_pinned?: boolean
   pinned?: boolean
   retention_cleaned_at?: string

@@ -219,3 +219,19 @@ account, not a personal one.
 4. In the dashboard open that project: the issue should show the *Mobile* badge, screen, element,
    device/OS/app version and the screenshot. The owner can open it; the tester can see it in the
    same project.
+
+
+## Context pack (device, logs, network, journey)
+
+Each report also carries device/app facts, recent console errors, recent network
+calls (no bodies or headers, query values redacted), the last screens and taps,
+and optionally a low-res screenshot filmstrip. Configure with `config.context`
+(see the package README). The dashboard shows them in the mobile info card and in
+the existing Console, Network, Flight Recorder and Screenshots views.
+
+- Everything except the filmstrip is on by default; pass `context: false` to disable.
+- Optional peers (`expo-application`, `expo-device`, `@react-native-community/netinfo`,
+  `expo-battery`, `expo-updates`, `expo-constants`) enrich the device info when the host
+  already has them.
+- Tested in unit tests only; verify on an iOS simulator and an Android emulator before
+  relying on it (keyboard handling in the form, status-bar offsets, filmstrip performance).

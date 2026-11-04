@@ -1,3 +1,4 @@
+import type { NativeViewHandle } from './nativeView';
 import type { SelectedElementInfo } from './types';
 
 export type RegisteredBounds = {
@@ -14,6 +15,8 @@ export type RegisteredTarget = {
   accessibilityLabel?: string | null;
   nativeID?: string | null;
   bounds: RegisteredBounds | null;
+  /** Mounted view, used for an element-only screenshot. */
+  ref?: NativeViewHandle | null;
 };
 
 type Listener = () => void;

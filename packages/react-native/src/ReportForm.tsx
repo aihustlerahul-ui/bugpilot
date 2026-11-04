@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -59,6 +60,8 @@ export function ReportForm() {
     config,
     selected,
     pendingScreenshot,
+    pendingElementScreenshot,
+    contextCollector,
     closeOverlay,
     projects,
     projectId,
@@ -110,6 +113,18 @@ export function ReportForm() {
     setDefaultsApplied(true);
   }, [selected, config, defaultsApplied]);
 
+  const contextSummary = (() => {
+    const c = contextCollector.counts();
+    const parts = [
+      `${c.logs} log${c.logs === 1 ? '' : 's'}`,
+      `${c.requests} request${c.requests === 1 ? '' : 's'}`,
+      `${c.screens} screen${c.screens === 1 ? '' : 's'}`,
+      `${c.taps} tap${c.taps === 1 ? '' : 's'}`,
+    ];
+    if (c.frames) parts.push(`${c.frames} frame${c.frames === 1 ? '' : 's'}`);
+    return `device info, ${parts.join(', ')}`;
+  })();
+
   const screenshotStatus = (() => {
     if (pendingScreenshot?.base64) return 'Attached (view-shot)';
     const failure = getLastViewShotFailure();
@@ -145,6 +160,7 @@ export function ReportForm() {
     try {
       const routeName = config.getRouteName?.() || selected?.routeName || undefined;
       const routeParams = config.getRouteParams?.();
+      const context = await contextCollector.snapshot();
 
       const result = await submitIssue({
         apiUrl: config.apiUrl,
@@ -160,6 +176,8 @@ export function ReportForm() {
           routeParams,
         }),
         screenshot: pendingScreenshot,
+        elementScreenshot: pendingElementScreenshot,
+        context,
       });
 
       if (!result.ok) {
@@ -180,8 +198,11 @@ export function ReportForm() {
   };
 
   return (
-    <Modal visible animationType="slide" transparent onRequestClose={closeOverlay}>
-      <View style={styles.backdrop}>
+    <Modal visible animationType="slide" transparent statusBarTranslucent onRequestClose={closeOverlay}>
+      <KeyboardAvoidingView
+        style={styles.backdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <View style={styles.sheet}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Report a Bug</Text>
@@ -299,6 +320,12 @@ export function ReportForm() {
                   {config.appVersion?.trim() ? ` · app ${config.appVersion.trim()}` : ''}
                 </Text>
                 <Text style={styles.summaryLine}>Screenshot: {screenshotStatus}</Text>
+                {pendingElementScreenshot?.base64 ? (
+                  <Text style={styles.summaryLine}>Element crop: attached</Text>
+                ) : null}
+                <Text style={styles.summaryLine} testID="bugpilot-form-context">
+                  Context: {contextSummary}
+                </Text>
               </View>
 
               {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -336,7 +363,7 @@ export function ReportForm() {
             </View>
           )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

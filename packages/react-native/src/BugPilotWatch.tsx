@@ -57,6 +57,7 @@ export function BugPilotWatch({
       accessibilityLabel: accessibilityLabel ?? null,
       nativeID: nativeID ?? null,
       bounds: null,
+      ref: viewRef.current,
     });
     const unsubRemeasure = registry.subscribeRemeasure(measureAndUpdate);
     // Initial measure after mount (onLayout may have already fired).

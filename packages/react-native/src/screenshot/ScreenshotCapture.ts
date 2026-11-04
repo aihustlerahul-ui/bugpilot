@@ -13,6 +13,8 @@
  *   npx expo install react-native-view-shot
  */
 
+import type { NativeViewHandle } from '../nativeView';
+
 export type ScreenshotResult = {
   /** Raw base64 (no data-URL prefix) */
   base64: string;
@@ -34,6 +36,10 @@ export type ScreenshotCapture = {
    * leave cropping to a later annotation pass when native crop is unavailable.
    */
   captureRegion?: (bounds: CaptureRegion) => Promise<ScreenshotResult | null>;
+  /** Low-resolution root capture (`width` px wide) for the rolling filmstrip. */
+  captureThumbnail?: (width: number) => Promise<ScreenshotResult | null>;
+  /** Capture a single mounted view (element crop). */
+  captureElement?: (target: NativeViewHandle) => Promise<ScreenshotResult | null>;
 };
 
 let warnedNoop = false;

@@ -81,6 +81,7 @@ sheet when signed out, otherwise selector mode, and loads the project list.
 | `getAccessToken` | Override for CI / automated runs: bypasses the sign-in session (no sheet). On a 401 it is asked again. |
 | `getRouteName` / `getRouteParams` | Navigation snapshot for the report. |
 | `screenshotCapture` | Custom screenshot backend (tests / non-view-shot hosts). |
+| `context` | Extra context attached to every report — see **Context pack** below. `false` turns it all off. |
 
 `AuthClient`, `TokenManager` and storage are built **once** on first render;
 changing `apiUrl` or `storage` later has no effect (remount the provider instead).
@@ -97,6 +98,49 @@ Auth requests time out after 15 s and the issue POST after 60 s. Passwords and t
 Optional: wrap key controls with `BugPilotWatch` / `BugPilot.watch({ testID, name })` .
 
 Flow: FAB → (sign-in) → `SelectorMode` + `ProjectBar` → capture root → `ReportForm` → `submitIssue`.
+
+## Context pack (what each report carries)
+
+Besides the screen, selected element and screenshot, each report includes
+privacy-filtered context so a developer can reproduce the bug without asking:
+
+| Group | Content | Default | Dashboard view |
+| --- | --- | --- | --- |
+| `device` | model, brand, OS/API level, screen size + pixel ratio, orientation, font scale, dark mode, locale/timezone, JS engine, debug vs release, bundle id + build (needs `expo-application`), connectivity (`@react-native-community/netinfo`), battery (`expo-battery`), OTA update id (`expo-updates`) | on | Mobile info card |
+| `logs` | last `console.error` / `console.warn` and uncaught JS errors | on | Console tab |
+| `network` | last requests: method, URL with query *values* redacted, status, duration | on | Network tab |
+| `journey` | last screens visited and taps (testID / name + coordinates) | on | Flight Recorder tab |
+| `filmstrip` | last few low-res screenshots (default every 2 s, 5 frames, 360 px) | **off** | Screenshots tab |
+| `getExtraContext()` | host app state (flags, role, tenant…) | — | Mobile info card |
+
+```tsx
+config={{
+  apiUrl,
+  context: {
+    filmstrip: true, // opt in: rolling screenshots
+    maxRequests: 30,
+    getExtraContext: () => ({ plan: user.plan, flags: flags.enabledKeys }),
+  },
+}}
+```
+
+Privacy: request/response **bodies and headers are never captured**; typed input
+values are never captured (taps record only the matched testID/name); bearer
+tokens and JWTs are scrubbed from log text; keys that look sensitive
+(`password`, `token`, `secret`, `auth`, `cookie`, `key`…) are redacted from
+`getExtraContext`. Requests to the BugPilot API itself are excluded. The buffers
+run only while the overlay is enabled (`__DEV__` / QA builds). The optional
+modules above are loaded only if the host already has them — no new native
+dependency is required.
+
+There is no DOM, so web-style rrweb session replay does not apply; the
+journey + logs + network trail and the optional filmstrip are the mobile
+equivalent. A real screen recording would need native recorders and is not
+included.
+
+Element crops: a screenshot of just the tapped element is attached for views
+wrapped in `BugPilotWatch` (it needs the view ref). Other taps keep the
+full-screen capture.
 
 ## RN context (not DOM)
 

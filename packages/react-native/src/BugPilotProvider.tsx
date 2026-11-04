@@ -1,11 +1,21 @@
 import React, { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import {
+  Appearance,
+  Dimensions,
+  I18nManager,
+  PixelRatio,
+  Platform,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { AuthClient } from './auth/AuthClient';
 import { resolveAccessToken } from './auth/resolveAccessToken';
 import { createMemoryAdapter } from './auth/SessionStore';
 import { TokenManager } from './auth/TokenManager';
 import type { StorageAdapter } from './auth/types';
 import { BugPilotContext } from './BugPilotContext';
+import { ContextCollector } from './context/ContextCollector';
+import { collectDeviceInfo, loadOptionalModules, type OptionalModules } from './context/deviceInfo';
 import type { NativeViewHandle } from './nativeView';
 import { createComponentRegistry } from './registry';
 import { createScreenshotCapture } from './screenshot/createScreenshotCapture';
@@ -136,6 +146,8 @@ export function BugPilotProvider({
   const [pendingScreenshot, setPendingScreenshot] = useState<ScreenshotResult | null>(
     null,
   );
+  const [pendingElementScreenshot, setPendingElementScreenshot] =
+    useState<ScreenshotResult | null>(null);
 
   const rootRef = useRef<NativeViewHandle>(null);
   const registryRef = useRef(createComponentRegistry());
@@ -172,6 +184,57 @@ export function BugPilotProvider({
       override: config.screenshotCapture,
     });
   }
+
+  // Rolling logs / network / journey buffers. Created once; options are read live.
+  const optionalModulesRef = useRef<OptionalModules | null>(null);
+  const collectorRef = useRef<ContextCollector | null>(null);
+  if (!collectorRef.current) {
+    collectorRef.current = new ContextCollector({
+      getOptions: () => configRef.current.context,
+      apiUrl: config.apiUrl,
+      getRouteName: () => configRef.current.getRouteName?.(),
+      resolveTap: (x, y) => {
+        const hit = registryRef.current.hitTest(x, y);
+        if (!hit) return null;
+        return {
+          selector: hit.testID || hit.name || hit.accessibilityLabel || undefined,
+          text: hit.name || hit.accessibilityLabel || undefined,
+        };
+      },
+      captureThumbnail: captureRef.current?.captureThumbnail
+        ? (width) => captureRef.current!.captureThumbnail!(width)
+        : undefined,
+      getDeviceInfo: async () => {
+        if (!optionalModulesRef.current) optionalModulesRef.current = loadOptionalModules();
+        const info = await collectDeviceInfo(
+          { Platform, Dimensions, PixelRatio, Appearance, I18nManager },
+          optionalModulesRef.current,
+        );
+        const appVersion = configRef.current.appVersion?.trim();
+        return appVersion ? { ...info, appVersion } : info;
+      },
+    });
+  }
+  const collector = collectorRef.current;
+
+  useEffect(() => {
+    if (!overlayAvailable) return;
+    collector.start();
+    return () => collector.stop();
+  }, [overlayAvailable, collector]);
+
+  // No filmstrip frames while the BugPilot overlay itself is open.
+  useEffect(() => {
+    collector.setPaused(mode !== 'idle');
+  }, [collector, mode]);
+
+  const onRootTouch = useCallback(
+    (e: { nativeEvent: { pageX?: number; pageY?: number } }) => {
+      const { pageX, pageY } = e.nativeEvent;
+      if (typeof pageX === 'number' && typeof pageY === 'number') collector.recordTap(pageX, pageY);
+    },
+    [collector],
+  );
 
   // Restore a persisted session (dev/QA builds only).
   useEffect(() => {
@@ -240,6 +303,7 @@ export function BugPilotProvider({
     setEngaged(true);
     setSelected(null);
     setPendingScreenshot(null);
+    setPendingElementScreenshot(null);
     setMode('selecting');
   }, [overlayAvailable]);
 
@@ -256,6 +320,7 @@ export function BugPilotProvider({
     setMode('idle');
     setSelected(null);
     setPendingScreenshot(null);
+    setPendingElementScreenshot(null);
   }, []);
 
   /**
@@ -328,6 +393,9 @@ export function BugPilotProvider({
       mode,
       selected,
       pendingScreenshot,
+      pendingElementScreenshot,
+      setPendingElementScreenshot,
+      contextCollector: collector,
       screenshotCapture: captureRef.current!,
       registry: registryRef.current,
       setMode,
@@ -357,6 +425,8 @@ export function BugPilotProvider({
       mode,
       selected,
       pendingScreenshot,
+      pendingElementScreenshot,
+      collector,
       enterSelector,
       openForm,
       closeOverlay,
@@ -380,7 +450,12 @@ export function BugPilotProvider({
   return (
     <BugPilotContext.Provider value={value}>
       <View style={styles.shell} pointerEvents="box-none">
-        <View ref={rootRef} style={styles.root} collapsable={false}>
+        <View
+          ref={rootRef}
+          style={styles.root}
+          collapsable={false}
+          onTouchStart={overlayAvailable ? onRootTouch : undefined}
+        >
           {children}
         </View>
         <BugPilotOverlays

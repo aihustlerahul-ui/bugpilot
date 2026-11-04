@@ -15,6 +15,11 @@ vi.mock('react-native', () => {
     KeyboardAvoidingView: host('KeyboardAvoidingView'),
     StyleSheet: { create: <T,>(s: T) => s, hairlineWidth: 1 },
     Platform: { OS: 'ios', Version: '17.4' },
+    StatusBar: { currentHeight: 24 },
+    Dimensions: { get: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }) },
+    PixelRatio: { get: () => 3, getFontScale: () => 1 },
+    Appearance: { getColorScheme: () => 'light' },
+    I18nManager: { isRTL: false },
   };
 });
 

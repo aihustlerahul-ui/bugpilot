@@ -134,7 +134,7 @@ export function SignInPanel({ onSignedIn, onCancel }: SignInPanelProps) {
 export function SignInSheet() {
   const { closeOverlay, enterSelector } = useBugPilot();
   return (
-    <Modal visible animationType="slide" transparent onRequestClose={closeOverlay}>
+    <Modal visible animationType="slide" transparent statusBarTranslucent onRequestClose={closeOverlay}>
       <KeyboardAvoidingView
         style={styles.backdrop}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

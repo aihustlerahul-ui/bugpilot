@@ -6,6 +6,8 @@
 import type { ComponentRegistry } from './registry';
 import type { AuthUser, ProjectSummary, StorageAdapter } from './auth/types';
 import type { ScreenshotCapture, ScreenshotResult } from './screenshot/ScreenshotCapture';
+import type { ContextCollector } from './context/ContextCollector';
+import type { ContextOptions } from './context/types';
 
 export type BugSeverity = 'Low' | 'Medium' | 'High' | 'Critical';
 
@@ -40,6 +42,11 @@ export type BugPilotConfig = {
   getRouteParams?: () => Record<string, unknown> | undefined;
   /** Inject custom screenshot backend (tests / non-view-shot hosts). */
   screenshotCapture?: ScreenshotCapture | null;
+  /**
+   * Extra context attached to each report (device, logs, network, journey,
+   * optional screenshot filmstrip, host state). Pass `false` to disable all.
+   */
+  context?: ContextOptions | false;
 };
 
 /** RN analogue of extension element_info — no CSS/XPath */
@@ -109,6 +116,11 @@ export type BugPilotContextValue = {
   selected: SelectedElementInfo | null;
   /** Last capture before form (may be null if peerDep missing). */
   pendingScreenshot: ScreenshotResult | null;
+  /** Crop of the selected element (only for `BugPilotWatch` targets). */
+  pendingElementScreenshot: ScreenshotResult | null;
+  setPendingElementScreenshot: (shot: ScreenshotResult | null) => void;
+  /** Rolling logs / network / journey buffers; see `config.context`. */
+  contextCollector: ContextCollector;
   screenshotCapture: ScreenshotCapture;
   registry: ComponentRegistry;
   setMode: (mode: BugPilotCaptureMode) => void;

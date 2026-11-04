@@ -38,3 +38,6 @@ declare function fetch(
   json(): Promise<unknown>;
   text(): Promise<string>;
 }>;
+
+declare function setInterval(handler: () => void, timeout?: number): number;
+declare function clearInterval(handle?: number): void;

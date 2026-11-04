@@ -56,6 +56,11 @@ export {
 export type { ViewShotAvailability } from './screenshot/ViewShotScreenshotAdapter';
 export { createScreenshotCapture } from './screenshot/createScreenshotCapture';
 
+export { ContextCollector } from './context/ContextCollector';
+export { collectDeviceInfo, loadOptionalModules } from './context/deviceInfo';
+export type { RnEnv, OptionalModules } from './context/deviceInfo';
+export type { ContextOptions, ContextPack } from './context/types';
+
 export type {
   BugPilotConfig,
   BugPilotAuthStatus,

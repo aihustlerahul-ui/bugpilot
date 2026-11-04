@@ -84,8 +84,12 @@ export function createViewShotScreenshotAdapter(
     return noopScreenshotCapture;
   }
 
-  const capture = async (label: string): Promise<ScreenshotResult | null> => {
-    if (!rootRef.current) {
+  const capture = async (
+    label: string,
+    opts: { target?: NativeViewHandle; width?: number } = {},
+  ): Promise<ScreenshotResult | null> => {
+    const target = opts.target ?? rootRef.current;
+    if (!target) {
       lastFailure = {
         available: false,
         reason: 'root-unmounted',
@@ -98,10 +102,11 @@ export function createViewShotScreenshotAdapter(
       return null;
     }
     try {
-      const raw = await mod.captureRef(rootRef, {
+      const raw = await mod.captureRef(opts.target ?? rootRef, {
         format: 'png',
         result: 'base64',
         quality: 1,
+        ...(opts.width ? { width: opts.width } : {}),
       });
       if (!raw) {
         lastFailure = {
@@ -134,8 +139,11 @@ export function createViewShotScreenshotAdapter(
 
   return {
     captureFullWindow: () => capture('full-window'),
-    // Region crop deferred — capture full window; bounds stay on element_info.
+    // No JS-side pixel crop: a region falls back to the full window (bounds stay on
+    // element_info). Watched elements use captureElement for a real crop.
     captureRegion: async (_bounds: CaptureRegion) => capture('region-as-full'),
+    captureThumbnail: (width: number) => capture('frame', { width }),
+    captureElement: (target: NativeViewHandle) => capture('element', { target }),
   };
 }
 

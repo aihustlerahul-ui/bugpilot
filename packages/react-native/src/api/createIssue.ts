@@ -1,5 +1,6 @@
 import type { CreateIssuePayload, ReportFormValues, SelectedElementInfo } from '../types';
 import type { ScreenshotResult } from '../screenshot/ScreenshotCapture';
+import type { ContextPack } from '../context/types';
 
 export type CreateIssueOptions = {
   apiUrl: string;
@@ -11,6 +12,8 @@ export type CreateIssueOptions = {
   environmentInfo?: Record<string, unknown>;
   screenshot?: ScreenshotResult | null;
   elementScreenshot?: ScreenshotResult | null;
+  /** Device / logs / network / journey context collected by the SDK. */
+  context?: ContextPack | null;
   /** Injected fetch (tests). Defaults to global fetch. */
   fetchImpl?: typeof fetch;
   /** Deadline for the POST; a hung request resolves to a failed result. */
@@ -41,8 +44,20 @@ export function buildEnvironmentInfo(opts: {
  * [Certain] field names match extension background.js submitIssue payload.
  */
 export function buildCreateIssuePayload(opts: CreateIssueOptions): CreateIssuePayload {
-  const { form, projectId, element, routeName, environmentInfo, screenshot, elementScreenshot } =
-    opts;
+  const {
+    form,
+    projectId,
+    element,
+    routeName,
+    environmentInfo,
+    screenshot,
+    elementScreenshot,
+    context,
+  } = opts;
+  const ctxMeta = (context?.metadata ?? {}) as Record<string, unknown> & {
+    mobile?: Record<string, unknown>;
+  };
+  const { mobile: ctxMobile, ...ctxRest } = ctxMeta;
 
   let title = form.title.trim();
   let description = (form.description || '').trim();
@@ -80,11 +95,15 @@ export function buildCreateIssuePayload(opts: CreateIssueOptions): CreateIssuePa
     description: descriptionForApi,
     severity: form.severity || 'Medium',
     route: routeName,
-    browser_info: environmentInfo,
+    browser_info:
+      context?.browserInfo || environmentInfo
+        ? { ...(context?.browserInfo ?? {}), ...(environmentInfo ?? {}) }
+        : undefined,
     element_info,
     screenshot: screenshot?.base64,
     element_screenshot: elementScreenshot?.base64,
     metadata: {
+      ...ctxRest,
       captureSource: 'rn-reporter',
       expectedResult: form.expectedResult || null,
       actualResult: form.actualResult || null,
@@ -92,6 +111,7 @@ export function buildCreateIssuePayload(opts: CreateIssueOptions): CreateIssuePa
       environment: form.environment || null,
       labels: form.labels || null,
       mobile: {
+        ...(ctxMobile ?? {}),
         navigation: {
           routeName: routeName || null,
         },
