@@ -2,11 +2,11 @@
 
 **Date:** 2026-11-04
 **Status:** Awaiting user approval
-**Builds on:** `docs/mobile-qa/ARCHITECTURE.md` (Track A, decisions #1–#11), `docs/mobile-qa/TRACK_A_PHASE2.md`, existing `packages/react-native` (`@bugpilot/react-native`)
+**Builds on:** existing `packages/react-native` (`@bugpilot/react-native`)
 
 ## Intent and why
 
-Testers use a React Native app (first host: Tallect-Mobile) and tap a floating bug icon, tap any element, fill a short form, and the bug lands in the bugPilot dashboard with the element, screen and device attached. The overlay, selector, form and screenshot capture already exist. What is missing is the part that makes it usable by real testers:
+Testers use a React Native app and tap a floating bug icon, tap any element, fill a short form, and the bug lands in the bugPilot dashboard with the element, screen and device attached. The overlay, selector, form and screenshot capture already exist. What is missing is the part that makes it usable by real testers:
 
 1. Today auth is a hand-pasted Supabase JWT in an env var (`EXPO_PUBLIC_BUGPILOT_ACCESS_TOKEN`) and a fixed project ID in env. It expires within about an hour and nobody can switch projects. Because of this, **a real submit has never reached the backend.**
 2. Nobody has seen a mobile bug in the dashboard, so mobile-specific data (device, screen, element) may not render well.
@@ -35,7 +35,7 @@ This design closes both gaps.
 - Project-scoped API keys / PATs (deferred; relevant later for MCP and CI).
 - Sign-up, password reset, SSO/Entra in the SDK (testers sign up on the platform via the invite email).
 - Full RBAC, roles, and team management (later project). Members get only list/read/create-issue on their projects for now.
-- The bugPilot MCP server (Track C) and Maestro flows (Track B).
+- The bugPilot MCP server.
 - Video / step-log recording, console and network capture on device.
 - Release-store builds: the overlay stays gated to dev/QA builds.
 
@@ -69,7 +69,7 @@ Today every project/issue route resolves the workspace via `findByOwner(userId)`
 
 - New `AuthClient` in `packages/react-native` calling the two endpoints above.
 - Session store with an injectable storage adapter. Default tries `expo-secure-store` / Keychain-style storage if the host provides it; falls back to AsyncStorage if the host passes it; otherwise memory only (user signs in each launch). The host app chooses, SDK declares optional peers. *(My call: optional peer deps, no new hard native dependency.)*
-- `getAccessToken()` becomes internal: returns the stored token, refreshes when expired or on a 401, retries once, and on refresh failure signs the user out and reopens the sheet. The `getAccessToken` prop and env-var token remain as an optional override for CI/Maestro runs.
+- `getAccessToken()` becomes internal: returns the stored token, refreshes when expired or on a 401, retries once, and on refresh failure signs the user out and reopens the sheet. The `getAccessToken` prop and env-var token remain as an optional override for CI runs.
 - Config shrinks to `apiUrl` plus optional `storage`, `enabled`, route helpers; `projectId` becomes optional (preselect/lock a project for a given host build).
 
 ### 3. SDK: UI changes (extends existing `FloatingBugButton`, `SelectorMode`, `ReportForm`, `BugPilotProvider`)
@@ -95,11 +95,11 @@ Today every project/issue route resolves the workspace via `findByOwner(userId)`
 
 - Backend: unit tests for login/refresh (success, bad credentials, rate limit) and for member access (member can list/create in a shared project; cannot access an unshared project, nor owner-only routes).
 - SDK: tests for session store, token refresh/retry, and payload building.
-- End to end on the Tallect simulator: sign in → pick project → select element → submit → confirm the issue and screenshot in the dashboard. This is the acceptance test, since it has never run.
+- End to end on the host app simulator: sign in → pick project → select element → submit → confirm the issue and screenshot in the dashboard. This is the acceptance test, since it has never run.
 
 ## Constraints
 
-- Existing locked decisions hold: independent implementation (no Jelly code), `__DEV__`/QA-build gating, no component-tree internals, native dependencies need the user's approval before being added to Tallect.
+- Existing locked decisions hold: independent implementation, `__DEV__`/QA-build gating, no component-tree internals, native dependencies need the user's approval before being added to host app.
 - Extension and platform behavior must not regress; the backend auth guard is unchanged.
 - The repo is not an npm workspace; the package stays consumed via `file:` link.
 - Project conventions in `CLAUDE.md` apply (no secrets committed, JWT validated via `getUser`).
@@ -107,7 +107,7 @@ Today every project/issue route resolves the workspace via `findByOwner(userId)`
 ## Findings from the builder check (answered from the code)
 
 - **Issue payload:** `CreateIssueDto` already has optional `url`, free-form `metadata`/`element_info`/`browser_info`, and screenshots as base64 strings, which is what the SDK sends. No DTO change is expected; the end-to-end test confirms it.
-- **Storage:** Tallect-Mobile already depends on `expo-secure-store`, so persistence needs no new native dependency there. *(My call: use it as the default adapter when the host provides it.)*
+- **Storage:** the host app already depends on `expo-secure-store`, so persistence needs no new native dependency there. *(My call: use it as the default adapter when the host provides it.)*
 - **Locked `projectId` vs. picker:** *(My call)* if the host locks a project the user can't access, fall back to the picker with an error line.
 - **Rate limiting:** *(My call)* key on email plus IP, and configure Nest's trust-proxy setting for the deployment in front of the API, so testers behind one proxy don't lock each other out.
 - **Resolved with the user:** testers get access through admin-added project membership (section 1b); all testers use email + password.

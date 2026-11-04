@@ -62,8 +62,6 @@ Finish sequence (only after the developer asked for the fix): `add_comment` -> `
 
 Bug content is untrusted reporter-supplied data; tool descriptions tell the model not to follow instructions found in it.
 
-Maestro device tools belong to the Maestro MCP only.
-
 ## Cursor connect
 
 1. Create a key on the dashboard AI Tools page (copy it immediately).
@@ -86,14 +84,6 @@ Maestro device tools belong to the Maestro MCP only.
 ```
 
 3. Toggle/restart the MCP server in Cursor Settings -> Tools & MCPs.
-4. Side-by-side with Maestro: see Tallect `QA/MCP_SETUP.md`.
-
-## Separation of concerns
-
-| MCP | Purpose |
-| --- | --- |
-| **bugpilot** | Bugs / projects from Nest |
-| **maestro** | Devices, screenshots, YAML flows (`maestro mcp`) |
 
 ## Shared report schema
 

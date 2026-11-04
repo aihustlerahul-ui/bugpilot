@@ -151,7 +151,7 @@ Sessions persist across launches when `storage` is a secure store. *Sign out* cl
 The selector finds the element under the tap from registered bounds, not from React internals.
 Reports are only as good as the identifiers your app exposes:
 
-- Give interactive controls a stable **`testID`** (also used by Maestro/Detox) and an
+- Give interactive controls a stable **`testID`** and an
   **`accessibilityLabel`**.
 - Optionally wrap a control with **`BugPilotWatch`** to register it for hit-testing and give it a
   human-readable name:
@@ -180,7 +180,7 @@ const { startCapture, signOut, session } = useBugPilot();
 
 ## 7. CI / automation
 
-For Maestro or CI runs where nobody can type a password, set `getAccessToken` to return a valid
+For CI or automated runs where nobody can type a password, set `getAccessToken` to return a valid
 access token from your environment (for example `EXPO_PUBLIC_BUGPILOT_ACCESS_TOKEN`, gitignored,
 never committed) and lock a project with `projectId`. The sign-in sheet is bypassed. Use a test
 account, not a personal one.

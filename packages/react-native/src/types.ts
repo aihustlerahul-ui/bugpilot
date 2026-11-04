@@ -1,5 +1,5 @@
 /**
- * Shared types for @bugpilot/react-native (Track A Phase 2).
+ * Shared types for @bugpilot/react-native.
  * Parity target: extension buildIssue + background submitIssue payload.
  */
 
@@ -19,7 +19,7 @@ export type BugPilotConfig = {
    */
   projectId?: string;
   /**
-   * Override that bypasses the built-in TokenManager (CI / Maestro use).
+   * Override that bypasses the built-in TokenManager (CI / automated use).
    * When omitted, tokens come from the signed-in session.
    */
   getAccessToken?: () => Promise<string | null>;

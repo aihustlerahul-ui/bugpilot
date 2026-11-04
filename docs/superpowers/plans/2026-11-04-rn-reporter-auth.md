@@ -19,7 +19,7 @@
 - No Supabase service-role key or secret in the app bundle. Backend login uses `SUPABASE_ANON_KEY` (add to `backend/.env.example`).
 - Passwords and tokens are never logged. Session is stored via `expo-secure-store` when the host provides it.
 - The overlay stays gated to `__DEV__`/QA builds. SDK failures must never crash the host app.
-- No new native dependency may be added to Tallect-Mobile without the user's approval (`expo-secure-store` is already there).
+- No new native dependency may be added to a host app without the user's approval (`expo-secure-store` is already there).
 - Mobile issue data lives in existing `browser_info`, `element_info`, `route`, `metadata` fields; `metadata.captureSource === 'rn-reporter'` marks mobile issues. No DB migration unless Task 1 proves one is needed.
 - Don't commit secrets; `backend/.env` and `platform/.env.local` stay gitignored.
 
@@ -171,14 +171,14 @@ Failure modes the spec implies that no single task's happy path covers (each has
 - [ ] **Step 3: Verify in the browser** (`preview_start` the platform): sign in as a member user, see the shared project list, open a mobile-captured issue (seed one via Task 9's test submit) and confirm badge, device details and screenshot render with no console errors.
 - [ ] **Step 4: Commit** `feat(platform): support member users and render mobile-captured issues`
 
-### Task 9: End-to-end acceptance on the Tallect simulator
+### Task 9: End-to-end acceptance on a simulator
 
 **Files:**
-- Modify (in Tallect-Mobile, `/Users/rahulsarawagi/TM/Tallect-Mobile`): `src/qa/BugPilotDevRoot.tsx` (drop the env-var token; pass `storage={createSecureStoreAdapter(SecureStore)}` and `apiUrl`), `.maestro/qa_bugpilot_fab.yaml` (extend to the sign-in path), `docs/mobile-qa/TRACK_A_PHASE2.md` (update status), root `CLAUDE.md` Repo Structure/Known Items (mention `packages/react-native`, auth endpoints, member access)
+- Modify: root `CLAUDE.md` Repo Structure/Known Items (mention `packages/react-native`, auth endpoints, member access)
 
 - [ ] **Step 1: Prepare data.** In the platform, as admin, create a project and add a tester email to it; sign up that tester from the invite (or create it in Supabase test data). Do not paste real credentials into chat or commit them.
 - [ ] **Step 2: Run backend, platform and Metro** (never `CI=1`); no native rebuild is needed (no new native dependency).
 - [ ] **Step 3: Walk the flow on the simulator** (`mcp__Claude_Code_iOS_Simulator__control`): tap FAB → sign in → pick project → select an element → fill title → Submit.
 - [ ] **Step 4: Verify in the dashboard** that the issue appears under the tester as reporter, with route, element info, device info and screenshot, and that the admin can open it. Also verify negatives: sign-in with a wrong password shows the error; a tester not added to a project cannot see or submit to it.
 - [ ] **Step 5: Run the test suites** `cd backend && npx jest` and `cd packages/react-native && npx vitest run` — Expected: all PASS.
-- [ ] **Step 6: Commit** `docs: update mobile QA status and project context for RN auth` (repo-by-repo; Tallect commits only with the user's go-ahead).
+- [ ] **Step 6: Commit** `docs: update mobile QA status and project context for RN auth`

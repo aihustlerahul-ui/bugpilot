@@ -2,7 +2,7 @@
 
 **Status:** Draft for review. Aligns with existing Nest `CreateIssueDto` + platform `Issue` / `IssueMetadata`.  
 **Goal:** One extendable JSON shape for web extension **and** RN reporter (`@bugpilot/react-native` overlay) → same `POST /api/issues`.  
-**Decisions (2026-11-03):** Capture = in-app overlay (**Locked**). Auth + screenshot/AI privacy = bugPilot-owned (**Locked**). **#7 Locked:** free-floating icon → selector → on-device form matching extension — **not** upload-only edit. Track A = RN reporter; Track C MCP deferred.
+**Decisions (2026-11-03):** Capture = in-app overlay (**Locked**). Auth + screenshot/AI privacy = bugPilot-owned (**Locked**). **#7 Locked:** free-floating icon → selector → on-device form matching extension — **not** upload-only edit.
 
 ## Verified API create fields ([Certain] — `backend/src/issues/dto/create-issue.dto.ts`)
 
@@ -53,7 +53,7 @@ Do **not** treat as implemented. Prefer nesting to avoid premature migrations:
       "deviceModel": "iPhone 16",
       "appVersion": "1.0.0",
       "buildNumber": "…",
-      "bundleId": "com.tallect.mobile",
+      "bundleId": "com.example.app",
       "expoSdk": "57",
       "isDevClient": true,
       "navigation": {
@@ -77,7 +77,7 @@ Do **not** treat as implemented. Prefer nesting to avoid premature migrations:
 | `metadata.platform` / `metadata.mobile.*` | Proposed |
 | Top-level DB columns for device | Undecided — only if querying/filtering requires it |
 | Annotation vector shapes in metadata vs flattened PNG only | **#7 Locked:** on-device form + element select is v1; optional richer shapes/editing in platform after upload is additive |
-| `element_info` RN shape: `testID`, coords, routeName, componentName (opt-in) — not CSS/XPath | Proposed — see ARCHITECTURE Web → RN mapping |
+| `element_info` RN shape: `testID`, coords, routeName, componentName (opt-in) — not CSS/XPath | Proposed |
 
 ## Export shape for Cursor / MCP
 

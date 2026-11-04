@@ -1,5 +1,5 @@
 /**
- * @bugpilot/react-native — Track A Phase 2
+ * @bugpilot/react-native
  * Floating FAB → selector → on-device form → POST /api/issues
  */
 

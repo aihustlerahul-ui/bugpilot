@@ -1,6 +1,6 @@
 /**
  * Ambient globals for package-local typecheck without host node_modules.
- * Host apps (Tallect) resolve real react / react-native via preserveSymlinks.
+ * Host apps resolve real react / react-native via preserveSymlinks.
  */
 declare const __DEV__: boolean;
 

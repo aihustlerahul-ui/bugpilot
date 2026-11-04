@@ -4,7 +4,7 @@ import { useBugPilot } from './BugPilotContext';
 import type { NativeViewHandle } from './nativeView';
 
 export type BugPilotWatchProps = {
-  /** Prefer stable Maestro / Detox id — Tallect Track B will add these later. */
+  /** Prefer a stable id. */
   testID?: string;
   /** Opt-in display name stored as bugpilotName on selection. */
   name?: string;
@@ -16,7 +16,7 @@ export type BugPilotWatchProps = {
 
 /**
  * Optional wrap that registers measureInWindow bounds for selector hit-testing.
- * Lightweight — no Fiber. Hosts must add testIDs over time (Track B).
+ * Lightweight — no Fiber. Hosts add testIDs over time.
  *
  * @example
  * <BugPilotWatch testID="surface-fab" name="Create FAB">

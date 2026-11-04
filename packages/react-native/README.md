@@ -1,6 +1,6 @@
 # `@bugpilot/react-native`
 
-**Track A Phase 2** — in-app bug reporter for React Native / Expo.
+In-app bug reporter for React Native / Expo.
 
 Parity target: Chrome extension UX (activate → select element → form → `POST /api/issues`), adapted for mobile:
 
@@ -9,7 +9,7 @@ Parity target: Chrome extension UX (activate → select element → form → `PO
 3. **On-device form** (Smart + Standard fields; smart defaults from selection)
 4. Auto context + optional screenshot → submit
 
-**Not** “edit only after upload.” See `docs/mobile-qa/TRACK_A_PHASE2.md`.
+**Not** “edit only after upload.”
 
 ## Status
 
@@ -17,13 +17,10 @@ Parity target: Chrome extension UX (activate → select element → form → `PO
 | --- | --- |
 | FAB → selector → form → `createIssue` | Phase 2 wired |
 | Selector highlight + `BugPilotWatch` registry | Phase 2 |
-| Screenshot adapter (`react-native-view-shot`) | Peer + adapter; Tallect installed `5.1.0` |
+| Screenshot adapter (`react-native-view-shot`) | Optional peer + adapter |
 | Auth | In-SDK sign-in sheet (bugPilot email + password); session persisted via `storage`; `getAccessToken` override for CI |
 | Projects | Picker after sign-in (last choice remembered per user); optional `projectId` lock |
 | Published to npm | **No** — local path / private package |
-| Installed in Tallect-Mobile | **Yes** (`file:../../Work/bugPilot/packages/react-native`, `__DEV__` only) |
-| Native rebuild in Tallect | **Pending user** — `expo run:ios` / `expo run:android` |
-| MCP | **Out of scope** (Track C deferred) |
 
 ## Screenshot approach
 
@@ -37,35 +34,24 @@ Parity target: Chrome extension UX (activate → select element → form → `PO
 
 **Fallback:** `noopScreenshotCapture` when the peer is missing (one `__DEV__` warning). Submit still works without a screenshot.
 
-### Tallect (this machine)
+### Install in a host app
 
 ```bash
-# Already run (approved):
-npx expo install react-native-view-shot
-npm install --save "file:../../Work/bugPilot/packages/react-native"
+npx expo install react-native-view-shot expo-secure-store
+npm install --save "file:<path-to-bugPilot>/packages/react-native"
+npx expo run:ios   # or run:android — Metro reload is not enough
 ```
 
-**Rebuild required** (user; agent does not run unless asked):
+expo-dev-client only — not Expo Go. See `docs/mobile-qa/REACT_NATIVE_INTEGRATION.md`.
 
-```bash
-npx expo run:ios
-# or
-npx expo run:android
-```
-
-Metro reload is **not** enough. **expo-dev-client only** — not Expo Go.
-
-Path on this machine: `/Users/rahulsarawagi/Work/bugPilot/packages/react-native`  
-Relative from Tallect-Mobile: `../../Work/bugPilot/packages/react-native`
-
-## Usage (Tallect host pattern)
+## Usage
 
 ```tsx
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { BugPilotProvider, createSecureStoreAdapter } from '@bugpilot/react-native';
 
-// See Tallect: src/qa/BugPilotDevRoot.tsx — gated from App.tsx with __DEV__ only
+// Gate with __DEV__ (or a QA build flag) so release builds never ship the overlay
 <BugPilotProvider
   config={{
     apiUrl: process.env.EXPO_PUBLIC_BUGPILOT_API_URL ?? 'http://localhost:4000',
@@ -92,7 +78,7 @@ sheet when signed out, otherwise selector mode, and loads the project list.
 | `appVersion` | Host app version, shown in the form and sent as `browser_info.appVersion`. |
 | `projectId` | Locks the project for this build. If the signed-in user can't access it, the picker opens with an error. |
 | `enabled` | Overlay gate; defaults to `__DEV__`. Pass `true` for QA builds. |
-| `getAccessToken` | Override for CI / Maestro: bypasses the sign-in session (no sheet). On a 401 it is asked again. |
+| `getAccessToken` | Override for CI / automated runs: bypasses the sign-in session (no sheet). On a 401 it is asked again. |
 | `getRouteName` / `getRouteParams` | Navigation snapshot for the report. |
 | `screenshotCapture` | Custom screenshot backend (tests / non-view-shot hosts). |
 
@@ -108,7 +94,7 @@ changing `apiUrl` or `storage` later has no effect (remount the provider instead
 
 Auth requests time out after 15 s and the issue POST after 60 s. Passwords and tokens are never logged.
 
-Optional: wrap key controls with `BugPilotWatch` / `BugPilot.watch({ testID, name })` (Track B testIDs later).
+Optional: wrap key controls with `BugPilotWatch` / `BugPilot.watch({ testID, name })` .
 
 Flow: FAB → (sign-in) → `SelectorMode` + `ProjectBar` → capture root → `ReportForm` → `submitIssue`.
 
@@ -119,16 +105,10 @@ Do **not** invent CSS/XPath. Do **not** rely on private Fiber APIs for v1.
 
 ## Non-goals
 
-- Jelly install / vendor / source copy (PolyForm Shield)
-- Maestro flows (Tallect Track B)
-- bugPilot MCP server (Track C)
-- Expo Go as the Tallect path (dev-client)
+- Expo Go (dev-client only)
 
 ## Docs
 
 - `docs/mobile-qa/REACT_NATIVE_INTEGRATION.md` — **how to integrate and use this package**
 - `docs/mobile-qa/AUTH_SETUP.md` — required Supabase settings for tester sign-in
-- `docs/mobile-qa/TRACK_A_PHASE2.md` (this phase)
-- `docs/mobile-qa/TRACK_A_PHASE1.md` (scaffold)
-- `docs/mobile-qa/ARCHITECTURE.md`
 - `docs/mobile-qa/REPORT_SCHEMA.md`

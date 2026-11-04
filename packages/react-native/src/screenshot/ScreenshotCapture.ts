@@ -1,5 +1,5 @@
 /**
- * Screenshot capture contract for @bugpilot/react-native (Track A Phase 2).
+ * Screenshot capture contract for @bugpilot/react-native.
  *
  * Primary (Expo / expo-dev-client): `react-native-view-shot` via
  * `ViewShotScreenshotAdapter` — captures an in-app root ref (annotation-friendly).
@@ -9,7 +9,7 @@
  * Extension parity: base64 PNG **without** `data:image/...;base64,` prefix for
  * `screenshot` / `element_screenshot` on POST /api/issues.
  *
- * Host install (Tallect) requires **explicit user approval** + native rebuild:
+ * Host install requires a native rebuild:
  *   npx expo install react-native-view-shot
  */
 

@@ -31,7 +31,6 @@ copying data between tools.
 - Browser-based sign-in / OAuth flow (possible later).
 - Creating or deleting bugs, uploading media, editing bug content, deleting comments.
 - Making the AI auto-pick bugs or auto-resolve without a developer prompting it.
-- Maestro / device tooling (separate MCP).
 - Hosted/remote MCP server; v1 is a local stdio process.
 
 ## Anti-goals (a failure even if it "works")
