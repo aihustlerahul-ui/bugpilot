@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { AuthClient } from './auth/AuthClient';
 import { resolveAccessToken } from './auth/resolveAccessToken';
-import { createMemoryAdapter } from './auth/SessionStore';
+import { createDefaultStorage } from './auth/SessionStore';
 import { TokenManager } from './auth/TokenManager';
 import type { StorageAdapter } from './auth/types';
 import { resolveApiUrl } from './apiUrl';
@@ -49,7 +49,7 @@ type AuthKit = { client: AuthClient; manager: TokenManager; storage: StorageAdap
 /** Never throws: a failure here disables the overlay instead of the host. */
 function createAuthKit(config: BugPilotConfig, onSignedOut: () => void): AuthKit | null {
   try {
-    const storage = config.storage ?? createMemoryAdapter();
+    const storage = config.storage ?? createDefaultStorage();
     const client = new AuthClient(resolveApiUrl(config.apiUrl));
     const manager = new TokenManager(client, storage, onSignedOut);
     return { client, manager, storage };
@@ -73,7 +73,8 @@ class OverlayErrorBoundary extends Component<{ children: React.ReactNode }, { fa
 }
 
 export type BugPilotProviderProps = {
-  config: BugPilotConfig;
+  /** Optional. `<BugPilotProvider>{children}</BugPilotProvider>` works with no config. */
+  config?: BugPilotConfig;
   children: React.ReactNode;
   /**
    * When true (default), render FloatingBugButton **outside** the screenshot root
@@ -132,13 +133,15 @@ function OverlayContent({
   );
 }
 
+const EMPTY_CONFIG: BugPilotConfig = {};
+
 /**
  * Root provider — wraps children in a capturable View for view-shot.
  * Gates overlays when disabled (default: `__DEV__`).
  * UX: FAB (sibling outside root) → selector → form (extension parity, #7 Locked).
  */
 export function BugPilotProvider({
-  config,
+  config = EMPTY_CONFIG,
   children,
   floatingButton = true,
 }: BugPilotProviderProps) {

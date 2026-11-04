@@ -146,6 +146,7 @@ export async function collectDeviceInfo(
     if (app) {
       put(out, 'bundleId', app.applicationId);
       put(out, 'nativeAppVersion', app.nativeApplicationVersion);
+      put(out, 'appVersion', app.nativeApplicationVersion);
       put(out, 'buildNumber', app.nativeBuildVersion);
     }
 
@@ -153,6 +154,7 @@ export async function collectDeviceInfo(
     if (ex) {
       put(out, 'executionEnvironment', ex.executionEnvironment);
       put(out, 'expoSdk', ex.expoConfig?.sdkVersion);
+      if (!out.appVersion) put(out, 'appVersion', ex.expoConfig?.version);
     }
 
     const upd = mods.updates;

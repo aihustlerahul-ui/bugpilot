@@ -24,7 +24,7 @@ export {
 
 export { AuthClient, AuthError } from './auth/AuthClient';
 export { TokenManager } from './auth/TokenManager';
-export { createMemoryAdapter, createSecureStoreAdapter } from './auth/SessionStore';
+export { createDefaultStorage, createMemoryAdapter, createSecureStoreAdapter } from './auth/SessionStore';
 export type { SecureStoreLike } from './auth/SessionStore';
 export { resolveAccessToken } from './auth/resolveAccessToken';
 export type { AuthSession, AuthUser, ProjectSummary, StorageAdapter } from './auth/types';

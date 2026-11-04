@@ -44,7 +44,32 @@ npx expo run:ios   # or run:android — Metro reload is not enough
 
 expo-dev-client only — not Expo Go. See `docs/mobile-qa/REACT_NATIVE_INTEGRATION.md`.
 
-## Usage
+## Quick start
+
+```tsx
+import { BugPilotProvider } from '@bugpilot/react-native';
+
+export default function App() {
+  return <BugPilotProvider>{/* your app */}</BugPilotProvider>;
+}
+```
+
+That is the whole integration. A floating bug icon appears; tapping it shows the
+sign-in sheet; after signing in the tester picks a project, taps an element and
+files the report. No `config` is needed:
+
+- the API defaults to the hosted bugPilot API (`apiUrl` only to self-host);
+- the session is stored in `expo-secure-store` automatically when the app has it
+  (otherwise in memory, so the tester signs in each launch);
+- app version, device info and connectivity are read automatically from the Expo
+  modules the app already has;
+- the overlay shows in development builds by default. For a QA/release build pass
+  `config={{ enabled: true }}` so testers can see it (and keep it off for store builds).
+
+Optional extras (`getRouteName` for screen names, `projectId` lock, `context`,
+`getAccessToken` for CI) are listed under **Config keys** below.
+
+## Usage (with options)
 
 ```tsx
 import * as SecureStore from 'expo-secure-store';

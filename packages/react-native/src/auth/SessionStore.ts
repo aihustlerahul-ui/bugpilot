@@ -15,6 +15,23 @@ export function createSecureStoreAdapter(secureStore: SecureStoreLike): StorageA
   };
 }
 
+/**
+ * Zero-config default: use expo-secure-store when the host app has it (the session
+ * then survives restarts), otherwise keep the session in memory only.
+ * The require is inside its own `try` so Metro treats it as an optional dependency.
+ */
+export function createDefaultStorage(): StorageAdapter {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('expo-secure-store') as SecureStoreLike & { default?: SecureStoreLike };
+    const store = mod.default ?? mod;
+    if (typeof store.getItemAsync === 'function') return createSecureStoreAdapter(store);
+  } catch {
+    // expo-secure-store not installed
+  }
+  return createMemoryAdapter();
+}
+
 export function createMemoryAdapter(): StorageAdapter {
   const map = new Map<string, string>();
   return {

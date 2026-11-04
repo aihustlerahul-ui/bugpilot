@@ -154,3 +154,30 @@ describe('BugPilotProvider openSelector (host-owned button)', () => {
     act(() => r.unmount());
   });
 });
+
+describe('BugPilotProvider with no config', () => {
+  it('renders children and exposes the overlay API with only children passed', async () => {
+    const prev = (globalThis as { __DEV__?: boolean }).__DEV__;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let renderer: TestRenderer.ReactTestRenderer | null = null;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <BugPilotProvider>
+          <Probe />
+        </BugPilotProvider>,
+      );
+    });
+    await flush();
+    expect(ctx).not.toBeNull();
+    expect(ctx!.overlayAvailable).toBe(true);
+    expect(ctx!.projectLocked).toBe(false);
+    await act(async () => ctx!.openSelector());
+    await flush();
+    // Signed out + no config: the first tap shows the login sheet.
+    expect(ctx!.mode).toBe('signin');
+    act(() => renderer!.unmount());
+    (globalThis as { __DEV__?: boolean }).__DEV__ = prev;
+    vi.restoreAllMocks();
+  });
+});
